@@ -32,10 +32,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Zbuduj grę (wbudowaną w aplikację)
+        run: npm run build:app -w client
       - name: Zbuduj exe
         working-directory: desktop
         run: |
           npm ci
+          node copy-client.js
           npx electron-builder --win --publish never
       - uses: actions/upload-artifact@v4
         with:

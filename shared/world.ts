@@ -1,11 +1,34 @@
 // Szablony światów i walidacja danych świata.
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
-import type { Part, PartKind, PartShape, ToolDef, ToolModel, ToolType, WorldData, WorldScript } from "./types.ts";
+import { DEFAULT_AVATAR } from "./catalog.ts";
+import type {
+  Accessory,
+  AnimDef,
+  Avatar,
+  CharacterDef,
+  Joint,
+  JointRot,
+  Part,
+  PartKind,
+  PartShape,
+  ToolDef,
+  ToolModel,
+  ToolType,
+  WorldData,
+  WorldScript,
+} from "./types.ts";
+import { JOINTS } from "./types.ts";
 
 export const MAX_PARTS = 5000;
 export const MAX_SCRIPTS = 50;
 export const MAX_SCRIPT_LEN = 50_000;
 export const MAX_TOOLS = 30;
+export const MAX_CHARACTERS = 20;
+export const MAX_ANIMATIONS = 50;
+export const MAX_KEYFRAMES = 120;
+export const MAX_ACCESSORIES = 40;
+/** maks. rozmiar modelu .glb zapisanego w grze (jako tekst base64) */
+export const MAX_MODEL_CHARS = 8_000_000;
 export const WORLD_LIMIT = 2000;
 
 let counter = 0;
@@ -38,7 +61,7 @@ export function spawnPart(x = 0, z = 0): Part {
 
 /** Pusty świat dla nowej gry */
 export function emptyWorld(): WorldData {
-  return { parts: [baseplate(), spawnPart()], scripts: [], skyColor: "#8ec8ff", gravity: 196.2, tools: [], pvp: true };
+  return { parts: [baseplate(), spawnPart()], scripts: [], skyColor: "#8ec8ff", gravity: 196.2, tools: [], pvp: true, characters: [], animations: [] };
 }
 
 /** Przykładowy tor przeszkód z przykładowymi skryptami - tworzony przy pierwszym uruchomieniu serwera */
@@ -97,7 +120,7 @@ end)
 `,
     },
   ];
-  return { parts, scripts, skyColor: "#8ec8ff", gravity: 196.2, tools: [], pvp: false };
+  return { parts, scripts, skyColor: "#8ec8ff", gravity: 196.2, tools: [], pvp: false, characters: [], animations: [] };
 }
 
 /** Nowe narzędzie z szablonu */
@@ -162,11 +185,11 @@ end)
 `,
     },
   ];
-  return { parts, scripts, skyColor: "#ffb57a", gravity: 196.2, tools: [sword, pistol, rifle, hammer, medkit, coffee], pvp: true };
+  return { parts, scripts, skyColor: "#ffb57a", gravity: 196.2, tools: [sword, pistol, rifle, hammer, medkit, coffee], pvp: true, characters: [], animations: [] };
 }
 
 const SHAPES: PartShape[] = ["box", "sphere", "cylinder", "wedge"];
-const KINDS: PartKind[] = ["normal", "spawn", "kill", "bounce", "pickup"];
+const KINDS: PartKind[] = ["normal", "spawn", "kill", "bounce", "pickup", "npc"];
 const TOOL_TYPES: ToolType[] = ["melee", "ranged", "heal", "boost", "custom"];
 const MATERIALS = ["plastic", "neon", "glass", "metal"] as const;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -202,6 +225,8 @@ export function sanitizeWorld(input: unknown): WorldData {
         ? (p.material as Part["material"])
         : "plastic",
       ...(p.kind === "pickup" && typeof p.toolId === "string" ? { toolId: p.toolId.slice(0, 40) } : {}),
+      ...(p.kind === "npc" && typeof p.characterId === "string" ? { characterId: p.characterId.slice(0, 40) } : {}),
+      ...(typeof p.animId === "string" && p.animId ? { animId: p.animId.slice(0, 40) } : {}),
     };
   });
   const rawScripts = Array.isArray(w.scripts) ? w.scripts.slice(0, MAX_SCRIPTS) : [];
@@ -233,12 +258,100 @@ export function sanitizeWorld(input: unknown): WorldData {
       starter: t.starter === true,
     };
   });
+  const characters = (Array.isArray(w.characters) ? w.characters.slice(0, MAX_CHARACTERS) : []).map(sanitizeCharacter);
+  const animations = (Array.isArray(w.animations) ? w.animations.slice(0, MAX_ANIMATIONS) : []).map(sanitizeAnimation);
+  const playerCharacter =
+    typeof w.playerCharacter === "string" && characters.some((c) => c.id === w.playerCharacter) ? w.playerCharacter : undefined;
   return {
     parts,
     scripts,
     tools,
+    characters,
+    animations,
+    ...(playerCharacter ? { playerCharacter } : {}),
     pvp: w.pvp !== false,
     skyColor: typeof w.skyColor === "string" && COLOR_RE.test(w.skyColor) ? w.skyColor : "#8ec8ff",
     gravity: num(w.gravity, 10, 500, 196.2),
+  };
+}
+
+const color = (v: unknown, def: string) => (typeof v === "string" && COLOR_RE.test(v) ? v : def);
+const MODEL_RE = /^data:(model\/gltf-binary|model\/gltf\+json|application\/octet-stream|application\/json);base64,[A-Za-z0-9+/=]+$/;
+
+export function sanitizeLook(input: unknown): Avatar {
+  const a = (input ?? {}) as Record<string, unknown>;
+  return {
+    head: color(a.head, DEFAULT_AVATAR.head),
+    torso: color(a.torso, DEFAULT_AVATAR.torso),
+    arms: color(a.arms, DEFAULT_AVATAR.arms),
+    legs: color(a.legs, DEFAULT_AVATAR.legs),
+    hat: str(a.hat, 20, "none") || "none",
+    face: str(a.face, 20, "smile") || "smile",
+  };
+}
+
+export function sanitizeCharacter(input: unknown): CharacterDef {
+  const c = (input ?? {}) as Record<string, unknown>;
+  const accessories: Accessory[] = (Array.isArray(c.accessories) ? c.accessories.slice(0, MAX_ACCESSORIES) : []).map((raw) => {
+    const a = (raw ?? {}) as Record<string, unknown>;
+    return {
+      id: str(a.id, 40, newId()) || newId(),
+      joint: JOINTS.includes(a.joint as Joint) ? (a.joint as Joint) : "head",
+      shape: SHAPES.includes(a.shape as PartShape) ? (a.shape as PartShape) : "box",
+      color: color(a.color, "#888888"),
+      material: MATERIALS.includes(a.material as (typeof MATERIALS)[number]) ? (a.material as Part["material"]) : "plastic",
+      x: num(a.x, -20, 20, 0), y: num(a.y, -20, 20, 0), z: num(a.z, -20, 20, 0),
+      sx: num(a.sx, 0.05, 20, 1), sy: num(a.sy, 0.05, 20, 1), sz: num(a.sz, 0.05, 20, 1),
+      rx: num(a.rx, -360, 360, 0), ry: num(a.ry, -360, 360, 0), rz: num(a.rz, -360, 360, 0),
+    };
+  });
+  const m = c.model as Record<string, unknown> | undefined;
+  const model =
+    m && typeof m.data === "string" && m.data.length <= MAX_MODEL_CHARS && MODEL_RE.test(m.data)
+      ? {
+          data: m.data,
+          scale: num(m.scale, 0.001, 100, 1),
+          x: num(m.x, -20, 20, 0), y: num(m.y, -20, 20, 0), z: num(m.z, -20, 20, 0),
+          ry: num(m.ry, -360, 360, 0),
+          hideBody: m.hideBody !== false,
+        }
+      : undefined;
+  return {
+    id: str(c.id, 40, newId()) || newId(),
+    name: str(c.name, 30, "Postać").trim() || "Postać",
+    look: sanitizeLook(c.look),
+    scale: num(c.scale, 0.3, 3, 1),
+    accessories,
+    ...(model ? { model } : {}),
+  };
+}
+
+const rot = (v: unknown): JointRot | undefined =>
+  Array.isArray(v) && v.length === 3 ? [num(v[0], -360, 360, 0), num(v[1], -360, 360, 0), num(v[2], -360, 360, 0)] : undefined;
+
+export function sanitizeAnimation(input: unknown): AnimDef {
+  const a = (input ?? {}) as Record<string, unknown>;
+  const duration = num(a.duration, 0.1, 60, 1);
+  const keyframes = (Array.isArray(a.keyframes) ? a.keyframes.slice(0, MAX_KEYFRAMES) : [])
+    .map((raw) => {
+      const k = (raw ?? {}) as Record<string, unknown>;
+      const pose = (k.pose ?? {}) as Record<string, unknown>;
+      const src = (pose.joints ?? {}) as Record<string, unknown>;
+      const joints: Partial<Record<Joint, JointRot>> = {};
+      for (const j of JOINTS) {
+        const r = rot(src[j]);
+        if (r) joints[j] = r;
+      }
+      return { t: num(k.t, 0, duration, 0), pose: { joints, y: num(pose.y, -10, 10, 0) } };
+    })
+    .sort((x, y) => x.t - y.t);
+  return {
+    id: str(a.id, 40, newId()) || newId(),
+    name: str(a.name, 30, "Animacja").trim() || "Animacja",
+    duration,
+    loop: a.loop === true,
+    smooth: a.smooth !== false,
+    emote: a.emote === true,
+    keyframes,
   };
 }

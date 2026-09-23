@@ -13,11 +13,15 @@ import type { Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScr
 import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
 import { makePart, MAX_PARTS, newId } from "../../../shared/world.ts";
 import { api } from "../api.ts";
+import { desktop, pickFile, saveTextFile } from "../files.ts";
+import { session } from "../state.ts";
+import { fileNameFor, GAME_EXT, makeGameFile, parseGameFile, type GameMeta } from "../../../shared/gamefile.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
-import { h, modal, toast } from "../ui/dom.ts";
+import { ask, h, modal, toast } from "../ui/dom.ts";
 import { openScriptEditor } from "./scriptEditor.ts";
 import { openToolEditor } from "./toolEditor.ts";
-import { STUDIO_INPUTS, pointerButtons, robloxCamera } from "../engine/camera.ts";
+import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
+import { openSettings, settings } from "../settings.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Tool = "select" | "move" | "scale";
@@ -39,12 +43,32 @@ const KIND_LABELS: Record<PartKind, string> = {
   kill: "Zabija (lawa)",
   bounce: "Trampolina",
   pickup: "Narzędzie do podniesienia",
+  npc: "Postać (NPC)",
 };
 
 const snap = (v: number, step: number) => Math.round(v / step) * step;
 const round = (v: number) => Math.round(v * 1000) / 1000;
 
-export function studioScreen(root: HTMLElement, params: { worldId: number }, go: Go) {
+/** Gra otwarta z pliku .pgame (bez serwera) */
+export interface StudioFile {
+  meta: GameMeta;
+  data: WorldData;
+  /** ścieżka pliku na dysku (aplikacja .exe) */
+  path?: string;
+  fileName?: string;
+  dirty?: boolean;
+}
+
+/** Skąd pochodzi gra i gdzie ją zapisać */
+interface Source {
+  online: boolean;
+  published: boolean;
+  save(meta: GameMeta, data: WorldData, published: boolean): Promise<void>;
+}
+
+class SaveCancelled extends Error {}
+
+export function studioScreen(root: HTMLElement, params: { worldId?: number; file?: StudioFile }, go: Go) {
   const canvas = h("canvas", { class: "studio-canvas" });
   const loading = h("div", { class: "loading" }, h("div", { class: "spinner" }), "Wczytywanie gry…");
   const viewport = h("div", { class: "studio-viewport" }, canvas, loading);
@@ -56,15 +80,45 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
   let disposed = false;
   const cleanups: (() => void)[] = [];
 
-  api
-    .getWorld(params.worldId)
-    .then(({ info, data }) => !disposed && start(info, data))
-    .catch((e) => {
-      toast(e.message, "error");
-      go("home", { tab: "create" });
-    });
+  const file = params.file;
+  const exitScreen = () => (session.user ? go("home", { tab: "create" }) : go("offline"));
+  if (file) {
+    // gra z pliku - działa bez serwera
+    let path = file.path;
+    const src: Source = {
+      online: false,
+      published: false,
+      async save(meta, data) {
+        const saved = await saveTextFile(file.fileName ?? fileNameFor(meta.name, GAME_EXT), makeGameFile(meta, data), GAME_EXT, path);
+        if (!saved) throw new SaveCancelled();
+        if (desktop) path = saved;
+        file.path = path;
+      },
+    };
+    queueMicrotask(() => start({ ...file.meta }, file.data, src, file.dirty ?? false));
+  } else {
+    const worldId = params.worldId!;
+    api
+      .getWorld(worldId)
+      .then(({ info, data }) => {
+        if (disposed) return;
+        const src: Source = {
+          online: true,
+          published: info.published,
+          async save(meta, d, published) {
+            const res = await api.saveWorld(worldId, { ...meta, published, data: d });
+            src.published = res.published;
+          },
+        };
+        start({ name: info.name, description: info.description, maxPlayers: info.maxPlayers }, data, src, false);
+      })
+      .catch((e) => {
+        toast(e.message, "error");
+        exitScreen();
+      });
+  }
 
-  function start(info: WorldInfo, data: WorldData) {
+  function start(meta: GameMeta, data: WorldData, src: Source, startDirty: boolean) {
     loading.remove();
     let dirty = false;
     let selected: Part | null = null;
@@ -92,7 +146,6 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
 
     // prawy przycisk: rozglądanie się w miejscu (jak w Roblox Studio) - kamera stoi, obraca się widok
     let looking: number | null = null;
-    const LOOK_RAD_PER_PX = (0.3 * Math.PI) / 180;
     const onLookDown = (e: PointerEvent) => {
       if (e.pointerType !== "mouse" || e.button !== 2) return;
       looking = e.pointerId;
@@ -103,8 +156,9 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
       const r = camera.radius;
       const dir = (a: number, b: number) => new Vector3(Math.cos(a) * Math.sin(b), Math.cos(b), Math.sin(a) * Math.sin(b));
       const eye = camera.target.add(dir(camera.alpha, camera.beta).scale(r));
-      camera.alpha += e.movementX * LOOK_RAD_PER_PX;
-      camera.beta = Math.min(Math.PI - 0.05, Math.max(0.05, camera.beta + e.movementY * LOOK_RAD_PER_PX));
+      const k = lookRadPerPx();
+      camera.alpha += e.movementX * k;
+      camera.beta = Math.min(Math.PI - 0.05, Math.max(0.05, camera.beta + e.movementY * k * (settings.invertY ? -1 : 1)));
       // punkt, na który patrzymy, przesuwa się tak, żeby kamera została w miejscu
       camera.target = eye.subtract(dir(camera.alpha, camera.beta).scale(r));
     };
@@ -220,6 +274,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     };
     function changed() {
       dirty = true;
+      desktop?.setDirty(true);
       saveBtn.classList.add("unsaved");
     }
 
@@ -280,18 +335,93 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     // ---------- zapisywanie ----------
     async function save(quiet = false) {
       try {
-        await api.saveWorld(info.id, { data });
+        await src.save(meta, data, src.published);
         dirty = false;
+        desktop?.setDirty(false);
         saveBtn.classList.remove("unsaved");
-        if (!quiet) toast("Zapisano ✔", "good");
+        if (!quiet) toast(src.online ? "Zapisano na serwerze ✔" : "Zapisano plik ✔", "good");
         return true;
       } catch (e) {
-        toast((e as Error).message, "error");
+        if (!(e instanceof SaveCancelled)) toast((e as Error).message, "error");
         return false;
       }
     }
 
+    /** Stan do przekazania, gdy wychodzimy z edytora pliku (np. na test) i wracamy */
+    const fileState = (): StudioFile => ({ meta, data, path: file?.path, fileName: file?.fileName, dirty });
+
+    function testOffline() {
+      go("play", {
+        offline: { name: meta.name, data },
+        back: { screen: "studio", params: file ? { file: fileState() } : { worldId: params.worldId } },
+      });
+    }
+
+    async function test() {
+      if (!src.online) return testOffline();
+      if (await save(true)) go("play", { worldId: params.worldId, back: { screen: "studio", params: { worldId: params.worldId } } });
+    }
+
+    async function confirmLeave() {
+      if (!dirty) return true;
+      if (await ask("Zapisać zmiany?", "Zapisz", "Nie zapisuj")) return save(true);
+      return true;
+    }
+
+    const fileMenu = h(
+      "div",
+      { class: "dropdown hidden" },
+      h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), exportFile()) }, "💾 Zapisz jako plik .pgame"),
+      h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), openFile()) }, "📂 Otwórz plik .pgame"),
+      h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), testOffline()) }, "🎮 Testuj bez serwera"),
+      !src.online
+        ? h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), upload()) }, "☁ Wyślij na serwer")
+        : null,
+    );
+
+    async function exportFile() {
+      const saved = await saveTextFile(fileNameFor(meta.name, GAME_EXT), makeGameFile(meta, data), GAME_EXT);
+      if (saved) toast("Zapisano plik " + saved.split(/[\\/]/).pop(), "good");
+    }
+
+    async function openFile() {
+      if (!(await confirmLeave())) return;
+      const f = await pickFile([GAME_EXT], "Gra Predator");
+      if (!f) return;
+      try {
+        const parsed = parseGameFile(f.text);
+        const { data: d, ...m } = parsed;
+        go("studio", { file: { meta: m, data: d, path: f.path, fileName: f.name } });
+      } catch (e) {
+        toast((e as Error).message, "error");
+      }
+    }
+
+    /** Gra z pliku trafia na serwer jako nowa gra (tylko po zalogowaniu) */
+    async function upload() {
+      if (!session.user) return toast("Zaloguj się na serwerze, żeby wysłać grę", "error");
+      try {
+        const w = await api.createWorld(meta.name);
+        await api.saveWorld(w.id, { ...meta, data });
+        toast("Gra wysłana na serwer ✔", "good");
+        dirty = false;
+        desktop?.setDirty(false);
+        go("studio", { worldId: w.id });
+      } catch (e) {
+        toast((e as Error).message, "error");
+      }
+    }
+
     // ---------- pasek narzędzi ----------
+    /** menu pod przyciskiem, ale zawsze w granicach ekranu (pasek na telefonie się przewija) */
+    function toggleMenu(menu: HTMLElement, e: Event) {
+      for (const m of el.querySelectorAll(".dropdown")) if (m !== menu) m.classList.add("hidden");
+      menu.classList.toggle("hidden");
+      if (menu.classList.contains("hidden")) return;
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + "px";
+      menu.style.top = r.bottom + 4 + "px";
+    }
     const saveBtn = h("button", { class: "tb-btn", onClick: () => save(), title: "Zapisz (Ctrl+S)" }, "💾", h("span", null, "Zapisz"));
     const addMenu = h(
       "div",
@@ -314,8 +444,10 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
         {
           class: "tb-btn",
           onClick: async () => {
-            if (dirty && confirm("Zapisać zmiany przed wyjściem?")) await save(true);
-            go("home", { tab: "create" });
+            if (await confirmLeave()) {
+              desktop?.setDirty(false);
+              exitScreen();
+            }
           },
         },
         "←",
@@ -324,10 +456,17 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
       saveBtn,
       h(
         "button",
-        { class: "tb-btn play", onClick: async () => (await save(true)) && go("play", { worldId: info.id }), title: "Zapisz i zagraj" },
+        { class: "tb-btn play", onClick: () => test(), title: src.online ? "Zapisz i zagraj na serwerze" : "Zagraj bez serwera" },
         "▶",
         h("span", null, "Testuj"),
       ),
+      h(
+        "div",
+        { class: "dd-wrap" },
+        h("button", { class: "tb-btn", onClick: (e: Event) => toggleMenu(fileMenu, e) }, "📁", h("span", null, "Plik")),
+        fileMenu,
+      ),
+      h("span", { class: "tb-mode " + (src.online ? "on" : "") , title: src.online ? "Gra na serwerze" : "Gra z pliku - bez serwera" }, src.online ? "☁ serwer" : "📄 plik"),
       h("div", { class: "tb-sep" }),
       h("button", { class: "tb-btn", "data-tool": "select", onClick: () => setTool("select"), title: "Wybierz (1)" }, "👆", h("span", null, "Wybierz")),
       h("button", { class: "tb-btn", "data-tool": "move", onClick: () => setTool("move"), title: "Przesuń (2)" }, "✥", h("span", null, "Przesuń")),
@@ -338,7 +477,15 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
       h(
         "div",
         { class: "dd-wrap" },
-        h("button", { class: "tb-btn accent", onClick: () => addMenu.classList.toggle("hidden") }, "＋", h("span", null, "Dodaj")),
+        h(
+          "button",
+          {
+            class: "tb-btn accent",
+            onClick: (e: Event) => toggleMenu(addMenu, e),
+          },
+          "＋",
+          h("span", null, "Dodaj"),
+        ),
         addMenu,
       ),
       h("button", { class: "tb-btn", onClick: duplicate, title: "Duplikuj (Ctrl+D)" }, "⧉", h("span", null, "Duplikuj")),
@@ -346,7 +493,8 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
       h("button", { class: "tb-btn", onClick: doUndo, title: "Cofnij (Ctrl+Z)" }, "↶"),
       h("button", { class: "tb-btn", onClick: doRedo, title: "Ponów (Ctrl+Y)" }, "↷"),
       h("div", { class: "tb-sep" }),
-      h("button", { class: "tb-btn", onClick: () => openSettings() }, "⚙", h("span", null, "Ustawienia gry")),
+      h("button", { class: "tb-btn", onClick: () => openGameSettings() }, "⚙", h("span", null, "Ustawienia gry")),
+      h("button", { class: "tb-btn", onClick: () => openSettings(), title: "Czułość kamery i inne" }, "🎚", h("span", null, "Ustawienia")),
     );
 
     // ---------- panele ----------
@@ -548,8 +696,8 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
                   {
                     class: "icon-btn",
                     title: "Usuń skrypt",
-                    onClick: () => {
-                      if (!confirm(`Usunąć skrypt „${s.name}”?`)) return;
+                    onClick: async () => {
+                      if (!(await ask(`Usunąć skrypt „${s.name}”?`, "Usuń", "Anuluj", true))) return;
                       data.scripts = data.scripts.filter((x) => x !== s);
                       changed();
                       renderScripts();
@@ -604,8 +752,8 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
                   {
                     class: "icon-btn",
                     title: "Usuń narzędzie",
-                    onClick: () => {
-                      if (!confirm(`Usunąć „${t.name}”?`)) return;
+                    onClick: async () => {
+                      if (!(await ask(`Usunąć „${t.name}”?`, "Usuń", "Anuluj", true))) return;
                       data.tools = data.tools.filter((x) => x !== t);
                       view.setTools(data.tools);
                       changed();
@@ -641,13 +789,13 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     }
 
     // ---------- ustawienia gry ----------
-    function openSettings() {
-      const name = h("input", { value: info.name, maxLength: 40 });
-      const desc = h("textarea", { value: info.description, maxLength: 500, rows: 3 });
-      const maxP = h("input", { type: "number", min: "1", max: String(MAX_PLAYERS_LIMIT), value: String(info.maxPlayers) });
+    function openGameSettings() {
+      const name = h("input", { value: meta.name, maxLength: 40 });
+      const desc = h("textarea", { value: meta.description, maxLength: 500, rows: 3 });
+      const maxP = h("input", { type: "number", min: "1", max: String(MAX_PLAYERS_LIMIT), value: String(meta.maxPlayers) });
       const sky = h("input", { type: "color", value: data.skyColor });
       const grav = h("input", { type: "number", min: "10", max: "500", step: "1", value: String(data.gravity) });
-      const pub = h("input", { type: "checkbox", checked: info.published });
+      const pub = h("input", { type: "checkbox", checked: src.published });
       const pvp = h("input", { type: "checkbox", checked: data.pvp });
       const close = modal(
         "Ustawienia gry",
@@ -660,7 +808,9 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
           h("label", null, "Kolor nieba", sky),
           h("label", null, "Grawitacja (normalnie 196)", grav),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
-          h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać")),
+          src.online
+            ? h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać"))
+            : h("p", { class: "muted", style: "font-size:13px;margin:0" }, "Gra z pliku - żeby ją opublikować, wyślij ją na serwer (Plik → Wyślij na serwer)."),
         ),
         [
           { label: "Anuluj", onClick: () => close() },
@@ -672,21 +822,14 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
               data.pvp = pvp.checked;
               view.setSky(data.skyColor);
-              try {
-                info = await api.saveWorld(info.id, {
-                  name: name.value,
-                  description: desc.value,
-                  maxPlayers: Math.min(MAX_PLAYERS_LIMIT, Math.max(1, Number(maxP.value) || 30)),
-                  published: pub.checked,
-                  data,
-                });
-                dirty = false;
-                saveBtn.classList.remove("unsaved");
-                toast("Zapisano ustawienia", "good");
-                close();
-              } catch (e) {
-                toast((e as Error).message, "error");
-              }
+              meta.name = name.value.trim().slice(0, 40) || meta.name;
+              meta.description = desc.value.slice(0, 500);
+              meta.maxPlayers = Math.min(MAX_PLAYERS_LIMIT, Math.max(1, Math.round(Number(maxP.value) || 30)));
+              src.published = pub.checked;
+              close();
+              if (src.online) {
+                if (await save(true)) toast("Zapisano ustawienia", "good");
+              } else changed();
             },
           },
         ],
@@ -750,6 +893,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     renderScripts();
     renderTools();
     setTool("move");
+    if (startDirty) changed();
   }
 
   engine.runRenderLoop(() => scene.activeCamera && scene.render());

@@ -3,7 +3,7 @@
 export type PartShape = "box" | "sphere" | "cylinder" | "wedge";
 /** normal = zwykły klocek, spawn = miejsce pojawienia się, kill = zabija (lawa), bounce = trampolina,
  *  pickup = leży na nim narzędzie, które gracz podnosi dotykając */
-export type PartKind = "normal" | "spawn" | "kill" | "bounce" | "pickup";
+export type PartKind = "normal" | "spawn" | "kill" | "bounce" | "pickup" | "npc";
 
 export interface Part {
   id: string;
@@ -24,6 +24,73 @@ export interface Part {
   material?: "plastic" | "neon" | "glass" | "metal";
   /** Które narzędzie leży na klocku (tylko kind = "pickup") */
   toolId?: string;
+  /** Postać NPC stojąca na klocku (tylko kind = "npc") */
+  characterId?: string;
+  /** Animacja odtwarzana w pętli przez NPC */
+  animId?: string;
+}
+
+// ---------- Postacie ----------
+
+export type Joint = "head" | "torso" | "leftArm" | "rightArm" | "leftLeg" | "rightLeg";
+export const JOINTS: Joint[] = ["head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"];
+
+/** Dodatek doczepiony do części ciała (np. hełm, plecak, miecz na plecach) */
+export interface Accessory {
+  id: string;
+  joint: Joint;
+  shape: PartShape;
+  color: string;
+  material?: Part["material"];
+  x: number; y: number; z: number;
+  sx: number; sy: number; sz: number;
+  rx: number; ry: number; rz: number;
+}
+
+/** Postać zrobiona albo zaimportowana w Studio (NPC albo wygląd graczy) */
+export interface CharacterDef {
+  id: string;
+  name: string;
+  /** kolory części ciała, twarz i czapka - jak w awatarze */
+  look: Avatar;
+  /** skala całej postaci (0.3 - 3) */
+  scale: number;
+  accessories: Accessory[];
+  /** zaimportowany model 3D (.glb) jako data URL */
+  model?: {
+    data: string;
+    scale: number;
+    x: number; y: number; z: number;
+    ry: number;
+    /** ukryj klockowe ciało (sam model) */
+    hideBody: boolean;
+  };
+}
+
+// ---------- Animacje ----------
+
+/** Obrót stawu w stopniach [x, y, z] */
+export type JointRot = [number, number, number];
+export interface Pose {
+  joints: Partial<Record<Joint, JointRot>>;
+  /** przesunięcie całego ciała w górę/dół */
+  y?: number;
+}
+export interface AnimKeyframe {
+  t: number;
+  pose: Pose;
+}
+export interface AnimDef {
+  id: string;
+  name: string;
+  /** długość w sekundach */
+  duration: number;
+  loop: boolean;
+  /** płynne przejścia między klatkami (inaczej liniowo) */
+  smooth: boolean;
+  /** pokazuj w menu emotek w grze */
+  emote: boolean;
+  keyframes: AnimKeyframe[];
 }
 
 /** melee = wręcz (miecz), ranged = strzela, heal = leczy, boost = przyspiesza, custom = tylko dla skryptów */
@@ -73,6 +140,10 @@ export interface WorldData {
   tools: ToolDef[];
   /** czy gracze mogą sobie zadawać obrażenia */
   pvp: boolean;
+  characters: CharacterDef[];
+  animations: AnimDef[];
+  /** jeśli ustawione - wszyscy gracze wyglądają jak ta postać */
+  playerCharacter?: string;
 }
 
 export interface WorldInfo {
@@ -131,6 +202,10 @@ export interface NetPlayer {
   anim: Anim;
   /** trzymane narzędzie */
   tool: string | null;
+  /** postać ze świata zamiast awatara (ustawiona skryptem) */
+  character: string | null;
+  /** odtwarzana animacja ze świata */
+  animation: string | null;
   hp: number;
   maxHp: number;
 }

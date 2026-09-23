@@ -1,6 +1,6 @@
 // Okno edycji skryptu: Lua (tekst) albo bloczki.
 import type { WorldScript } from "../../../shared/types.ts";
-import { h, toast } from "../ui/dom.ts";
+import { ask, h, toast } from "../ui/dom.ts";
 
 export const LUA_HELP: [string, string][] = [
   ["onPlayerJoin(function(player) ... end)", "gdy gracz dołączy"],
@@ -52,9 +52,9 @@ export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) =
   let getResult: () => WorldScript;
   let cleanup = () => {};
 
-  const close = (save: boolean) => {
+  const close = async (save: boolean) => {
     if (save) onSave(getResult());
-    else if (dirty && !confirm("Masz niezapisane zmiany w skrypcie. Zamknąć bez zapisywania?")) return;
+    else if (dirty && !(await ask("Masz niezapisane zmiany w skrypcie. Zamknąć bez zapisywania?", "Zamknij", "Wróć", true))) return;
     cleanup();
     overlay.remove();
     window.removeEventListener("keydown", onKey, true);

@@ -15,7 +15,8 @@
     "@babylonjs/gui": "^9.27.1",
     "@capacitor/core": "^8.5.2",
     "blockly": "^13.3.0",
-    "colyseus.js": "^0.16.22"
+    "colyseus.js": "^0.16.22",
+    "fengari": "^0.1.5"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.2",

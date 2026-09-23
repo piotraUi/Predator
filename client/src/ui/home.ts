@@ -6,7 +6,10 @@ import { api, setToken } from "../api.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { createEngine } from "../engine/world.ts";
 import { session } from "../state.ts";
-import { h, hashColor, modal, toast } from "./dom.ts";
+import { openSettings } from "../settings.ts";
+import { pickFile } from "../files.ts";
+import { GAME_EXT, parseGameFile } from "../../../shared/gamefile.ts";
+import { ask, h, hashColor, modal, toast } from "./dom.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Tab = "play" | "create" | "avatar" | "friends";
@@ -55,7 +58,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: Tab }, go: Go) {
     "header",
     { class: "home-header" },
     h("div", { class: "logo small" }, h("span", { class: "logo-block" }), "PREDATOR"),
-    h("div", { class: "header-right" }, coins, name),
+    h("div", { class: "header-right" }, coins, name, h("button", { class: "icon-btn", title: "Ustawienia", onClick: () => openSettings() }, "⚙")),
   );
   const el = h("div", { class: "home" }, header, nav, content);
   root.append(el);
@@ -168,7 +171,24 @@ async function createTab(el: HTMLElement, go: Go) {
     },
     "+ Nowa gra",
   );
-  el.append(h("div", { class: "row between" }, h("h1", null, "Twoje gry"), newBtn));
+  const openBtn = h(
+    "button",
+    {
+      class: "btn",
+      onClick: async () => {
+        const f = await pickFile([GAME_EXT], "Gra Predator");
+        if (!f) return;
+        try {
+          const { data, ...meta } = parseGameFile(f.text);
+          go("studio", { file: { meta, data, path: f.path, fileName: f.name } });
+        } catch (e) {
+          toast((e as Error).message, "error");
+        }
+      },
+    },
+    "📂 Otwórz plik",
+  );
+  el.append(h("div", { class: "row between" }, h("h1", null, "Twoje gry"), h("div", { class: "row" }, openBtn, newBtn)));
   el.append(
     h(
       "p",
@@ -391,7 +411,7 @@ async function friendsTab(el: HTMLElement, go: Go) {
           {
             class: "btn small",
             onClick: async () => {
-              if (confirm(`Usunąć ${f.username} ze znajomych?`)) {
+              if (await ask(`Usunąć ${f.username} ze znajomych?`, "Usuń", "Anuluj", true)) {
                 await api.removeFriend(f.id);
                 refresh();
               }

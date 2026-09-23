@@ -12,7 +12,7 @@
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
-    "test": "npm test -w server && tsx --test shared/*.test.ts"
+    "test": "npm test -w server"
   },
   "engines": {
     "node": ">=22.13"

@@ -11,7 +11,9 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, TextBlock } from "@babylonjs/gui";
-import { Client, type Room } from "colyseus.js";
+import { Client } from "colyseus.js";
+import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
+import { LocalRoom, type GameConnection } from "./connection.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, Emote, NetPlayer, Part, ToolDef, WorldData } from "../../../shared/types.ts";
 import { EMOTES } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
@@ -24,6 +26,7 @@ import { h, isTouch, toast } from "../ui/dom.ts";
 import { hexColor } from "../engine/world.ts";
 import { GAME_INPUTS, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { Hotbar } from "./hotbar.ts";
+import { openSettings } from "../settings.ts";
 
 interface Remote {
   model: AvatarModel;
@@ -66,7 +69,14 @@ const SEND_EVERY = 1 / 15;
 
 export function playScreen(
   root: HTMLElement,
-  params: { worldId?: number; roomId?: string },
+  params: {
+    worldId?: number;
+    roomId?: string;
+    /** gra uruchomiona lokalnie, bez serwera (test ze Studio) */
+    offline?: { name: string; data: WorldData };
+    /** dokąd wrócić po wyjściu z gry */
+    back?: { screen: string; params?: Record<string, unknown> };
+  },
   go: (screen: string, params?: Record<string, unknown>) => void,
 ): () => void {
   const canvas = h("canvas", { class: "game-canvas" });
@@ -78,14 +88,22 @@ export function playScreen(
   const scene = new Scene(engine);
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("ui", true, scene);
   const input = new Input(wrap);
-  let room: Room | null = null;
+  let room: GameConnection | null = null;
   let leaving = false;
   let disposed = false;
+  const back = () => go(params.back?.screen ?? "home", params.back?.params);
+  // w trybie offline gramy bez konta - domyślny wygląd
+  const me = session.user ?? { id: 0, username: "Gracz", coins: 0, avatar: DEFAULT_AVATAR, inventory: [] };
 
-  const client = new Client(wsUrl());
-  const join = params.roomId
-    ? client.joinById(params.roomId, { token: getToken() })
-    : client.joinOrCreate("world", { worldId: params.worldId, token: getToken() });
+  const join: Promise<GameConnection> = params.offline
+    ? Promise.resolve(new LocalRoom(params.offline.data, params.offline.name, me))
+    : (() => {
+        const client = new Client(wsUrl());
+        const joining = params.roomId
+          ? client.joinById(params.roomId, { token: getToken() })
+          : client.joinOrCreate("world", { worldId: params.worldId, token: getToken() });
+        return joining.then((r) => r as unknown as GameConnection);
+      })();
 
   join
     .then((r) => {
@@ -98,17 +116,17 @@ export function playScreen(
       r.onLeave((code) => {
         if (!leaving && !disposed) {
           toast(code === 4000 ? "Wyrzucono z gry" : "Rozłączono z serwerem", "error");
-          go("home");
+          back();
         }
       });
       r.onError((_code, message) => toast("Błąd: " + (message ?? "?"), "error"));
     })
     .catch((e: Error) => {
       toast(e.message?.includes("full") ? "Serwer gry jest pełny" : "Nie udało się dołączyć: " + e.message, "error");
-      go("home");
+      back();
     });
 
-  function start(r: Room, init: InitMsg) {
+  function start(r: GameConnection, init: InitMsg) {
     loading.remove();
     const world = new WorldView(scene, { shadows: true, skyColor: init.world.skyColor });
     const parts = new Map<string, Part>(init.world.parts.map((p) => [p.id, p]));
@@ -144,7 +162,6 @@ export function playScreen(
     let setRadius = camera.radius;
 
     // ---------- gracz ----------
-    const me = session.user!;
     const local = new AvatarModel(scene, me.avatar, world.shadows);
     const body: Body = { ...init.spawn, vx: 0, vy: 0, vz: 0, onGround: false };
     // na starcie postać patrzy w stronę środka mapy
@@ -298,6 +315,7 @@ export function playScreen(
       h("h3", null, init.info.name),
       h("p", { class: "muted" }, "Twórca: " + init.info.ownerName),
       h("button", { class: "btn", onClick: () => { menu.classList.add("hidden"); die(); } }, "Zresetuj postać (R)"),
+      h("button", { class: "btn", onClick: () => openSettings() }, "🎚 Ustawienia (czułość kamery)"),
       h("button", { class: "btn", onClick: () => menu.classList.add("hidden") }, "Wróć do gry"),
       h("button", { class: "btn danger", onClick: () => leave() }, "Wyjdź z gry"),
     );
@@ -675,7 +693,7 @@ export function playScreen(
   function leave() {
     leaving = true;
     room?.leave();
-    go("home");
+    back();
   }
 
   return () => {

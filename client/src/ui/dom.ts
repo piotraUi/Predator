@@ -76,3 +76,34 @@ export function hashColor(s: string) {
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return `hsl(${h % 360} 65% 50%)`;
 }
+
+/**
+ * Pytanie tak/nie w oknie Predatora. Nie używamy window.confirm(), bo w aplikacji .exe (Electron na Windows)
+ * po systemowym okienku pola tekstowe przestają przyjmować kliknięcia.
+ */
+export function ask(question: string, yes = "Tak", no = "Anuluj", danger = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: boolean) => {
+      if (done) return;
+      done = true;
+      close();
+      resolve(v);
+    };
+    const close = modal("Potwierdź", h("p", { style: "margin:4px 0 8px;line-height:1.5" }, question), [
+      { label: no, onClick: () => finish(false) },
+      { label: yes, kind: danger ? "danger" : "primary", onClick: () => finish(true) },
+    ]);
+    // zamknięcie krzyżykiem / kliknięciem obok = nie
+    const obs = new MutationObserver(() => {
+      if (!document.querySelector(".modal-bg")) {
+        obs.disconnect();
+        if (!done) {
+          done = true;
+          resolve(false);
+        }
+      }
+    });
+    obs.observe(document.body, { childList: true });
+  });
+}

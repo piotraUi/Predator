@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx --test src/*.test.ts src/**/*.test.ts"
+    "test": "tsx --test ../shared/*.test.ts ../shared/**/*.test.ts"
   },
   "dependencies": {
     "@colyseus/ws-transport": "^0.16.5",

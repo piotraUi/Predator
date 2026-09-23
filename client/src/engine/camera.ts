@@ -1,5 +1,6 @@
 // Ustawienia kamery jak w Robloxie: FOV 70°, bez bezwładności, obrót prawym przyciskiem myszy.
 import type { ArcRotateCamera, ArcRotateCameraPointersInput } from "@babylonjs/core";
+import { onSettingsChange, settings } from "../settings.ts";
 
 /** Roblox: FieldOfView = 70° (pionowo) */
 export const ROBLOX_FOV = (70 * Math.PI) / 180;
@@ -30,11 +31,22 @@ export function robloxCamera(camera: ArcRotateCamera, inputs: MapEntry[]) {
   // bez "ślizgania się" kamery po puszczeniu myszy
   camera.inertia = 0;
   camera.panningInertia = 0;
-  // przy inertia = 0 obrót to dokładnie przesunięcie / czułość
-  camera.angularSensibilityX = camera.angularSensibilityY = 180 / Math.PI / MOUSE_DEG_PER_PX;
+  applySensitivity(camera, MOUSE_DEG_PER_PX);
   camera.wheelDeltaPercentage = 0.1;
   camera.pinchDeltaPercentage = 0.02;
   camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput");
+}
+
+/** przy inertia = 0 obrót to dokładnie przesunięcie / czułość; suwak z ustawień to mnożnik */
+function applySensitivity(camera: ArcRotateCamera, degPerPx: number) {
+  const base = 180 / Math.PI / (degPerPx * settings.sensitivity);
+  camera.angularSensibilityX = base;
+  camera.angularSensibilityY = settings.invertY ? -base : base;
+}
+
+/** Stopnie obrotu na piksel dla trybu rozglądania w Studio (z uwzględnieniem ustawień) */
+export function lookRadPerPx() {
+  return ((MOUSE_DEG_PER_PX * settings.sensitivity) * Math.PI) / 180;
 }
 
 /**
@@ -47,19 +59,23 @@ export function pointerButtons(
   mouseButtons: number[],
 ): () => void {
   const ptr = camera.inputs.attached.pointers as ArcRotateCameraPointersInput | undefined;
+  let lastDeg = MOUSE_DEG_PER_PX;
   const onDown = (e: PointerEvent) => {
     if (!ptr) return;
     const mouse = e.pointerType === "mouse";
     ptr.buttons = mouse ? mouseButtons : [0];
-    const deg = mouse ? MOUSE_DEG_PER_PX : TOUCH_DEG_PER_PX;
-    camera.angularSensibilityX = camera.angularSensibilityY = 180 / Math.PI / deg;
+    lastDeg = mouse ? MOUSE_DEG_PER_PX : TOUCH_DEG_PER_PX;
+    applySensitivity(camera, lastDeg);
   };
+  // suwak w ustawieniach działa od razu
+  const unsub = onSettingsChange(() => applySensitivity(camera, lastDeg));
   const noMenu = (e: Event) => e.preventDefault();
   // capture - musi zadziałać zanim kamera Babylona obsłuży kliknięcie
   canvas.addEventListener("pointerdown", onDown, true);
   canvas.addEventListener("contextmenu", noMenu);
   if (ptr) ptr.buttons = mouseButtons;
   return () => {
+    unsub();
     canvas.removeEventListener("pointerdown", onDown, true);
     canvas.removeEventListener("contextmenu", noMenu);
   };

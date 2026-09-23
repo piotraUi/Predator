@@ -29,6 +29,11 @@ function makeHost() {
     heal: (p, n) => log.push(`heal:${p}:${n}`),
     getHealth: () => 75,
     setHealth: (p, n) => log.push(`hp:${p}:${n}`),
+    setCharacter: (p, n) => log.push(`char:${p}:${n}`),
+    playAnimation: (p, n) => log.push(`anim:${p}:${n}`),
+    stopAnimation: (p) => log.push(`stop:${p}`),
+    npcAnimation: (p, n) => log.push(`npc:${p}:${n}`),
+    setSky: (c) => log.push(`sky:${c}`),
   };
   return { host, log, parts, scores };
 }
@@ -117,5 +122,23 @@ test("narzędzia, zdrowie i śmierć", () => {
   e.died("a", "");
   assert.deepEqual(log, ["give:a:Miecz", "dmg:a:25", "remove:a:Stary", "hp:a:100", "heal:a:10"]);
   assert.equal(scores.get("b"), 1);
+  e.close();
+});
+
+test("postacie, animacje i niebo", () => {
+  const { host, log } = makeHost();
+  const e = new LuaEngine(host);
+  e.runScript("t", `
+    onPlayerJoin(function(p)
+      setCharacter(p, "Zombie")
+      playAnimation(p, "Taniec")
+      stopAnimation(p)
+      setCharacter(p)
+      npcAnimation("Barista", "Machanie")
+      setSky("#102040")
+    end)
+  `);
+  e.playerJoined("a");
+  assert.deepEqual(log, ["char:a:Zombie", "anim:a:Taniec", "stop:a", "char:a:", "npc:Barista:Machanie", "sky:#102040"]);
   e.close();
 });

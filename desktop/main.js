@@ -1,49 +1,108 @@
-// Predator na komputer: okno, które łączy się z Twoim serwerem gry.
-// Serwer sam podaje grę, więc aplikacja zawsze ma najnowszą wersję.
-const { app, BrowserWindow, ipcMain, Menu } = require("electron");
+// Predator na komputer.
+// Gra jest wbudowana w aplikację, więc Studio działa bez serwera (pliki .pgame).
+// Z serwerem łączymy się po zalogowaniu (adres wpisuje się na ekranie logowania).
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
-const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
-const loadSettings = () => {
-  try {
-    return JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
-  } catch {
-    return {};
-  }
-};
-const saveSettings = (s) => fs.writeFileSync(settingsFile(), JSON.stringify(s));
+const APP_DIR = path.join(__dirname, "app");
+const GAME_EXT = ".pgame";
 
-let win;
+// własny adres app://predator/... - pliki gry ładowane z dysku.
+// Nie oznaczamy go jako "secure", żeby gra mogła łączyć się z serwerem po zwykłym http:// w sieci lokalnej.
+protocol.registerSchemesAsPrivileged([
+  { scheme: "app", privileges: { standard: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+]);
 
-function normalize(url) {
-  let u = String(url || "").trim().replace(/\/+$/, "");
-  if (u && !/^https?:\/\//.test(u)) u = "http://" + u;
-  if (u && !/:\d+$/.test(u) && !u.startsWith("https:")) u += ":2567";
-  return u;
+let win = null;
+let pendingFile = null;
+let dirty = false;
+
+/** Plik .pgame podany przy uruchomieniu (dwuklik w Eksploratorze) */
+function fileFromArgs(argv) {
+  const f = argv.slice(1).find((a) => a.toLowerCase().endsWith(GAME_EXT) && fs.existsSync(a));
+  return f ? path.resolve(f) : null;
 }
 
-function showConnect(error) {
-  win.loadFile(path.join(__dirname, "connect.html"), {
-    query: { server: loadSettings().server || "", error: error || "" },
+function readGameFile(p) {
+  try {
+    return { name: path.basename(p), path: p, text: fs.readFileSync(p, "utf8") };
+  } catch (e) {
+    dialog.showErrorBox("Predator", "Nie udało się otworzyć pliku:\n" + e.message);
+    return null;
+  }
+}
+
+function openFileInApp(p) {
+  const f = readGameFile(p);
+  if (!f) return;
+  if (win && win.webContents && !win.webContents.isLoading()) win.webContents.send("file-opened", f);
+  else pendingFile = f;
+}
+
+// tylko jedno okno - kolejne dwukliki otwierają plik w już działającej aplikacji
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", (_e, argv) => {
+    const f = fileFromArgs(argv);
+    if (f) openFileInApp(f);
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
   });
 }
+// macOS
+app.on("open-file", (e, p) => {
+  e.preventDefault();
+  openFileInApp(p);
+});
 
-async function connect(server) {
-  try {
-    const res = await fetch(server + "/health", { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error();
-  } catch {
-    showConnect("Nie można połączyć się z " + server);
-    return;
+ipcMain.handle("get-opened-file", () => {
+  const f = pendingFile;
+  pendingFile = null;
+  return f;
+});
+
+ipcMain.handle("open-file", async (_e, filters) => {
+  const r = await dialog.showOpenDialog(win, { properties: ["openFile"], filters });
+  if (r.canceled || !r.filePaths[0]) return null;
+  return readGameFile(r.filePaths[0]);
+});
+
+ipcMain.handle("save-file", async (_e, { path: p, name, text, ext }) => {
+  let target = p;
+  if (!target) {
+    const r = await dialog.showSaveDialog(win, {
+      defaultPath: name,
+      filters: [{ name: ext === "pchar" ? "Postać Predator" : "Gra Predator", extensions: [ext] }],
+    });
+    if (r.canceled || !r.filePath) return null;
+    target = r.filePath;
   }
-  saveSettings({ ...loadSettings(), server });
-  win.loadURL(server);
-}
+  fs.writeFileSync(target, text, "utf8");
+  return target;
+});
 
-ipcMain.on("connect", (_e, url) => connect(normalize(url)));
+ipcMain.on("set-dirty", (_e, v) => {
+  dirty = !!v;
+});
 
 app.whenReady().then(() => {
+  protocol.handle("app", (req) => {
+    const { pathname } = new URL(req.url);
+    let file = path.normalize(path.join(APP_DIR, decodeURIComponent(pathname)));
+    // nie wychodzimy poza folder gry; nieznane ścieżki -> index.html (aplikacja jednostronicowa)
+    if (!file.startsWith(APP_DIR) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      file = path.join(APP_DIR, "index.html");
+    }
+    return net.fetch(pathToFileURL(file).toString());
+  });
+
+  pendingFile = pendingFile ?? (fileFromArgs(process.argv) ? readGameFile(fileFromArgs(process.argv)) : null);
+
   win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -60,7 +119,6 @@ app.whenReady().then(() => {
       {
         label: "Predator",
         submenu: [
-          { label: "Zmień serwer", accelerator: "CmdOrCtrl+Shift+S", click: () => showConnect() },
           { label: "Pełny ekran", role: "togglefullscreen" },
           { role: "reload", label: "Odśwież" },
           { role: "toggleDevTools", label: "Narzędzia deweloperskie" },
@@ -70,12 +128,22 @@ app.whenReady().then(() => {
       },
     ]),
   );
-  win.webContents.on("did-fail-load", (_e, code, desc, url) => {
-    if (!url.startsWith("file:")) showConnect("Utracono połączenie z serwerem (" + desc + ")");
+  // niezapisane zmiany w Studio - pytamy przed zamknięciem
+  win.on("close", (e) => {
+    if (!dirty) return;
+    const choice = dialog.showMessageBoxSync(win, {
+      type: "question",
+      buttons: ["Zamknij bez zapisywania", "Wróć"],
+      defaultId: 1,
+      cancelId: 1,
+      message: "Masz niezapisane zmiany w Studio. Zamknąć mimo to?",
+    });
+    if (choice === 1) e.preventDefault();
   });
-  const saved = loadSettings().server;
-  if (saved) connect(saved);
-  else showConnect();
+  win.webContents.on("will-prevent-unload", (e) => e.preventDefault());
+  // po systemowych okienkach Windows potrafi "zgubić" fokus pól tekstowych - przywracamy go
+  win.on("focus", () => win.webContents.focus());
+  win.loadURL("app://predator/index.html");
 });
 
 app.on("window-all-closed", () => app.quit());

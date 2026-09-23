@@ -1,12 +1,12 @@
 // Silnik skryptów Lua (fengari) uruchamiany na serwerze dla każdego świata.
 // Skrypty są w piaskownicy: brak dostępu do plików, systemu i sieci,
 // a każde wywołanie ma limit instrukcji, więc nieskończona pętla nie zawiesi serwera.
-import { createRequire } from "node:module";
+// Ten sam kod działa na serwerze (Node) i w przeglądarce (testowanie offline w Studio).
+import fengariModule from "fengari";
 
-const require = createRequire(import.meta.url);
 // fengari nie ma typów TypeScript
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const fengari: any = require("fengari");
+const fengari: any = fengariModule;
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
 
 /** Co skrypt może zrobić ze światem - implementuje to pokój gry. */
@@ -33,6 +33,11 @@ export interface ScriptHost {
   heal(player: string, amount: number): void;
   getHealth(player: string): number;
   setHealth(player: string, hp: number): void;
+  setCharacter(player: string, characterName: string): void;
+  playAnimation(player: string, animName: string): void;
+  stopAnimation(player: string): void;
+  npcAnimation(partName: string, animName: string): void;
+  setSky(color: string): void;
 }
 
 /** 1000 instrukcji * 300 = 300 tys. instrukcji na jedno wywołanie */
@@ -339,6 +344,26 @@ export class LuaEngine {
     def("getHealth", (L) => {
       lua.lua_pushnumber(L, h.getHealth(this.str(L, 1)));
       return 1;
+    });
+    def("setCharacter", (L) => {
+      h.setCharacter(this.str(L, 1), lua.lua_isnoneornil(L, 2) ? "" : this.str(L, 2));
+      return 0;
+    });
+    def("playAnimation", (L) => {
+      h.playAnimation(this.str(L, 1), this.str(L, 2));
+      return 0;
+    });
+    def("stopAnimation", (L) => {
+      h.stopAnimation(this.str(L, 1));
+      return 0;
+    });
+    def("npcAnimation", (L) => {
+      h.npcAnimation(this.str(L, 1), lua.lua_isnoneornil(L, 2) ? "" : this.str(L, 2));
+      return 0;
+    });
+    def("setSky", (L) => {
+      h.setSky(this.str(L, 1));
+      return 0;
     });
     def("setHealth", (L) => {
       h.setHealth(this.str(L, 1), lauxlib.luaL_checknumber(L, 2));
