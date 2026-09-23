@@ -12,7 +12,8 @@
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
-    "test": "npm test -w server"
+    "test": "npm test -w server",
+    "export-games": "tsx scripts/export-games.ts"
   },
   "engines": {
     "node": ">=22.13"

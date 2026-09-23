@@ -1,7 +1,10 @@
 // Klockowa postać gracza (w stylu R6): głowa, tułów, ręce, nogi, czapka i twarz.
 import {
+  AbstractMesh,
+  AnimationGroup,
   Color3,
   DynamicTexture,
+  ImportMeshAsync,
   Mesh,
   MeshBuilder,
   Scene,
@@ -10,9 +13,14 @@ import {
   Vector3,
   type ShadowGenerator,
 } from "@babylonjs/core";
-import type { ActionAnim, Anim, Avatar, ToolDef } from "../../../shared/types.ts";
+import { samplePose } from "../../../shared/anim.ts";
+import type { ActionAnim, AnimDef, Anim, Avatar, CharacterDef, Joint, Pose, ToolDef } from "../../../shared/types.ts";
+import { JOINTS } from "../../../shared/types.ts";
+import { hexColor } from "./color.ts";
 import { buildToolModel, type ToolModelNode } from "./toolModels.ts";
-import { hexColor } from "./world.ts";
+import { createWedge } from "./world.ts";
+
+const DEG = Math.PI / 180;
 
 /** Kąt ramienia wyciągniętego do przodu */
 const HOLD = Math.PI / 2;
@@ -173,6 +181,15 @@ export class AvatarModel {
   private flashT = 0;
   private tool: ToolModelNode | null = null;
   private action: { type: ActionAnim; t: number } | null = null;
+  private accessories: TransformNode[] = [];
+  private model: { root: TransformNode; groups: AnimationGroup[]; playing: AnimationGroup | null; data: string } | null = null;
+  /** kończy się, gdy model .glb jest wczytany (albo go nie ma) */
+  modelReady: Promise<void> = Promise.resolve();
+  private modelToken = 0;
+  private bodyHidden = false;
+  private custom: { anim: AnimDef; t: number; joints: Set<Joint>; usesY: boolean } | null = null;
+  /** poza ustawiona na sztywno (podgląd w edytorze animacji) */
+  previewPose: Pose | null = null;
   anim: Anim = "idle";
 
   constructor(
@@ -256,6 +273,186 @@ export class AvatarModel {
 
   get headNode() {
     return this.head;
+  }
+
+  /** Wygląd: awatar gracza albo postać zrobiona w Studio (kolory, skala, dodatki, model 3D) */
+  setLook(avatar: Avatar, character?: CharacterDef | null) {
+    this.setAvatar(character?.look ?? avatar);
+    this.body.scaling.setAll(character?.scale ?? 1);
+    for (const n of this.accessories) n.dispose();
+    this.accessories = [];
+    for (const a of character?.accessories ?? []) {
+      const s = this.scene;
+      const m =
+        a.shape === "sphere"
+          ? MeshBuilder.CreateSphere("acc", { diameter: 1, segments: 12 }, s)
+          : a.shape === "cylinder"
+            ? MeshBuilder.CreateCylinder("acc", { diameter: 1, height: 1, tessellation: 16 }, s)
+            : a.shape === "wedge"
+              ? createWedge("acc", s)
+              : MeshBuilder.CreateBox("acc", { size: 1 }, s);
+      m.parent = this.jointMesh(a.joint);
+      m.position.set(a.x, a.y, a.z);
+      m.scaling.set(a.sx, a.sy, a.sz);
+      m.rotation.set(a.rx * DEG, a.ry * DEG, a.rz * DEG);
+      m.material = mat(s, a.color, a.material === "neon");
+      m.isPickable = this.pickable;
+      this.shadows?.addShadowCaster(m);
+      this.accessories.push(m);
+    }
+    this.setModel(character?.model ?? null);
+  }
+
+  /** Mesh części ciała, do której doczepiamy dodatki */
+  jointMesh(j: Joint): Mesh {
+    switch (j) {
+      case "head":
+        return this.head;
+      case "torso":
+        return this.torso;
+      case "leftArm":
+        return this.limbs.la.mesh;
+      case "rightArm":
+        return this.limbs.ra.mesh;
+      case "leftLeg":
+        return this.limbs.ll.mesh;
+      default:
+        return this.limbs.rl.mesh;
+    }
+  }
+
+  /** Model .glb zaimportowany do postaci (ładuje się w tle) */
+  private setModel(model: CharacterDef["model"] | null) {
+    // ten sam plik - tylko przesuwamy / skalujemy, bez ponownego wczytywania
+    if (model && this.model && this.model.data === model.data) {
+      const r = this.model.root;
+      r.position.set(model.x, model.y, model.z);
+      r.rotation.y = model.ry * DEG;
+      r.scaling.setAll(model.scale);
+      this.setBodyHidden(model.hideBody);
+      return;
+    }
+    this.modelReady = this.loadModel(model);
+  }
+
+  private async loadModel(model: CharacterDef["model"] | null) {
+    const token = ++this.modelToken;
+    this.model?.root.dispose(false, true);
+    for (const g of this.model?.groups ?? []) g.dispose();
+    this.model = null;
+    this.setBodyHidden(false);
+    if (!model) return;
+    try {
+      await import("@babylonjs/loaders/glTF");
+      const res = await ImportMeshAsync(model.data, this.scene, { pluginExtension: model.data.includes("gltf+json") ? ".gltf" : ".glb" });
+      if (token !== this.modelToken || this.root.isDisposed()) {
+        res.meshes.forEach((m) => m.dispose());
+        res.animationGroups.forEach((g) => g.dispose());
+        return;
+      }
+      const root = new TransformNode("model", this.scene);
+      root.parent = this.body;
+      root.position.set(model.x, model.y, model.z);
+      root.rotation.y = model.ry * DEG;
+      root.scaling.setAll(model.scale);
+      for (const m of res.meshes) {
+        if (!m.parent) m.parent = root;
+        m.isPickable = this.pickable;
+        this.shadows?.addShadowCaster(m as AbstractMesh);
+      }
+      res.animationGroups.forEach((g) => g.stop());
+      this.model = { root, groups: res.animationGroups, playing: null, data: model.data };
+      this.setBodyHidden(model.hideBody);
+    } catch (e) {
+      console.warn("Nie udało się wczytać modelu postaci", e);
+    }
+  }
+
+  private setBodyHidden(hidden: boolean) {
+    this.bodyHidden = hidden;
+    for (const m of this.allMeshes) m.isVisible = !hidden;
+    for (const m of this.hatNode?.getChildMeshes() ?? []) m.isVisible = !hidden;
+    for (const m of this.accessories) (m as Mesh).isVisible = !hidden;
+  }
+
+  /** Skala i przesunięcie, przy których model ma wysokość zwykłej postaci i stoi na ziemi */
+  fitModel(targetHeight = 5.2): { scale: number; y: number } | null {
+    const m = this.model;
+    if (!m) return null;
+    const saved = { s: m.root.scaling.x, y: m.root.position.y };
+    m.root.scaling.setAll(1);
+    m.root.position.y = 0;
+    this.root.computeWorldMatrix(true);
+    const meshes = m.root.getChildMeshes();
+    let min = Infinity;
+    let max = -Infinity;
+    const bodyScale = this.body.scaling.y || 1;
+    for (const mesh of meshes) {
+      mesh.computeWorldMatrix(true);
+      const bb = mesh.getBoundingInfo().boundingBox;
+      min = Math.min(min, bb.minimumWorld.y);
+      max = Math.max(max, bb.maximumWorld.y);
+    }
+    m.root.scaling.setAll(saved.s);
+    m.root.position.y = saved.y;
+    const rootY = this.root.getAbsolutePosition().y;
+    const h = (max - min) / bodyScale;
+    if (!isFinite(h) || h <= 0) return null;
+    const scale = targetHeight / h;
+    return { scale, y: -((min - rootY) / bodyScale) * scale };
+  }
+
+  /** Nazwy animacji zapisanych w zaimportowanym modelu (.glb) */
+  get modelAnimations(): string[] {
+    return this.model?.groups.map((g) => g.name) ?? [];
+  }
+
+  /** Odtwarza animację z edytora animacji (null = stop) */
+  playCustom(anim: AnimDef | null) {
+    if (!anim) {
+      this.custom = null;
+      return;
+    }
+    const joints = new Set<Joint>();
+    let usesY = false;
+    for (const k of anim.keyframes) {
+      for (const j of JOINTS) if (k.pose.joints[j]) joints.add(j);
+      if (k.pose.y) usesY = true;
+    }
+    this.custom = { anim, t: 0, joints, usesY };
+  }
+
+  /** Ustawia pozę na części ciała (kąty w stopniach) */
+  private applyPose(pose: Pose, only?: Set<Joint>, useY = true) {
+    const set = (node: TransformNode, j: Joint) => {
+      if (only && !only.has(j)) return;
+      const r = pose.joints[j] ?? [0, 0, 0];
+      node.rotation.set(r[0] * DEG, r[1] * DEG, r[2] * DEG);
+    };
+    set(this.head, "head");
+    set(this.body, "torso");
+    set(this.limbs.la.pivot, "leftArm");
+    set(this.limbs.ra.pivot, "rightArm");
+    set(this.limbs.ll.pivot, "leftLeg");
+    set(this.limbs.rl.pivot, "rightLeg");
+    if (useY) this.body.position.y = pose.y ?? 0;
+  }
+
+  /** Animacje zapisane w modelu .glb: chodzenie / stanie, jeśli są */
+  private updateModelAnim() {
+    const m = this.model;
+    if (!m || m.groups.length === 0) return;
+    const find = (re: RegExp) => m.groups.find((g) => re.test(g.name));
+    const want =
+      this.anim === "walk"
+        ? (find(/walk|run|chod|bieg/i) ?? m.groups[0])
+        : this.anim === "jump" || this.anim === "fall"
+          ? (find(/jump|skok|fall/i) ?? find(/idle|stand|stoi/i) ?? m.groups[0])
+          : (find(/idle|stand|stoi/i) ?? m.groups[0]);
+    if (m.playing === want) return;
+    m.playing?.stop();
+    want.start(true);
+    m.playing = want;
   }
 
   setVisible(v: boolean) {
@@ -384,6 +581,16 @@ export class AvatarModel {
     body.position.y += (bodyY - body.position.y) * Math.min(1, dt * 14);
     body.rotation.y += (bodyRot - body.rotation.y) * Math.min(1, dt * 10);
 
+    // ---- animacje z edytora animacji ----
+    if (this.previewPose) this.applyPose(this.previewPose);
+    else if (this.custom) {
+      const c = this.custom;
+      c.t += dt;
+      this.applyPose(samplePose(c.anim, c.t), c.joints, c.usesY);
+      if (!c.anim.loop && c.t >= c.anim.duration) this.custom = null;
+    }
+    this.updateModelAnim();
+
     // ---- trzymanie narzędzia ----
     if (this.tool && this.anim !== "sit" && this.anim !== "wave") {
       lerp(ra, HOLD, 20);
@@ -435,6 +642,8 @@ export class AvatarModel {
   }
 
   dispose() {
+    this.modelToken++;
+    for (const g of this.model?.groups ?? []) g.dispose();
     for (const m of this.bodyMats) m.dispose();
     this.root.dispose(false, true);
     this.faceTex.dispose();

@@ -69,6 +69,11 @@ Blockly.common.defineBlocksWithJsonArray([
   { type: "p_remove_tool", message0: "zabierz graczowi narzędzie %1", args0: [partField("TOOL", "Miecz")], previousStatement: null, nextStatement: null, colour: PLAYER },
   { type: "p_damage", message0: "zadaj graczowi %1 obrażeń", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER },
   { type: "p_heal", message0: "ulecz gracza o %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "p_set_character", message0: "zmień postać gracza na %1", args0: [partField("CHAR", "Zombie")], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Nazwa postaci z panelu Postacie (pusta = własny awatar)" },
+  { type: "p_play_anim", message0: "odtwórz animację %1 na graczu", args0: [partField("ANIM", "Taniec")], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "p_stop_anim", message0: "zatrzymaj animację gracza", previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "p_npc_anim", message0: "NPC %1 niech odtwarza %2", args0: [partField("PART", "NPC"), partField("ANIM", "Machanie")], previousStatement: null, nextStatement: null, colour: PART },
+  { type: "p_sky", message0: "zmień kolor nieba na %1", args0: [{ type: "field_dropdown", name: "COLOR", options: [["dzień", "#8ec8ff"], ["zachód słońca", "#ffb57a"], ["noc", "#0b1026"], ["burza", "#4a5160"], ["kosmos", "#000000"]] }], previousStatement: null, nextStatement: null, colour: VALUE },
   { type: "p_killer_score", message0: "dodaj zabójcy %1 punktów", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Działa w bloczku „gdy gracz zginie”" },
 
   // ---- wartości ----
@@ -123,6 +128,11 @@ g.forBlock["p_remove_tool"] = (b) => `if player then removeTool(player, ${tool(b
 g.forBlock["p_damage"] = (b) => `if player then damage(player, ${val(b, "N", "10")}) end\n`;
 g.forBlock["p_heal"] = (b) => `if player then heal(player, ${val(b, "N", "10")}) end\n`;
 g.forBlock["p_killer_score"] = (b) => `if killer and killer ~= "" then addScore(killer, ${val(b, "N", "1")}) end\n`;
+g.forBlock["p_set_character"] = (b) => `if player then setCharacter(player, ${q(String(b.getFieldValue("CHAR") ?? ""))}) end\n`;
+g.forBlock["p_play_anim"] = (b) => `if player then playAnimation(player, ${q(String(b.getFieldValue("ANIM") ?? ""))}) end\n`;
+g.forBlock["p_stop_anim"] = () => `if player then stopAnimation(player) end\n`;
+g.forBlock["p_npc_anim"] = (b) => `npcAnimation(${part(b)}, ${q(String(b.getFieldValue("ANIM") ?? ""))})\n`;
+g.forBlock["p_sky"] = (b) => `setSky(${q(b.getFieldValue("COLOR"))})\n`;
 g.forBlock["p_health"] = () => [`(player and getHealth(player) or 0)`, Order.ATOMIC];
 g.forBlock["p_player_name"] = () => [`(player and playerName(player) or "")`, Order.ATOMIC];
 g.forBlock["p_message"] = () => [`(message or "")`, Order.ATOMIC];
@@ -144,6 +154,7 @@ const TOOLBOX = {
       kind: "category", name: "Ogólne", colour: VALUE,
       contents: [
         block("p_say", { inputs: { TEXT: textShadow("Cześć!") } }),
+        block("p_sky"),
         block("p_wait", { inputs: { SEC: numShadow(1) } }),
         block("p_print", { inputs: { TEXT: textShadow("test") } }),
       ],
@@ -168,6 +179,10 @@ const TOOLBOX = {
         block("p_set_jump", { inputs: { N: numShadow(80) } }),
         block("p_player_name"), block("p_message"), block("p_score"), block("p_player_count"),
       ],
+    },
+    {
+      kind: "category", name: "Postacie i animacje", colour: 290,
+      contents: [block("p_set_character"), block("p_play_anim"), block("p_stop_anim"), block("p_npc_anim")],
     },
     {
       kind: "category", name: "Narzędzia i walka", colour: 0,

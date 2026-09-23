@@ -34,6 +34,7 @@ interface Remote {
   hpBar: Rectangle;
   hpFill: Rectangle;
   username: string;
+  avatar: Avatar;
   tx: number; ty: number; tz: number; tr: number;
 }
 
@@ -140,6 +141,11 @@ export function playScreen(
     const toolsById = new Map<string, ToolDef>(init.world.tools.map((t) => [t.id, t]));
     const toolDefs = (ids: string[]) => ids.map((id) => toolsById.get(id)).filter((t): t is ToolDef => !!t);
     world.setTools(init.world.tools);
+    const charsById = new Map(init.world.characters.map((c) => [c.id, c]));
+    const animsById = new Map(init.world.animations.map((a) => [a.id, a]));
+    world.setCharacters(init.world.characters, init.world.animations);
+    /** postać ze świata dla gracza: ustawiona skryptem albo "postać graczy" z ustawień gry */
+    const charFor = (id: string | null) => charsById.get(id ?? "") ?? charsById.get(init.world.playerCharacter ?? "") ?? null;
 
     // ---------- kamera ----------
     // ustawienia jak w Robloxie: odległość ~12,5, zoom do 128, FOV 70°
@@ -163,6 +169,9 @@ export function playScreen(
 
     // ---------- gracz ----------
     const local = new AvatarModel(scene, me.avatar, world.shadows);
+    local.setLook(me.avatar, charFor(init.players.find((p) => p.sid === init.you)?.character ?? null));
+    /** animacja-emotka włączona przez gracza (przerywa ją ruch) */
+    let emoteAnim: string | null = null;
     const body: Body = { ...init.spawn, vx: 0, vy: 0, vz: 0, onGround: false };
     // na starcie postać patrzy w stronę środka mapy
     let ry = Math.hypot(init.spawn.x, init.spawn.z) > 1 ? Math.atan2(init.spawn.x, init.spawn.z) : 0;
@@ -227,6 +236,8 @@ export function playScreen(
     const addRemote = (p: NetPlayer) => {
       if (p.sid === init.you || remotes.has(p.sid)) return;
       const model = new AvatarModel(scene, p.avatar as Avatar, world.shadows, true);
+      model.setLook(p.avatar as Avatar, charFor(p.character));
+      if (p.animation) model.playCustom(animsById.get(p.animation) ?? null);
       model.root.position.set(p.x, p.y, p.z);
       model.setTool(p.tool ? (toolsById.get(p.tool) ?? null) : null);
       const tag = makeTag(p.username);
@@ -247,7 +258,7 @@ export function playScreen(
       gui.addControl(hpBar);
       hpBar.linkWithMesh(model.headNode);
       hpBar.linkOffsetY = -37;
-      const rm: Remote = { model, tag, hpBar, hpFill, username: p.username, tx: p.x, ty: p.y, tz: p.z, tr: p.ry };
+      const rm: Remote = { model, tag, hpBar, hpFill, username: p.username, avatar: p.avatar as Avatar, tx: p.x, ty: p.y, tz: p.z, tr: p.ry };
       remotes.set(p.sid, rm);
       setRemoteHp(rm, p.hp, p.maxHp);
     };
@@ -359,7 +370,27 @@ export function playScreen(
       EMOTES.map((e) =>
         h("button", { class: "btn small", onClick: () => (startEmote(e), emoteMenu.classList.add("hidden")) }, EMOTE_LABELS[e]),
       ),
+      // animacje zrobione w edytorze animacji i oznaczone jako emotki
+      init.world.animations
+        .filter((a) => a.emote)
+        .map((a) =>
+          h("button", { class: "btn small", onClick: () => (startAnimEmote(a.id), emoteMenu.classList.add("hidden")) }, "✨ " + a.name),
+        ),
     );
+    const startAnimEmote = (id: string) => {
+      if (dead) return;
+      emote = null;
+      emoteAnim = id;
+      hotbar.select(null);
+      local.playCustom(animsById.get(id) ?? null);
+      r.send("anim", id);
+    };
+    const stopAnimEmote = () => {
+      if (!emoteAnim) return;
+      emoteAnim = null;
+      local.playCustom(null);
+      r.send("anim", null);
+    };
     const startEmote = (e: Emote) => {
       if (!dead && body.onGround) {
         emote = e;
@@ -491,6 +522,23 @@ export function playScreen(
       setRemoteHp(rm, m.hp, m.max);
       if (m.hp > 0 && before !== rm.hpFill.width) rm.model.flash();
     });
+    r.onMessage("char", (m: { sid: string; character: string | null }) => {
+      const model = m.sid === init.you ? local : remotes.get(m.sid)?.model;
+      const avatar = m.sid === init.you ? me.avatar : (remotes.get(m.sid)?.avatar ?? me.avatar);
+      model?.setLook(avatar, charFor(m.character));
+    });
+    r.onMessage("panim", (m: { sid: string; anim: string | null }) => {
+      if (m.sid === init.you) {
+        // animację włączoną przez skrypt gracz widzi u siebie; własną emotkę już odtwarza
+        if (m.anim !== emoteAnim) {
+          emoteAnim = null;
+          local.playCustom(m.anim ? (animsById.get(m.anim) ?? null) : null);
+        }
+        return;
+      }
+      remotes.get(m.sid)?.model.playCustom(m.anim ? (animsById.get(m.anim) ?? null) : null);
+    });
+    r.onMessage("sky", (c: string) => world.setSky(c));
     r.onMessage("boost", (b: { secs: number; mult: number }) => {
       boostUntil = performance.now() + b.secs * 1000;
       boostMult = b.mult;
@@ -644,8 +692,10 @@ export function playScreen(
       if (!dead) {
         anim = !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
         // ruch albo skok przerywa emotkę
-        if (anim !== "idle") emote = null;
-        else if (emote) anim = emote;
+        if (anim !== "idle") {
+          emote = null;
+          stopAnimEmote();
+        } else if (emote) anim = emote;
       }
 
       local.root.position.set(body.x, body.y, body.z);

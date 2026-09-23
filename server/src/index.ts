@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import type { WorldData } from "../../shared/types.ts";
 import { demoArena, demoObby } from "../../shared/world.ts";
+import { demoCity } from "../../shared/demos/city.ts";
 import { api } from "./api.ts";
 import { hashPassword } from "./auth.ts";
 import { config } from "./config.ts";
@@ -38,6 +39,7 @@ gameServer.define("world", WorldRoom).filterBy(["worldId"]);
 const demos: [string, string, () => WorldData][] = [
   ["Tor przeszkód", "Przykładowy tor przeszkód. Uważaj na lawę!", demoObby],
   ["Arena", "Walka na miecze i pistolety! Zbieraj bronie z złotych pól.", demoArena],
+  ["Predator City", "Miasto do spotkań: prace, kawiarnia, park, klub disco i domy. Zarabiaj, tańcz i poznawaj ludzi!", demoCity],
 ];
 let owner = users.byName("Predator");
 if (!owner) {

@@ -16,8 +16,11 @@ import {
   VertexData,
   type AbstractMesh,
 } from "@babylonjs/core";
-import type { Part, ToolDef } from "../../../shared/types.ts";
+import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
+import type { AnimDef, CharacterDef, Part, ToolDef } from "../../../shared/types.ts";
+import { AvatarModel } from "./avatar.ts";
 import { buildToolModel } from "./toolModels.ts";
+import { hexColor } from "./color.ts";
 
 export function createEngine(canvas: HTMLCanvasElement) {
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true, antialias: true });
@@ -32,9 +35,7 @@ export function createEngine(canvas: HTMLCanvasElement) {
   return { engine, dispose };
 }
 
-export function hexColor(hex: string) {
-  return Color3.FromHexString(hex.length === 7 ? hex : "#a3a2a5");
-}
+export { hexColor };
 
 /** Tekstura siatki (jak na podłożu w Robloxie), powtarzana co 4 jednostki */
 function gridTexture(scene: Scene, uScale: number, vScale: number) {
@@ -93,7 +94,7 @@ export class MaterialCache {
 }
 
 /** Siatka klina (rampy) o rozmiarze 1x1x1, wznosi się w stronę +z */
-function createWedge(name: string, scene: Scene) {
+export function createWedge(name: string, scene: Scene) {
   const mesh = new Mesh(name, scene);
   // wierzchołki: dół prostokąt, góra krawędź z tyłu (+z)
   const p = [
@@ -133,14 +134,21 @@ export class WorldView {
   private tools = new Map<string, ToolDef>();
   /** modele narzędzi unoszące się nad polami "pickup" */
   private pickups = new Map<string, { node: TransformNode; baseY: number }>();
+  private characters = new Map<string, CharacterDef>();
+  private animations = new Map<string, AnimDef>();
+  /** postacie NPC stojące na klockach "npc" */
+  private npcs = new Map<string, { model: AvatarModel; key: string }>();
+  /** w edytorze klocek NPC jest widoczny (półprzezroczysty), w grze - tylko postać */
+  private editor: boolean;
   shadows: ShadowGenerator | null = null;
   sun: DirectionalLight;
   hemi: HemisphericLight;
 
   constructor(
     public scene: Scene,
-    opts: { shadows?: boolean; skyColor?: string } = {},
+    opts: { shadows?: boolean; skyColor?: string; editor?: boolean } = {},
   ) {
+    this.editor = !!opts.editor;
     this.materials = new MaterialCache(scene);
     const sky = hexColor(opts.skyColor ?? "#8ec8ff");
     scene.clearColor = sky.toColor4(1);
@@ -167,6 +175,12 @@ export class WorldView {
       this.shadows.bias = 0.0008;
       this.shadows.normalBias = 0.02;
     }
+    // NPC się animują
+    scene.onBeforeRenderObservable.add(() => {
+      if (this.npcs.size === 0) return;
+      const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.1);
+      for (const n of this.npcs.values()) n.model.update(dt);
+    });
     // narzędzia do podniesienia kręcą się i unoszą
     scene.onBeforeRenderObservable.add(() => {
       if (this.pickups.size === 0) return;
@@ -182,6 +196,41 @@ export class WorldView {
   setTools(tools: ToolDef[]) {
     this.tools = new Map(tools.map((t) => [t.id, t]));
     for (const p of this.parts.values()) if (p.kind === "pickup" || this.pickups.has(p.id)) this.updatePickup(p);
+  }
+
+  /** Postacie i animacje świata - potrzebne do pokazania NPC */
+  setCharacters(chars: CharacterDef[], anims: AnimDef[]) {
+    this.characters = new Map(chars.map((c) => [c.id, c]));
+    this.animations = new Map(anims.map((a) => [a.id, a]));
+    for (const n of this.npcs.values()) n.key = ""; // wymuś odświeżenie
+    for (const p of this.parts.values()) if (p.kind === "npc" || this.npcs.has(p.id)) this.updateNpc(p);
+  }
+
+  private updateNpc(part: Part) {
+    const existing = this.npcs.get(part.id);
+    if (part.kind !== "npc" || part.transparency >= 0.999) {
+      existing?.model.dispose();
+      this.npcs.delete(part.id);
+      return;
+    }
+    const char = part.characterId ? this.characters.get(part.characterId) : undefined;
+    const anim = part.animId ? this.animations.get(part.animId) : undefined;
+    const key = `${char ? JSON.stringify(char).length + char.id : ""}|${anim?.id ?? ""}|${anim ? JSON.stringify(anim).length : 0}`;
+    let n = existing;
+    if (!n) {
+      n = { model: new AvatarModel(this.scene, DEFAULT_AVATAR, this.shadows), key: "" };
+      this.npcs.set(part.id, n);
+      for (const m of n.model.root.getChildMeshes()) m.metadata = { partId: part.id };
+    }
+    // postać stoi stopami na dole klocka
+    n.model.root.position.set(part.x, part.y - part.sy / 2, part.z);
+    n.model.root.rotation.y = (part.ry * Math.PI) / 180;
+    if (n.key !== key) {
+      n.key = key;
+      n.model.setLook(DEFAULT_AVATAR, char ?? null);
+      n.model.playCustom(anim ?? null);
+      if (this.editor) for (const m of n.model.root.getChildMeshes()) (m.metadata = { partId: part.id }), (m.isPickable = true);
+    }
   }
 
   private updatePickup(part: Part) {
@@ -252,7 +301,13 @@ export class WorldView {
         : undefined;
     mesh.material = this.materials.get(part.color, part.material, part.transparency, grid);
     mesh.isVisible = part.transparency < 0.999;
+    if (part.kind === "npc") {
+      // w grze widać samą postać; w Studio półprzezroczysty klocek, żeby dało się go zaznaczyć
+      mesh.isVisible = this.editor;
+      if (this.editor) mesh.material = this.materials.get("#7fb8ff", "glass", 0.6);
+    }
     this.updatePickup(part);
+    this.updateNpc(part);
   }
 
   remove(id: string) {
@@ -261,6 +316,8 @@ export class WorldView {
     this.parts.delete(id);
     this.pickups.get(id)?.node.dispose();
     this.pickups.delete(id);
+    this.npcs.get(id)?.model.dispose();
+    this.npcs.delete(id);
   }
 
   load(parts: Part[]) {

@@ -9,7 +9,7 @@ import {
   TransformNode,
 } from "@babylonjs/core";
 import type { ToolDef } from "../../../shared/types.ts";
-import { hexColor } from "./world.ts";
+import { hexColor } from "./color.ts";
 
 export interface ToolModelNode {
   root: TransformNode;

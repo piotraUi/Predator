@@ -242,6 +242,8 @@ export function raycastParts(
   let best: { dist: number; part: Part } | null = null;
   for (const b of candidates) {
     if (!b.part.collide || b.part.transparency >= 0.999) continue;
+    // klocek, w którym promień się zaczyna, pomijamy (np. kamera w środku NPC)
+    if (ox > b.minX && ox < b.maxX && oy > b.minY && oy < b.maxY && oz > b.minZ && oz < b.maxZ) continue;
     const t = rayBox(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ);
     if (t !== null && t <= maxDist && (!best || t < best.dist)) best = { dist: t, part: b.part };
   }

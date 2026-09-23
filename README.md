@@ -18,6 +18,9 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 | 🧩 **Bloczki** | programowanie jak w Scratchu (Blockly); bloczki zamieniają się w kod Lua |
 | 💬 **Czat** | dymki nad głowami, filtr wulgaryzmów (PL + EN), ochrona przed spamem |
 | 🧍 **Awatar** | kolory ciała, czapki i twarze, podgląd 3D |
+| 🧑‍🎤 **Postacie** | edytor postaci w Studio (kolory, twarz, czapka, skala, dodatki doczepione do części ciała), import modeli **.glb** (np. z Blendera, Mixamo), eksport/import **.pchar**; postacie jako NPC albo wygląd wszystkich graczy |
+| 🎞 **Animacje** | edytor animacji z osią czasu i klatkami kluczowymi, gotowe szablony (machanie, disco, ukłon, siedzenie…); animacje jako emotki, na NPC albo ze skryptu |
+| 📄 **Pliki .pgame** | gra zapisana w jednym pliku (JSON); dwuklik otwiera Predatora prosto w Studio, bez serwera; test gry offline ze skryptami |
 | 🪙 **Monety** | 50 na start, codzienny bonus, monety za granie (limit dzienny), twórca dostaje monety, gdy ktoś wchodzi do jego gry; sklep z czapkami i twarzami |
 | 🤝 **Znajomi** | zaproszenia, status online, „Dołącz” do gry, w którą gra znajomy |
 
@@ -42,7 +45,13 @@ Po starcie serwer wypisze adresy, np.:
 - Jeśli telefon nie może się połączyć, zezwól na port **2567** w zaporze Windows.
 - Żeby grali znajomi spoza Twojej sieci, przekieruj port 2567 na routerze albo użyj VPN, np. Tailscale.
 
-Przy pierwszym uruchomieniu powstają przykładowe gry: **„Tor przeszkód”** ze skryptami i **„Arena”** z mieczem i pistoletem na start oraz karabinem, młotem, apteczkami i kawą do podniesienia.
+Przy pierwszym uruchomieniu powstają przykładowe gry:
+
+- **🏙️ Predator City**: gra społeczna. Prace w Ratuszu (policjant, lekarz, kucharz) z wypłatą co 30 s, kawiarnia z baristą, park ze stawem i trampoliną, klub disco z kolorowym parkietem i DJ-em, domy z otwieranymi drzwiami, cykl dnia i nocy, rozmowy z NPC. Komendy na czacie: `/pomoc`, `/praca`, `/kasa`.
+- **⚔️ Arena**: miecz i pistolet na start, karabin, młot, apteczki i kawa do podniesienia.
+- **🔥 Tor przeszkód**: skoki nad lawą ze skryptami.
+
+Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` tworzy je od nowa).
 
 ### Ustawienia (zmienne środowiskowe)
 
@@ -71,9 +80,24 @@ To samo dzieje się automatycznie po wypchnięciu tagu, np. `git tag v0.1.0 && g
 
 ### Lokalnie
 
-- **EXE (Windows):** `cd desktop`, `npm install`, `npm run dist:win`. Wynik trafia do `desktop/release/`.
+- **EXE (Windows):** `npm run build:app -w client`, potem `cd desktop`, `npm install`, `npm run dist:win`. Wynik trafia do `desktop/release/`. Gra jest wbudowana w aplikację, a pliki `.pgame` są z nią skojarzone.
 - **APK (Android):** potrzebujesz Android Studio. Potem `cd client`, `npm run build:app`, `npx cap add android`, `npx cap open android`.
 - **iOS:** tylko na Macu z Xcode: `cd client`, `npm run build:app`, `npx cap add ios`, `npx cap open ios`.
+
+## Pliki gier .pgame i Studio bez serwera
+
+Gra (świat, skrypty, narzędzia, postacie, animacje) zapisuje się do jednego pliku **`.pgame`**. W środku jest zwykły JSON, więc da się go też pisać albo poprawiać w edytorze tekstu:
+
+```json
+{ "format": "predator-game", "version": 1, "name": "Moja gra", "description": "…", "maxPlayers": 30,
+  "data": { "parts": [ … ], "scripts": [ … ], "tools": [ … ], "characters": [ … ], "animations": [ … ], … } }
+```
+
+- **Dwuklik na plik `.pgame`** (aplikacja .exe) otwiera Predatora od razu w **Studio**, bez łączenia z serwerem. **Ctrl+S** zapisuje do tego samego pliku.
+- **Bez serwera** możesz budować i **testować grę** (▶ Testuj). Skrypty Lua, narzędzia i zdrowie działają lokalnie. Nie działa multiplayer, publikowanie, monety ani znajomi.
+- **Z serwerem** (po zalogowaniu): Studio → 📁 Plik → **☁ Wyślij na serwer** zamienia plik w grę na serwerze, którą można opublikować.
+- W przeglądarce: ekran logowania → **„Studio bez serwera”** albo zakładka Twórz → **📂 Otwórz plik**. Zapis pobiera plik.
+- Postacie zapisuje się osobno do plików **`.pchar`** (edytor postaci → 💾), żeby przenosić je między grami.
 
 ## Skrypty Lua: ściąga
 
@@ -111,6 +135,10 @@ end)
 | `onToolUse(fn(player, toolName))`, `onDied(fn(player, killer))` | użycie narzędzia, śmierć gracza (`killer` = `""`, gdy nikt nie zabił) |
 | `giveTool`, `removeTool`, `hasTool` | ekwipunek (narzędzia po nazwie) |
 | `damage`, `heal`, `getHealth`, `setHealth` | zdrowie (0–100) |
+| `setCharacter(player, "Nazwa")` | wygląd gracza jako postać ze Studio (bez nazwy = własny awatar) |
+| `playAnimation(player, "Nazwa")`, `stopAnimation(player)` | animacja z edytora animacji na graczu |
+| `npcAnimation("NazwaKlocka", "Animacja")` | animacja NPC |
+| `setSky("#0b1026")` | kolor nieba (np. noc) |
 
 ## Narzędzia i bronie
 
@@ -132,6 +160,7 @@ W Studio, w panelu **„Narzędzia i bronie”**, kliknij **+ Nowe** i wybierz g
 | Narzędzia | klawisze 1–9 (0 chowa), klik = użyj | dotknij ikonę na pasku, czerwony przycisk = użyj |
 | Emotki | 😀 albo na czacie `/e dance`, `/e wave`, `/e cheer`, `/e point`, `/e sit` | 😀 |
 | Reset postaci | R | ☰ → Zresetuj |
+| Czułość kamery | ⚙ w menu albo ☰ → Ustawienia (suwak) | to samo |
 | Konsola skryptów (twórca) | F9 | 🖥 |
 
 **Studio:** 1/2/3 to narzędzia wybierz/przesuń/skaluj, R obraca, F pokazuje zaznaczony klocek, Delete usuwa, Ctrl+D duplikuje, Ctrl+Z/Y cofa i ponawia, Ctrl+S zapisuje. Kamera jak w Roblox Studio: przytrzymany **prawy przycisk** rozgląda się w miejscu, WASD i Q/E latają, **środkowy przycisk** przesuwa widok, kółko przybliża.
@@ -139,15 +168,16 @@ W Studio, w panelu **„Narzędzia i bronie”**, kliknij **+ Nowe** i wybierz g
 ## Dla programistów
 
 ```
-server/   serwer: Node.js + Colyseus (multiplayer) + Express (API) + SQLite + Lua (fengari)
+server/   serwer: Node.js + Colyseus (multiplayer) + Express (API) + SQLite
 client/   gra: TypeScript + Babylon.js + Vite, Capacitor (Android/iOS)
-desktop/  aplikacja na komputer (Electron)
-shared/   typy i logika wspólna dla klienta i serwera
+desktop/  aplikacja na komputer (Electron) z wbudowaną grą
+shared/   wspólne: logika gry (sim/GameSim), silnik Lua (fengari), fizyka, animacje, format .pgame
+games/    przykładowe gry jako pliki .pgame
 ```
 
 ```bash
 npm install
 npm run dev        # serwer na :2567 + klient z hot-reload na :5173
-npm test           # testy (silnik Lua, fizyka, raycast, filtr czatu)
+npm test           # testy (Lua, fizyka, raycast, animacje, pliki .pgame, filtr czatu)
 npm run typecheck
 ```

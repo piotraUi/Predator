@@ -9,17 +9,23 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
-import type { Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
+import type { AnimDef, CharacterDef, Part, PartKind, PartShape, ToolDef, WorldData, WorldScript } from "../../../shared/types.ts";
 import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
 import { makePart, MAX_PARTS, newId } from "../../../shared/world.ts";
 import { api } from "../api.ts";
-import { desktop, pickFile, saveTextFile } from "../files.ts";
+import { desktop, pickDataUrl, pickFile, saveTextFile } from "../files.ts";
 import { session } from "../state.ts";
 import { fileNameFor, GAME_EXT, makeGameFile, parseGameFile, type GameMeta } from "../../../shared/gamefile.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
 import { ask, h, modal, toast } from "../ui/dom.ts";
 import { openScriptEditor } from "./scriptEditor.ts";
 import { openToolEditor } from "./toolEditor.ts";
+import { openCharacterEditor } from "./characterEditor.ts";
+import { openAnimEditor } from "./animEditor.ts";
+import { animTemplates, makeAnim } from "../../../shared/anim.ts";
+import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
+import { CHAR_EXT, parseCharacterFile } from "../../../shared/gamefile.ts";
+import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared/world.ts";
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
 
@@ -34,6 +40,7 @@ const PRESETS: { label: string; icon: string; part: Partial<Part> }[] = [
   { label: "Spawn", icon: "🏁", part: { name: "Spawn", kind: "spawn", sx: 6, sy: 1, sz: 6, color: "#6e6e78" } },
   { label: "Lawa", icon: "🔥", part: { name: "Lawa", kind: "kill", sx: 8, sy: 1, sz: 8, color: "#ff4d00", material: "neon" } },
   { label: "Trampolina", icon: "🟣", part: { name: "Trampolina", kind: "bounce", sx: 6, sy: 1, sz: 6, color: "#ff66cc" } },
+  { label: "Postać (NPC)", icon: "🧍", part: { name: "NPC", kind: "npc", sx: 2, sy: 5.2, sz: 1, color: "#7fb8ff" } },
 ];
 
 const SHAPE_ICONS: Record<PartShape, string> = { box: "⬛", sphere: "⚪", cylinder: "🛢", wedge: "📐" };
@@ -129,6 +136,7 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
 
     const view = new WorldView(scene, { shadows: false, skyColor: data.skyColor });
     view.setTools(data.tools);
+    view.setCharacters(data.characters, data.animations);
     view.load(data.parts);
 
     // ---------- kamera ----------
@@ -502,6 +510,8 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
     const props = h("div", { class: "panel-body" });
     const scriptsList = h("div", { class: "panel-body" });
     const toolsList = h("div", { class: "panel-body" });
+    const charsList = h("div", { class: "panel-body" });
+    const animsList = h("div", { class: "panel-body" });
     const leftPanel = h(
       "aside",
       { class: "studio-panel left" },
@@ -526,6 +536,25 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
         h("span", { class: "panel-actions" }, h("button", { class: "btn small", onClick: () => editTool(null) }, "+ Nowe")),
       ),
       toolsList,
+      h(
+        "div",
+        { class: "panel-title" },
+        "Postacie",
+        h(
+          "span",
+          { class: "panel-actions" },
+          h("button", { class: "btn small", onClick: () => importCharacter(), title: "Plik .pchar albo model .glb" }, "📥"),
+          h("button", { class: "btn small", onClick: () => newCharacter() }, "+ Nowa"),
+        ),
+      ),
+      charsList,
+      h(
+        "div",
+        { class: "panel-title" },
+        "Animacje",
+        h("span", { class: "panel-actions" }, h("button", { class: "btn small", onClick: () => newAnimation() }, "+ Nowa")),
+      ),
+      animsList,
     );
     const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości"), props);
 
@@ -645,6 +674,25 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
               )
             : h("p", { class: "hint" }, "Najpierw zrób narzędzie w panelu „Narzędzia i bronie”.")
           : "",
+        p.kind === "npc"
+          ? h(
+              "div",
+              null,
+              field(
+                "Postać",
+                select_(p.characterId ?? "", [["", "Domyślna (żółta)"], ...data.characters.map((c) => [c.id, "🧍 " + c.name] as [string, string])], (v) =>
+                  upd(() => (p.characterId = v || undefined)),
+                ),
+              ),
+              field(
+                "Animacja (w pętli)",
+                select_(p.animId ?? "", [["", "— stoi —"], ...data.animations.map((a) => [a.id, "🎞 " + a.name] as [string, string])], (v) =>
+                  upd(() => (p.animId = v || undefined)),
+                ),
+              ),
+              h("p", { class: "hint" }, "Postać stoi stopami na dole klocka. Nazwa klocka to nazwa NPC dla skryptów (np. npcAnimation)."),
+            )
+          : "",
         field(
           "Materiał",
           select_(p.material ?? "plastic", [["plastic", "Plastik"], ["neon", "Neon (świeci)"], ["glass", "Szkło"], ["metal", "Metal"]], (v) =>
@@ -756,6 +804,7 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
                       if (!(await ask(`Usunąć „${t.name}”?`, "Usuń", "Anuluj", true))) return;
                       data.tools = data.tools.filter((x) => x !== t);
                       view.setTools(data.tools);
+    view.setCharacters(data.characters, data.animations);
                       changed();
                       renderTools();
                       renderProps();
@@ -775,6 +824,7 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
         if (i >= 0) data.tools[i] = res;
         else data.tools.push(res);
         view.setTools(data.tools);
+    view.setCharacters(data.characters, data.animations);
         changed();
         renderTools();
         renderProps();
@@ -788,6 +838,125 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
       else editTool(null, place);
     }
 
+    // ---------- postacie ----------
+    const itemRow = (icon: string, label: string, extra: string, onOpen: () => void, onDelete: () => void) =>
+      h(
+        "div",
+        { class: "script-item" },
+        h("button", { class: "script-open", onClick: onOpen }, icon + " ", label, extra ? h("span", { class: "tree-kind" }, " " + extra) : null),
+        h("button", { class: "icon-btn", title: "Usuń", onClick: onDelete }, "🗑"),
+      );
+    function renderCharacters() {
+      charsList.replaceChildren(
+        ...(data.characters.length
+          ? data.characters.map((c) =>
+              itemRow("🧍", c.name, data.playerCharacter === c.id ? "gracze" : c.model ? "model 3D" : "", () => editCharacter(c), async () => {
+                if (!(await ask(`Usunąć postać „${c.name}”?`, "Usuń", "Anuluj", true))) return;
+                data.characters = data.characters.filter((x) => x !== c);
+                if (data.playerCharacter === c.id) data.playerCharacter = undefined;
+                afterCharsChanged();
+              }),
+            )
+          : [h("p", { class: "muted" }, "Brak postaci. Zrób NPC albo wygląd graczy, albo zaimportuj model .glb.")]),
+      );
+    }
+    function afterCharsChanged() {
+      view.setCharacters(data.characters, data.animations);
+      changed();
+      renderCharacters();
+      renderAnimations();
+      renderProps();
+    }
+    function saveCharacter(c: CharacterDef) {
+      const i = data.characters.findIndex((x) => x.id === c.id);
+      if (i >= 0) data.characters[i] = c;
+      else data.characters.push(c);
+      afterCharsChanged();
+    }
+    function editCharacter(c: CharacterDef, opts?: { fitModel?: boolean }) {
+      openCharacterEditor(c, data.animations, saveCharacter, opts);
+    }
+    function newCharacter() {
+      if (data.characters.length >= MAX_CHARACTERS) return toast(`Maksymalnie ${MAX_CHARACTERS} postaci`, "error");
+      editCharacter({ id: newId(), name: "Nowa postać", look: { ...DEFAULT_AVATAR }, scale: 1, accessories: [] });
+    }
+    async function importCharacter() {
+      if (data.characters.length >= MAX_CHARACTERS) return toast(`Maksymalnie ${MAX_CHARACTERS} postaci`, "error");
+      const f = await pickDataUrl([CHAR_EXT, ".glb", ".gltf"]);
+      if (!f) return;
+      const lower = f.name.toLowerCase();
+      if (lower.endsWith(CHAR_EXT)) {
+        try {
+          const text = new TextDecoder().decode(Uint8Array.from(atob(f.dataUrl.split(",")[1] ?? ""), (ch) => ch.charCodeAt(0)));
+          const c = parseCharacterFile(text);
+          saveCharacter(c);
+          toast(`Zaimportowano postać „${c.name}”`, "good");
+          editCharacter(c);
+        } catch (e) {
+          toast((e as Error).message, "error");
+        }
+        return;
+      }
+      const mime = lower.endsWith(".gltf") ? "data:model/gltf+json;base64," : "data:model/gltf-binary;base64,";
+      const data64 = f.dataUrl.replace(/^data:[^;]*;base64,/, mime);
+      if (data64.length > MAX_MODEL_CHARS) return toast("Model jest za duży (maks. ok. 5 MB)", "error");
+      const c: CharacterDef = {
+        id: newId(),
+        name: f.name.replace(/\.(glb|gltf)$/i, "").slice(0, 30) || "Model",
+        look: { ...DEFAULT_AVATAR },
+        scale: 1,
+        accessories: [],
+        model: { data: data64, scale: 1, x: 0, y: 0, z: 0, ry: 0, hideBody: true },
+      };
+      toast("Zaimportowano model - dopasowuję rozmiar…", "good");
+      editCharacter(c, { fitModel: true });
+    }
+
+    // ---------- animacje ----------
+    function renderAnimations() {
+      animsList.replaceChildren(
+        ...(data.animations.length
+          ? data.animations.map((a) =>
+              itemRow("🎞", a.name, a.emote ? "emotka" : a.loop ? "pętla" : "", () => openAnimEditor(a, data.characters, saveAnimation), async () => {
+                if (!(await ask(`Usunąć animację „${a.name}”?`, "Usuń", "Anuluj", true))) return;
+                data.animations = data.animations.filter((x) => x !== a);
+                afterCharsChanged();
+              }),
+            )
+          : [h("p", { class: "muted" }, "Brak animacji. Zrób taniec, machanie albo animację dla NPC.")]),
+      );
+    }
+    function saveAnimation(a: AnimDef) {
+      const i = data.animations.findIndex((x) => x.id === a.id);
+      if (i >= 0) data.animations[i] = a;
+      else data.animations.push(a);
+      afterCharsChanged();
+    }
+    function newAnimation() {
+      if (data.animations.length >= MAX_ANIMATIONS) return toast(`Maksymalnie ${MAX_ANIMATIONS} animacji`, "error");
+      const close = modal(
+        "Nowa animacja",
+        h(
+          "div",
+          { class: "templates-grid" },
+          animTemplates().map((t) =>
+            h(
+              "button",
+              {
+                class: "template",
+                onClick: () => {
+                  close();
+                  openAnimEditor(makeAnim(t.name), data.characters, saveAnimation);
+                },
+              },
+              h("b", null, t.name),
+              h("span", { class: "muted" }, `${t.keyframes.length} klatek · ${t.duration} s${t.loop ? " · pętla" : ""}`),
+            ),
+          ),
+        ),
+      );
+    }
+
     // ---------- ustawienia gry ----------
     function openGameSettings() {
       const name = h("input", { value: meta.name, maxLength: 40 });
@@ -797,6 +966,12 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
       const grav = h("input", { type: "number", min: "10", max: "500", step: "1", value: String(data.gravity) });
       const pub = h("input", { type: "checkbox", checked: src.published });
       const pvp = h("input", { type: "checkbox", checked: data.pvp });
+      const playerChar = h(
+        "select",
+        null,
+        h("option", { value: "" }, "Własny awatar gracza"),
+        data.characters.map((c) => h("option", { value: c.id, selected: data.playerCharacter === c.id }, "🧍 " + c.name)),
+      );
       const close = modal(
         "Ustawienia gry",
         h(
@@ -807,6 +982,7 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
           h("label", null, `Maks. graczy na serwer (1–${MAX_PLAYERS_LIMIT})`, maxP),
           h("label", null, "Kolor nieba", sky),
           h("label", null, "Grawitacja (normalnie 196)", grav),
+          h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
           src.online
             ? h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać"))
@@ -821,6 +997,8 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
               data.skyColor = sky.value;
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
               data.pvp = pvp.checked;
+              data.playerCharacter = playerChar.value || undefined;
+              renderCharacters();
               view.setSky(data.skyColor);
               meta.name = name.value.trim().slice(0, 40) || meta.name;
               meta.description = desc.value.slice(0, 500);
@@ -892,6 +1070,8 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
     renderProps();
     renderScripts();
     renderTools();
+    renderCharacters();
+    renderAnimations();
     setTool("move");
     if (startDirty) changed();
   }

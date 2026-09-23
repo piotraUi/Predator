@@ -39,6 +39,11 @@ export const LUA_HELP: [string, string][] = [
   ["damage(player, 20)", "zadaj obrażenia"],
   ["heal(player, 20)", "ulecz"],
   ["getHealth(player) / setHealth(player, 100)", "zdrowie (0-100)"],
+  ['setCharacter(player, "Zombie")', "zmień wygląd gracza na postać (bez nazwy = własny)"],
+  ['playAnimation(player, "Taniec")', "odtwórz animację na graczu"],
+  ["stopAnimation(player)", "zatrzymaj animację"],
+  ['npcAnimation("Barista", "Machanie")', "animacja NPC (po nazwie klocka)"],
+  ['setSky("#102040")', "kolor nieba (np. noc)"],
 ];
 
 export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void) {
