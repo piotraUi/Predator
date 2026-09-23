@@ -17,6 +17,7 @@ import { createEngine, WorldView } from "../engine/world.ts";
 import { h, modal, toast } from "../ui/dom.ts";
 import { openScriptEditor } from "./scriptEditor.ts";
 import { openToolEditor } from "./toolEditor.ts";
+import { STUDIO_INPUTS, pointerButtons, robloxCamera } from "../engine/camera.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Tool = "select" | "move" | "scale";
@@ -80,16 +81,51 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     const camera = new ArcRotateCamera("cam", -Math.PI / 2 + 0.6, 1.0, 60, new Vector3(0, 0, 0), scene);
     camera.lowerRadiusLimit = 3;
     camera.upperRadiusLimit = 600;
-    camera.wheelDeltaPercentage = 0.03;
-    camera.pinchDeltaPercentage = 0.006;
-    camera.panningSensibility = 60;
-    camera.panningAxis = new Vector3(1, 0, 1);
     camera.minZ = 0.3;
     camera.maxZ = 3000;
-    camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput");
-    camera.attachControl(true, false, 2); // prawy przycisk = przesuwanie widoku
-    // na dotyku: dwa palce przesuwają widok
+    robloxCamera(camera, STUDIO_INPUTS);
+    // środkowy przycisk myszy = przesuwanie widoku, na dotyku dwa palce
+    camera.attachControl(true, false, 1);
     (camera.inputs.attached.pointers as unknown as { multiTouchPanning: boolean }).multiTouchPanning = true;
+    // myszką kamera Babylona obsługuje tylko przesuwanie; obrót prawym przyciskiem robimy sami niżej
+    cleanups.push(pointerButtons(camera, canvas, [1]));
+
+    // prawy przycisk: rozglądanie się w miejscu (jak w Roblox Studio) - kamera stoi, obraca się widok
+    let looking: number | null = null;
+    const LOOK_RAD_PER_PX = (0.3 * Math.PI) / 180;
+    const onLookDown = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || e.button !== 2) return;
+      looking = e.pointerId;
+      canvas.setPointerCapture(e.pointerId);
+    };
+    const onLookMove = (e: PointerEvent) => {
+      if (looking !== e.pointerId) return;
+      const r = camera.radius;
+      const dir = (a: number, b: number) => new Vector3(Math.cos(a) * Math.sin(b), Math.cos(b), Math.sin(a) * Math.sin(b));
+      const eye = camera.target.add(dir(camera.alpha, camera.beta).scale(r));
+      camera.alpha += e.movementX * LOOK_RAD_PER_PX;
+      camera.beta = Math.min(Math.PI - 0.05, Math.max(0.05, camera.beta + e.movementY * LOOK_RAD_PER_PX));
+      // punkt, na który patrzymy, przesuwa się tak, żeby kamera została w miejscu
+      camera.target = eye.subtract(dir(camera.alpha, camera.beta).scale(r));
+    };
+    const onLookUp = (e: PointerEvent) => {
+      if (looking === e.pointerId) looking = null;
+    };
+    canvas.addEventListener("pointerdown", onLookDown);
+    canvas.addEventListener("pointermove", onLookMove);
+    canvas.addEventListener("pointerup", onLookUp);
+    canvas.addEventListener("pointercancel", onLookUp);
+    cleanups.push(() => {
+      canvas.removeEventListener("pointerdown", onLookDown);
+      canvas.removeEventListener("pointermove", onLookMove);
+      canvas.removeEventListener("pointerup", onLookUp);
+      canvas.removeEventListener("pointercancel", onLookUp);
+    });
+    // przesuwanie środkowym przyciskiem "chwyta" świat - prędkość zależna od odległości
+    scene.onBeforeRenderObservable.add(() => {
+      const worldPerPx = (2 * camera.radius * Math.tan(camera.fov / 2)) / Math.max(1, canvas.clientHeight);
+      camera.panningSensibility = 1 / worldPerPx;
+    });
 
     // ---------- gizmo ----------
     const gizmos = new GizmoManager(scene);

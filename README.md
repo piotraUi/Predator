@@ -127,14 +127,14 @@ W Studio, w panelu **„Narzędzia i bronie”**, kliknij **+ Nowe** i wybierz g
 |---|---|---|
 | Ruch | WASD / strzałki | joystick po lewej |
 | Skok | Spacja | przycisk po prawej |
-| Kamera | przeciągnij myszą, kółko przybliża | przeciągnij palcem, szczypanie |
+| Kamera | przytrzymaj **prawy przycisk myszy** i ruszaj, kółko przybliża (FOV 70° jak w Robloxie) | przeciągnij palcem, szczypanie |
 | Czat | Enter lub `/` | 💬 |
 | Narzędzia | klawisze 1–9 (0 chowa), klik = użyj | dotknij ikonę na pasku, czerwony przycisk = użyj |
 | Emotki | 😀 albo na czacie `/e dance`, `/e wave`, `/e cheer`, `/e point`, `/e sit` | 😀 |
 | Reset postaci | R | ☰ → Zresetuj |
 | Konsola skryptów (twórca) | F9 | 🖥 |
 
-**Studio:** 1/2/3 to narzędzia wybierz/przesuń/skaluj, R obraca, F pokazuje zaznaczony klocek, Delete usuwa, Ctrl+D duplikuje, Ctrl+Z/Y cofa i ponawia, Ctrl+S zapisuje. WASD i Q/E przesuwają kamerę, prawy przycisk myszy przesuwa widok.
+**Studio:** 1/2/3 to narzędzia wybierz/przesuń/skaluj, R obraca, F pokazuje zaznaczony klocek, Delete usuwa, Ctrl+D duplikuje, Ctrl+Z/Y cofa i ponawia, Ctrl+S zapisuje. Kamera jak w Roblox Studio: przytrzymany **prawy przycisk** rozgląda się w miejscu, WASD i Q/E latają, **środkowy przycisk** przesuwa widok, kółko przybliża.
 
 ## Dla programistów
 

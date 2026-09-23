@@ -22,6 +22,7 @@ import { createEngine, WorldView } from "../engine/world.ts";
 import { session } from "../state.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
 import { hexColor } from "../engine/world.ts";
+import { GAME_INPUTS, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { Hotbar } from "./hotbar.ts";
 
 interface Remote {
@@ -123,19 +124,19 @@ export function playScreen(
     world.setTools(init.world.tools);
 
     // ---------- kamera ----------
-    const camera = new ArcRotateCamera("cam", Math.PI / 2, 1.2, 20, new Vector3(0, 5, 0), scene);
+    // ustawienia jak w Robloxie: odległość ~12,5, zoom do 128, FOV 70°
+    const camera = new ArcRotateCamera("cam", Math.PI / 2, 1.25, 12.5, new Vector3(0, 5, 0), scene);
     camera.lowerRadiusLimit = 0.5;
-    camera.upperRadiusLimit = 80;
+    camera.upperRadiusLimit = 128;
     camera.lowerBetaLimit = 0.15;
-    camera.upperBetaLimit = Math.PI * 0.58;
+    camera.upperBetaLimit = Math.PI * 0.7;
     camera.panningSensibility = 0;
-    camera.wheelDeltaPercentage = 0.02;
-    camera.pinchDeltaPercentage = 0.004;
-    camera.angularSensibilityX = camera.angularSensibilityY = isTouch() ? 400 : 700;
     camera.minZ = 0.2;
     camera.maxZ = 2000;
-    camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput");
+    robloxCamera(camera, GAME_INPUTS);
     camera.attachControl(true);
+    // myszką obracamy prawym przyciskiem (lewy = używanie narzędzi), palcem - jak dotąd
+    cleanups.push(pointerButtons(camera, canvas, [2]));
     // na starcie patrzymy w stronę środka mapy (kamera za plecami gracza)
     camera.alpha = Math.atan2(init.spawn.z, init.spawn.x);
     // odległość kamery wybrana przez gracza (kółko / szczypanie) - kolizja może ją chwilowo skrócić
@@ -637,7 +638,8 @@ export function playScreen(
 
       // kamera za graczem
       const head = new Vector3(body.x, body.y + 4.6, body.z);
-      camera.target.addInPlace(head.subtract(camera.target).scale(Math.min(1, dt * 20)));
+      // kamera sztywno za graczem, bez opóźnienia
+      camera.target.copyFrom(head);
       // kolizja kamery: jeśli ściana zasłania gracza, kamera się przysuwa
       if (Math.abs(camera.radius - setRadius) > 0.001) wantRadius = camera.radius;
       const off = camera.position.subtract(camera.target).normalize();
