@@ -10,8 +10,14 @@ import {
   Vector3,
   type ShadowGenerator,
 } from "@babylonjs/core";
-import type { Anim, Avatar } from "../../../shared/types.ts";
+import type { ActionAnim, Anim, Avatar, ToolDef } from "../../../shared/types.ts";
+import { buildToolModel, type ToolModelNode } from "./toolModels.ts";
 import { hexColor } from "./world.ts";
+
+/** Kąt ramienia wyciągniętego do przodu */
+const HOLD = Math.PI / 2;
+const ACTION_TIME: Record<ActionAnim, number> = { swing: 0.35, shoot: 0.18, use: 0.6 };
+const smooth = (t: number) => t * t * (3 - 2 * t);
 
 function mat(scene: Scene, color: string | Color3, emissive = false) {
   const m = new StandardMaterial("av", scene);
@@ -163,12 +169,18 @@ export class AvatarModel {
   private t = 0;
   private dead = false;
   private debris: { mesh: Mesh; v: Vector3; spin: Vector3 }[] = [];
+  private bodyMats: StandardMaterial[] = [];
+  private flashT = 0;
+  private tool: ToolModelNode | null = null;
+  private action: { type: ActionAnim; t: number } | null = null;
   anim: Anim = "idle";
 
   constructor(
     private scene: Scene,
     avatar: Avatar,
     private shadows?: ShadowGenerator | null,
+    /** czy da się w postać wycelować (inni gracze) */
+    private pickable = false,
   ) {
     this.root = new TransformNode("avatar", scene);
     this.body = new TransformNode("body", scene);
@@ -205,14 +217,15 @@ export class AvatarModel {
       return { pivot, mesh };
     };
     this.limbs = {
-      la: limb("leftArm", -1.5, 4),
-      ra: limb("rightArm", 1.5, 4),
-      ll: limb("leftLeg", -0.5, 2),
-      rl: limb("rightLeg", 0.5, 2),
+      // przód postaci to -z, więc prawa strona ciała to -x
+      la: limb("leftArm", 1.5, 4),
+      ra: limb("rightArm", -1.5, 4),
+      ll: limb("leftLeg", 0.5, 2),
+      rl: limb("rightLeg", -0.5, 2),
     };
     this.allMeshes = [this.head, this.torso, facePlane, ...Object.values(this.limbs).map((l) => l.mesh)];
     for (const m of this.allMeshes) {
-      m.isPickable = false;
+      m.isPickable = pickable && m !== facePlane;
       if (m !== facePlane) shadows?.addShadowCaster(m);
     }
     this.setAvatar(avatar);
@@ -220,10 +233,16 @@ export class AvatarModel {
 
   setAvatar(a: Avatar) {
     const s = this.scene;
-    this.head.material = mat(s, a.head);
-    this.torso.material = mat(s, a.torso);
-    this.limbs.la.mesh.material = this.limbs.ra.mesh.material = mat(s, a.arms);
-    this.limbs.ll.mesh.material = this.limbs.rl.mesh.material = mat(s, a.legs);
+    for (const m of this.bodyMats) m.dispose();
+    const head = mat(s, a.head);
+    const torso = mat(s, a.torso);
+    const arms = mat(s, a.arms);
+    const legs = mat(s, a.legs);
+    this.bodyMats = [head, torso, arms, legs];
+    this.head.material = head;
+    this.torso.material = torso;
+    this.limbs.la.mesh.material = this.limbs.ra.mesh.material = arms;
+    this.limbs.ll.mesh.material = this.limbs.rl.mesh.material = legs;
     const ctx = this.faceTex.getContext() as unknown as CanvasRenderingContext2D;
     drawFace(ctx, a.face);
     this.faceTex.update();
@@ -243,8 +262,42 @@ export class AvatarModel {
     this.root.setEnabled(v);
   }
 
+  /** Zakłada narzędzie do prawej ręki (albo chowa, gdy null) */
+  setTool(def: Pick<ToolDef, "model" | "color"> | null) {
+    this.tool?.root.dispose();
+    this.tool = null;
+    if (!def) return;
+    const t = buildToolModel(this.scene, def);
+    t.root.parent = this.limbs.ra.mesh;
+    t.root.position.set(0, -1, -0.1);
+    // ramię jest obrócone do przodu - narzędzie prostujemy z powrotem
+    t.root.rotation.x = -HOLD;
+    for (const m of t.meshes) this.shadows?.addShadowCaster(m);
+    this.tool = t;
+  }
+
+  /** Pozycja końca lufy / ostrza w świecie */
+  toolTip(): Vector3 | null {
+    return this.tool ? this.tool.tip.getAbsolutePosition().clone() : null;
+  }
+
+  /** Jednorazowa animacja: cios, strzał albo użycie (picie / leczenie) */
+  playAction(type: ActionAnim) {
+    this.action = { type, t: 0 };
+  }
+
+  /** Mignięcie na czerwono po otrzymaniu obrażeń */
+  flash() {
+    this.flashT = 0.3;
+  }
+
   update(dt: number) {
     this.t += dt;
+    if (this.flashT > 0 || this.bodyMats[0]?.emissiveColor.r) {
+      this.flashT = Math.max(0, this.flashT - dt);
+      const k = this.flashT / 0.3;
+      for (const m of this.bodyMats) m.emissiveColor.set(k * 0.8, 0, 0);
+    }
     if (this.anim === "dead") {
       if (!this.dead) this.explode();
       for (const d of this.debris) {
@@ -273,8 +326,8 @@ export class AvatarModel {
     } else if (this.anim === "jump" || this.anim === "fall") {
       lerp(la, Math.PI * 0.9);
       lerp(ra, Math.PI * 0.9);
-      lerpZ(la, -0.15);
-      lerpZ(ra, 0.15);
+      lerpZ(la, 0.15);
+      lerpZ(ra, -0.15);
       lerp(ll, this.anim === "jump" ? -0.3 : 0.2);
       lerp(rl, this.anim === "jump" ? 0.3 : -0.2);
     } else {
@@ -285,6 +338,76 @@ export class AvatarModel {
       lerp(rl, 0, 8);
       lerpZ(la, 0);
       lerpZ(ra, 0);
+    }
+
+    // ---- emotki ----
+    const body = this.body;
+    let bodyY = 0;
+    let bodyRot = 0;
+    const t = this.t;
+    switch (this.anim) {
+      case "wave":
+        lerp(ra, Math.PI * 0.95, 10);
+        lerpZ(ra, -0.35 + Math.sin(t * 9) * 0.35, 14);
+        break;
+      case "cheer":
+        lerp(la, Math.PI * 0.9 + Math.sin(t * 9) * 0.25, 14);
+        lerp(ra, Math.PI * 0.9 - Math.sin(t * 9) * 0.25, 14);
+        lerpZ(la, 0.25);
+        lerpZ(ra, -0.25);
+        bodyY = Math.abs(Math.sin(t * 9)) * 0.35;
+        break;
+      case "dance": {
+        const d = Math.sin(t * 6);
+        lerp(la, HOLD + d * 1.2, 16);
+        lerp(ra, HOLD - d * 1.2, 16);
+        lerpZ(la, 0.4);
+        lerpZ(ra, -0.4);
+        lerp(ll, d * 0.45, 16);
+        lerp(rl, -d * 0.45, 16);
+        bodyY = Math.abs(Math.sin(t * 6)) * 0.45;
+        bodyRot = Math.sin(t * 3) * 0.6;
+        break;
+      }
+      case "point":
+        lerp(ra, HOLD, 14);
+        lerpZ(ra, 0);
+        break;
+      case "sit":
+        lerp(ll, HOLD, 14);
+        lerp(rl, HOLD, 14);
+        lerp(la, 0.5, 10);
+        lerp(ra, 0.5, 10);
+        bodyY = -1.6;
+        break;
+    }
+    body.position.y += (bodyY - body.position.y) * Math.min(1, dt * 14);
+    body.rotation.y += (bodyRot - body.rotation.y) * Math.min(1, dt * 10);
+
+    // ---- trzymanie narzędzia ----
+    if (this.tool && this.anim !== "sit" && this.anim !== "wave") {
+      lerp(ra, HOLD, 20);
+      lerpZ(ra, 0, 20);
+    }
+
+    // ---- akcje narzędzi ----
+    if (this.action) {
+      const a = this.action;
+      a.t += dt / ACTION_TIME[a.type];
+      const p = Math.min(1, a.t);
+      if (a.type === "swing") {
+        // zamach w górę, potem cięcie w dół
+        ra.rotation.x = p < 0.35 ? HOLD + smooth(p / 0.35) * 1.3 : HOLD + 1.3 - smooth((p - 0.35) / 0.65) * 1.9;
+        body.rotation.y = Math.sin(p * Math.PI) * -0.35;
+      } else if (a.type === "shoot") {
+        ra.rotation.x = HOLD + (1 - p) * 0.35;
+      } else {
+        // do ust / do piersi
+        const k = Math.sin(p * Math.PI);
+        ra.rotation.x = HOLD + k * 0.9;
+        ra.rotation.z = k * 0.6;
+      }
+      if (a.t >= 1) this.action = null;
     }
   }
 
@@ -312,6 +435,7 @@ export class AvatarModel {
   }
 
   dispose() {
+    for (const m of this.bodyMats) m.dispose();
     this.root.dispose(false, true);
     this.faceTex.dispose();
   }

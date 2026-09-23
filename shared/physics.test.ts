@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { baseplate, makePart } from "../../../shared/world.ts";
+import { baseplate, makePart } from "./world.ts";
 import { CollisionWorld, stepBody, type Body } from "./physics.ts";
 
 const G = 196.2;
@@ -69,4 +69,14 @@ test("wykrywa dotknięcie lawy", () => {
   let touched = false;
   for (let i = 0; i < 60; i++) if (stepBody(w, b, 1 / 60, G).touched.some((p) => p.id === lava.id)) touched = true;
   assert.ok(touched);
+});
+
+test("promień trafia w ścianę i omija przerwę", async () => {
+  const { raycastParts } = await import("./physics.ts");
+  const wall = makePart({ x: 0, y: 5, z: -20, sx: 10, sy: 10, sz: 1 });
+  const w = new CollisionWorld([wall]);
+  const hit = raycastParts(w, 0, 3, 0, 0, 0, -1, 100);
+  assert.ok(hit && hit.part.id === wall.id && Math.abs(hit.dist - 19.5) < 0.01);
+  assert.equal(raycastParts(w, 20, 3, 0, 0, 0, -1, 100), null);
+  assert.equal(raycastParts(w, 0, 3, 0, 0, 0, -1, 10), null);
 });

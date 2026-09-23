@@ -1,19 +1,34 @@
 // Ekran gry - łączy się z serwerem, steruje postacią i pokazuje innych graczy.
-import { ArcRotateCamera, Scene, Vector3 } from "@babylonjs/core";
+import {
+  ArcRotateCamera,
+  Color3,
+  Matrix,
+  MeshBuilder,
+  PointerEventTypes,
+  Scene,
+  StandardMaterial,
+  Vector3,
+  type AbstractMesh,
+} from "@babylonjs/core";
 import { AdvancedDynamicTexture, Rectangle, TextBlock } from "@babylonjs/gui";
 import { Client, type Room } from "colyseus.js";
-import type { Anim, Avatar, ChatMsg, NetPlayer, Part, WorldData } from "../../../shared/types.ts";
+import type { ActionAnim, Anim, Avatar, ChatMsg, Emote, NetPlayer, Part, ToolDef, WorldData } from "../../../shared/types.ts";
+import { EMOTES } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
-import { CollisionWorld, stepBody, type Body } from "../engine/physics.ts";
+import { CollisionWorld, raycastParts, stepBody, type Body } from "../../../shared/physics.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
 import { session } from "../state.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
+import { hexColor } from "../engine/world.ts";
+import { Hotbar } from "./hotbar.ts";
 
 interface Remote {
   model: AvatarModel;
   tag: Rectangle;
+  hpBar: Rectangle;
+  hpFill: Rectangle;
   username: string;
   tx: number; ty: number; tz: number; tr: number;
 }
@@ -24,7 +39,24 @@ interface InitMsg {
   info: { id: number; name: string; ownerName: string; isOwner: boolean };
   players: NetPlayer[];
   spawn: { x: number; y: number; z: number };
+  inventory: string[];
 }
+
+const EMOTE_LABELS: Record<Emote, string> = {
+  wave: "👋 Machaj",
+  dance: "💃 Tańcz",
+  cheer: "🙌 Wiwatuj",
+  point: "👉 Wskaż",
+  sit: "🪑 Usiądź",
+};
+/** komendy czatu: /e taniec, /e dance ... */
+const EMOTE_ALIASES: Record<string, Emote> = {
+  wave: "wave", machaj: "wave", hej: "wave",
+  dance: "dance", taniec: "dance", tancz: "dance", "tańcz": "dance",
+  cheer: "cheer", wiwat: "cheer", wiwatuj: "cheer",
+  point: "point", wskaz: "point", "wskaż": "point",
+  sit: "sit", siad: "sit", usiadz: "sit", "usiądź": "sit",
+};
 
 const WALK_SPEED = 16;
 const JUMP_POWER = 50;
@@ -86,6 +118,9 @@ export function playScreen(
     }
     const collisions = new CollisionWorld(init.world.parts);
     const gravity = init.world.gravity;
+    const toolsById = new Map<string, ToolDef>(init.world.tools.map((t) => [t.id, t]));
+    const toolDefs = (ids: string[]) => ids.map((id) => toolsById.get(id)).filter((t): t is ToolDef => !!t);
+    world.setTools(init.world.tools);
 
     // ---------- kamera ----------
     const camera = new ArcRotateCamera("cam", Math.PI / 2, 1.2, 20, new Vector3(0, 5, 0), scene);
@@ -101,18 +136,28 @@ export function playScreen(
     camera.maxZ = 2000;
     camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput");
     camera.attachControl(true);
+    // na starcie patrzymy w stronę środka mapy (kamera za plecami gracza)
+    camera.alpha = Math.atan2(init.spawn.z, init.spawn.x);
+    // odległość kamery wybrana przez gracza (kółko / szczypanie) - kolizja może ją chwilowo skrócić
+    let wantRadius = camera.radius;
+    let setRadius = camera.radius;
 
     // ---------- gracz ----------
     const me = session.user!;
     const local = new AvatarModel(scene, me.avatar, world.shadows);
     const body: Body = { ...init.spawn, vx: 0, vy: 0, vz: 0, onGround: false };
-    let ry = 0;
+    // na starcie postać patrzy w stronę środka mapy
+    let ry = Math.hypot(init.spawn.x, init.spawn.z) > 1 ? Math.atan2(init.spawn.x, init.spawn.z) : 0;
     let anim: Anim = "idle";
     let dead = false;
     let walkSpeed = WALK_SPEED;
     let jumpPower = JUMP_POWER;
     let sendTimer = 0;
     let touching = new Set<string>();
+    let emote: Emote | null = null;
+    let boostUntil = 0;
+    let boostMult = 1;
+    const lastUse = new Map<string, number>();
 
     const spawnPoint = () => {
       const spawns = [...parts.values()].filter((p) => p.kind === "spawn");
@@ -122,15 +167,22 @@ export function playScreen(
         : { x: 0, y: 5, z: 0 };
     };
 
-    const die = () => {
+    /** fromServer = serwer już wie (np. zabity bronią) */
+    const die = (fromServer = false) => {
       if (dead) return;
       dead = true;
       anim = "dead";
+      emote = null;
+      if (!fromServer) r.send("died");
+      hotbar.select(null);
+      setHp(0, maxHp);
       setTimeout(() => {
         if (disposed) return;
         Object.assign(body, spawnPoint(), { vx: 0, vy: 0, vz: 0 });
         dead = false;
         anim = "idle";
+        boostUntil = 0;
+        setHp(maxHp, maxHp);
         r.send("respawned");
       }, 3000);
     };
@@ -156,21 +208,43 @@ export function playScreen(
     };
     const addRemote = (p: NetPlayer) => {
       if (p.sid === init.you || remotes.has(p.sid)) return;
-      const model = new AvatarModel(scene, p.avatar as Avatar, world.shadows);
+      const model = new AvatarModel(scene, p.avatar as Avatar, world.shadows, true);
       model.root.position.set(p.x, p.y, p.z);
+      model.setTool(p.tool ? (toolsById.get(p.tool) ?? null) : null);
       const tag = makeTag(p.username);
       tag.linkWithMesh(model.headNode);
       tag.linkOffsetY = -55;
-      remotes.set(p.sid, {
-        model, tag, username: p.username,
-        tx: p.x, ty: p.y, tz: p.z, tr: p.ry,
-      });
+      // pasek zdrowia pod nickiem (widoczny tylko gdy gracz jest ranny)
+      const hpBar = new Rectangle();
+      hpBar.width = "64px";
+      hpBar.height = "7px";
+      hpBar.thickness = 0;
+      hpBar.cornerRadius = 3;
+      hpBar.background = "rgba(0,0,0,0.5)";
+      const hpFill = new Rectangle();
+      hpFill.thickness = 0;
+      hpFill.horizontalAlignment = Rectangle.HORIZONTAL_ALIGNMENT_LEFT;
+      hpFill.background = "#2ecc71";
+      hpBar.addControl(hpFill);
+      gui.addControl(hpBar);
+      hpBar.linkWithMesh(model.headNode);
+      hpBar.linkOffsetY = -37;
+      const rm: Remote = { model, tag, hpBar, hpFill, username: p.username, tx: p.x, ty: p.y, tz: p.z, tr: p.ry };
+      remotes.set(p.sid, rm);
+      setRemoteHp(rm, p.hp, p.maxHp);
+    };
+    const setRemoteHp = (rm: Remote, hp: number, max: number) => {
+      const k = Math.max(0, Math.min(1, hp / max));
+      rm.hpBar.isVisible = k < 1 && k > 0;
+      rm.hpFill.width = k * 100 + "%";
+      rm.hpFill.background = k > 0.5 ? "#2ecc71" : k > 0.25 ? "#f1c40f" : "#e74c3c";
     };
     const removeRemote = (sid: string) => {
       const rm = remotes.get(sid);
       if (!rm) return;
       rm.model.dispose();
       rm.tag.dispose();
+      rm.hpBar.dispose();
       remotes.delete(sid);
     };
     init.players.forEach(addRemote);
@@ -237,7 +311,67 @@ export function playScreen(
       h("div", { class: "hud-title" }, init.info.name),
       h("div", { class: "hud-coins" }, "🪙 ", coinsEl),
     );
-    wrap.append(topbar, chatBox, board, consoleBox, menu);
+    // pasek zdrowia gracza
+    let maxHp = 100;
+    const hpFill = h("div", { class: "hp-fill" });
+    const hpText = h("span", { class: "hp-text" }, "100");
+    const hpBox = h("div", { class: "hp-bar" }, hpFill, hpText);
+    const hurt = h("div", { class: "hurt" });
+    let lastHp = 100;
+    function setHp(hp: number, max: number) {
+      maxHp = max;
+      const k = Math.max(0, Math.min(1, hp / max));
+      hpFill.style.width = k * 100 + "%";
+      hpFill.style.background = k > 0.5 ? "#2ecc71" : k > 0.25 ? "#f1c40f" : "#e74c3c";
+      hpText.textContent = String(Math.round(hp));
+      if (hp < lastHp && hp > 0) {
+        local.flash();
+        hurt.classList.remove("on");
+        void hurt.offsetWidth;
+        hurt.classList.add("on");
+      }
+      lastHp = hp;
+    }
+
+    // emotki
+    const emoteMenu = h(
+      "div",
+      { class: "emote-menu hidden" },
+      EMOTES.map((e) =>
+        h("button", { class: "btn small", onClick: () => (startEmote(e), emoteMenu.classList.add("hidden")) }, EMOTE_LABELS[e]),
+      ),
+    );
+    const startEmote = (e: Emote) => {
+      if (!dead && body.onGround) {
+        emote = e;
+        hotbar.select(null);
+      }
+    };
+    topbar.insertBefore(
+      h("button", { class: "hud-btn", onClick: () => emoteMenu.classList.toggle("hidden"), title: "Emotki" }, "😀"),
+      topbar.querySelector(".hud-title"),
+    );
+
+    // przycisk akcji na dotyku (strzał / cios w stronę środka ekranu)
+    const actionBtn = h("div", { class: "action-btn hidden" }, "⚔️");
+    actionBtn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      useTool();
+    });
+
+    const hotbar = new Hotbar(wrap, (id) => {
+      const def = id ? (toolsById.get(id) ?? null) : null;
+      local.setTool(def);
+      r.send("equip", id);
+      if (def) emote = null;
+      actionBtn.classList.toggle("hidden", !def || !isTouch());
+      if (def) actionBtn.textContent = def.type === "ranged" ? "🎯" : def.type === "melee" ? "⚔️" : "✋";
+      canvas.classList.toggle("aiming", def?.type === "ranged");
+    });
+    hotbar.set(toolDefs(init.inventory));
+
+    wrap.append(topbar, chatBox, board, consoleBox, menu, hpBox, hurt, emoteMenu, actionBtn);
 
     const addChat = (m: ChatMsg) => {
       const line = m.system
@@ -256,7 +390,12 @@ export function playScreen(
       e.stopPropagation();
       if (e.key === "Enter") {
         const t = chatInput.value.trim();
-        if (t) r.send("chat", t);
+        const em = /^\/e(?:mote)?\s+(\S+)/i.exec(t);
+        if (em) {
+          const e = EMOTE_ALIASES[em[1].toLowerCase()];
+          if (e) startEmote(e);
+          else toast("Emotki: /e wave, dance, cheer, point, sit", "info");
+        } else if (t) r.send("chat", t);
         chatInput.value = "";
         chatInput.blur();
       } else if (e.key === "Escape") chatInput.blur();
@@ -275,6 +414,8 @@ export function playScreen(
         e.preventDefault();
         openChat();
       } else if (e.code === "KeyR") die();
+      else if (/^Digit[1-9]$/.test(e.code)) hotbar.toggle(Number(e.code.slice(5)) - 1);
+      else if (e.code === "Digit0" || e.code === "Backquote") hotbar.select(null);
       else if (e.key === "Escape") menu.classList.toggle("hidden");
       else if (e.key === "F9" && init.info.isOwner) consoleBox.classList.toggle("hidden");
     };
@@ -308,7 +449,102 @@ export function playScreen(
         collisions.set(p);
       }
     });
-    r.onMessage("kill", () => die());
+    r.onMessage("kill", () => die(true));
+    r.onMessage("inv", (ids: string[]) => hotbar.set(toolDefs(ids)));
+    r.onMessage("picked", (id: string) => {
+      const t = toolsById.get(id);
+      if (t) toast(`Podniesiono: ${t.name} (klawisz ${hotbar.indexOf(id) + 1})`, "good");
+    });
+    r.onMessage("eq", (m: { sid: string; tool: string | null }) => {
+      if (m.sid === init.you) return;
+      remotes.get(m.sid)?.model.setTool(m.tool ? (toolsById.get(m.tool) ?? null) : null);
+    });
+    r.onMessage("act", (m: { sid: string; type: ActionAnim; tool: string; from?: number[]; to?: number[] }) => {
+      if (m.sid === init.you) return;
+      remotes.get(m.sid)?.model.playAction(m.type);
+      if (m.from && m.to) tracer(Vector3.FromArray(m.from), Vector3.FromArray(m.to), toolsById.get(m.tool)?.color);
+    });
+    r.onMessage("hp", (m: { sid: string; hp: number; max: number }) => {
+      if (m.sid === init.you) return setHp(m.hp, m.max);
+      const rm = remotes.get(m.sid);
+      if (!rm) return;
+      const before = rm.hpFill.width;
+      setRemoteHp(rm, m.hp, m.max);
+      if (m.hp > 0 && before !== rm.hpFill.width) rm.model.flash();
+    });
+    r.onMessage("boost", (b: { secs: number; mult: number }) => {
+      boostUntil = performance.now() + b.secs * 1000;
+      boostMult = b.mult;
+      toast(`⚡ Przyspieszenie na ${b.secs} s!`, "good");
+    });
+
+    // ---------- używanie narzędzi ----------
+    const tracerMats = new Map<string, StandardMaterial>();
+    function tracer(from: Vector3, to: Vector3, color = "#ffe066") {
+      let m = tracerMats.get(color);
+      if (!m) {
+        m = new StandardMaterial("tracer", scene);
+        m.emissiveColor = hexColor(color).add(new Color3(0.3, 0.3, 0.3));
+        m.disableLighting = true;
+        m.alpha = 0.85;
+        tracerMats.set(color, m);
+      }
+      const tube = MeshBuilder.CreateTube("tracer", { path: [from, to], radius: 0.07, tessellation: 6 }, scene);
+      tube.material = m;
+      tube.isPickable = false;
+      const spark = MeshBuilder.CreateSphere("spark", { diameter: 0.6, segments: 6 }, scene);
+      spark.position.copyFrom(to);
+      spark.material = m;
+      spark.isPickable = false;
+      setTimeout(() => {
+        tube.dispose();
+        spark.dispose();
+      }, 90);
+    }
+
+    /** Używa trzymanego narzędzia, celując w punkt ekranu (domyślnie środek) */
+    function useTool(sx = engine.getRenderWidth() / 2, sy = engine.getRenderHeight() / 2) {
+      const def = hotbar.current;
+      if (!def || dead) return;
+      const now = performance.now();
+      if (now - (lastUse.get(def.id) ?? 0) < def.cooldown * 1000) return;
+      lastUse.set(def.id, now);
+      hotbar.cooldown(def.id, def.cooldown);
+      emote = null;
+
+      // punkt, w który celujemy
+      const ray = scene.createPickingRay(sx, sy, Matrix.Identity(), camera);
+      const pick = scene.pickWithRay(ray, (m: AbstractMesh) => m.isPickable && m.isVisible && m.isEnabled());
+      const aim = pick?.pickedPoint ?? ray.origin.add(ray.direction.scale(Math.max(def.range, 50)));
+      const face = (dx: number, dz: number) => {
+        if (Math.hypot(dx, dz) > 0.01) ry = Math.atan2(-dx, -dz);
+      };
+      let action: ActionAnim = "use";
+      const msg: Record<string, unknown> = { id: def.id };
+      if (def.type === "ranged") {
+        action = "shoot";
+        face(aim.x - body.x, aim.z - body.z);
+        local.root.rotation.y = ry;
+        local.root.computeWorldMatrix(true);
+        const origin = local.toolTip() ?? new Vector3(body.x, body.y + 4.5, body.z);
+        const dir = aim.subtract(origin).normalize();
+        Object.assign(msg, { ox: origin.x, oy: origin.y, oz: origin.z, dx: dir.x, dy: dir.y, dz: dir.z });
+        const hit = aim.subtract(origin).length() <= def.range ? aim : origin.add(dir.scale(def.range));
+        tracer(origin, hit, def.color);
+      } else if (def.type === "melee" || def.type === "custom") {
+        action = "swing";
+        face(aim.x - body.x, aim.z - body.z);
+      }
+      msg.ry = ry;
+      local.playAction(action);
+      r.send("use", msg);
+    }
+
+    scene.onPointerObservable.add((pi) => {
+      if (pi.type !== PointerEventTypes.POINTERTAP || !hotbar.current) return;
+      if ((pi.event as PointerEvent).button !== 0 && (pi.event as PointerEvent).pointerType === "mouse") return;
+      useTool(scene.pointerX, scene.pointerY);
+    });
     r.onMessage("tp", (t: { x: number; y: number; z: number }) => {
       Object.assign(body, t, { vx: 0, vy: 0, vz: 0 });
     });
@@ -353,8 +589,9 @@ export function playScreen(
         mz = rightZ * input.moveX + fwdZ * input.moveY;
       }
       const moving = Math.hypot(mx, mz) > 0.05;
-      body.vx = mx * walkSpeed;
-      body.vz = mz * walkSpeed;
+      const speed = walkSpeed * (performance.now() < boostUntil ? boostMult : 1);
+      body.vx = mx * speed;
+      body.vz = mz * speed;
       if (!dead && input.jump && body.onGround) {
         body.vy = jumpPower;
         body.onGround = false;
@@ -385,7 +622,12 @@ export function playScreen(
         while (diff < -Math.PI) diff += Math.PI * 2;
         ry += diff * Math.min(1, dt * 14);
       }
-      if (!dead) anim = !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
+      if (!dead) {
+        anim = !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
+        // ruch albo skok przerywa emotkę
+        if (anim !== "idle") emote = null;
+        else if (emote) anim = emote;
+      }
 
       local.root.position.set(body.x, body.y, body.z);
       local.root.rotation.y = ry;
@@ -396,6 +638,12 @@ export function playScreen(
       // kamera za graczem
       const head = new Vector3(body.x, body.y + 4.6, body.z);
       camera.target.addInPlace(head.subtract(camera.target).scale(Math.min(1, dt * 20)));
+      // kolizja kamery: jeśli ściana zasłania gracza, kamera się przysuwa
+      if (Math.abs(camera.radius - setRadius) > 0.001) wantRadius = camera.radius;
+      const off = camera.position.subtract(camera.target).normalize();
+      const block = raycastParts(collisions, camera.target.x, camera.target.y, camera.target.z, off.x, off.y, off.z, wantRadius);
+      camera.radius = block ? Math.max(camera.lowerRadiusLimit ?? 0.5, block.dist - 0.6) : wantRadius;
+      setRadius = camera.radius;
       world.followShadows(head);
 
       // inni gracze - płynne przejście do pozycji z serwera

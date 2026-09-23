@@ -9,9 +9,11 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 
 | | |
 |---|---|
-| 🎮 **Gra** | chodzenie (WASD / joystick na ekranie), skakanie, kamera 3. i 1. osoby, fizyka z rampami i schodkami, lawa, trampoliny, odradzanie się |
+| 🎮 **Gra** | chodzenie (WASD / joystick na ekranie), skakanie, kamera 3. i 1. osoby z kolizją ze ścianami, fizyka z rampami i schodkami, lawa, trampoliny, odradzanie się |
+| ⚔️ **Narzędzia i bronie** | miecze, topory, młoty, pistolety, karabiny, blastery, różdżki, apteczki, mikstury i kawa (przyspieszenie); pasek narzędzi na dole ekranu (klawisze 1–9); narzędzia od startu w ekwipunku albo do podniesienia ze złotych pól; zdrowie, obrażenia, PvP |
+| 🕺 **Animacje** | chodzenie, skok, spadanie, rozpadanie się po śmierci, trzymanie narzędzia, cios, strzał, picie/leczenie, mignięcie po trafieniu, emotki: machanie, taniec, wiwatowanie, wskazywanie, siadanie |
 | 👥 **Multiplayer** | domyślnie 30 graczy na serwer gry, twórca może ustawić do 50; płynny ruch innych graczy, nicki nad głowami |
-| 🧱 **Studio** | dodawanie klocków, kul, walców, klinów, spawnów, lawy i trampolin; przesuwanie i skalowanie z siatką, obracanie, kolory, materiały, cofanie (Ctrl+Z), publikowanie |
+| 🧱 **Studio** | dodawanie klocków, kul, walców, klinów, spawnów, lawy, trampolin i pól z narzędziami; przesuwanie i skalowanie z siatką, obracanie, kolory, materiały, cofanie (Ctrl+Z), edytor narzędzi i broni, włączanie PvP, publikowanie |
 | 📜 **Skrypty Lua** | uruchamiane na serwerze w piaskownicy (nieskończona pętla nie zawiesi serwera), zdarzenia, `wait()`, punkty, teleporty |
 | 🧩 **Bloczki** | programowanie jak w Scratchu (Blockly); bloczki zamieniają się w kod Lua |
 | 💬 **Czat** | dymki nad głowami, filtr wulgaryzmów (PL + EN), ochrona przed spamem |
@@ -40,7 +42,7 @@ Po starcie serwer wypisze adresy, np.:
 - Jeśli telefon nie może się połączyć, zezwól na port **2567** w zaporze Windows.
 - Żeby grali znajomi spoza Twojej sieci, przekieruj port 2567 na routerze albo użyj VPN, np. Tailscale.
 
-Przy pierwszym uruchomieniu powstaje przykładowa gra **„Tor przeszkód”** ze skryptami.
+Przy pierwszym uruchomieniu powstają przykładowe gry: **„Tor przeszkód”** ze skryptami i **„Arena”** z mieczem i pistoletem na start oraz karabinem, młotem, apteczkami i kawą do podniesienia.
 
 ### Ustawienia (zmienne środowiskowe)
 
@@ -106,6 +108,18 @@ end)
 | `setColor`, `setPosition`, `move`, `setSize`, `setVisible`, `setTransparency`, `setCollide`, `getPosition` | klocki |
 | `kill`, `teleport`, `playerName`, `getPlayers`, `getPlayerPosition`, `setSpeed`, `setJump` | gracze |
 | `addScore`, `setScore`, `getScore` | ranking w prawym górnym rogu |
+| `onToolUse(fn(player, toolName))`, `onDied(fn(player, killer))` | użycie narzędzia, śmierć gracza (`killer` = `""`, gdy nikt nie zabił) |
+| `giveTool`, `removeTool`, `hasTool` | ekwipunek (narzędzia po nazwie) |
+| `damage`, `heal`, `getHealth`, `setHealth` | zdrowie (0–100) |
+
+## Narzędzia i bronie
+
+W Studio, w panelu **„Narzędzia i bronie”**, kliknij **+ Nowe** i wybierz gotowy szablon (miecz, pistolet, apteczka…) albo ustaw wszystko sam: rodzaj, wygląd, kolor, obrażenia, zasięg, czas odnowienia.
+
+- **„Gracze mają je od startu”**: narzędzie jest w ekwipunku od razu po wejściu i po każdym odrodzeniu.
+- **Dodaj → „Narzędzie do podniesienia”**: złote pole w świecie. Gracz dotyka go i dostaje narzędzie. Pole ukryte skryptem (`setVisible`) nic nie daje.
+- **PvP** (Ustawienia gry) decyduje, czy bronie ranią innych graczy.
+- Obrażenia, zasięg i czas odnowienia sprawdza serwer, więc nie da się ich oszukać w przeglądarce.
 
 ## Sterowanie
 
@@ -115,6 +129,8 @@ end)
 | Skok | Spacja | przycisk po prawej |
 | Kamera | przeciągnij myszą, kółko przybliża | przeciągnij palcem, szczypanie |
 | Czat | Enter lub `/` | 💬 |
+| Narzędzia | klawisze 1–9 (0 chowa), klik = użyj | dotknij ikonę na pasku, czerwony przycisk = użyj |
+| Emotki | 😀 albo na czacie `/e dance`, `/e wave`, `/e cheer`, `/e point`, `/e sit` | 😀 |
 | Reset postaci | R | ☰ → Zresetuj |
 | Konsola skryptów (twórca) | F9 | 🖥 |
 
@@ -132,6 +148,6 @@ shared/   typy i logika wspólna dla klienta i serwera
 ```bash
 npm install
 npm run dev        # serwer na :2567 + klient z hot-reload na :5173
-npm test           # testy (silnik Lua, fizyka, filtr czatu)
+npm test           # testy (silnik Lua, fizyka, raycast, filtr czatu)
 npm run typecheck
 ```

@@ -31,6 +31,14 @@ export const LUA_HELP: [string, string][] = [
   ["setSpeed(player, 16)", "prędkość chodzenia (norm. 16)"],
   ["setJump(player, 50)", "siła skoku (norm. 50)"],
   ["time()", "sekundy od startu serwera"],
+  ["onToolUse(function(player, toolName) ... end)", "gdy gracz użyje narzędzia"],
+  ['onDied(function(player, killer) ... end)', "gdy gracz zginie (killer = \"\" gdy nikt)"],
+  ['giveTool(player, "Miecz")', "daj narzędzie (po nazwie)"],
+  ['removeTool(player, "Miecz")', "zabierz narzędzie"],
+  ['hasTool(player, "Miecz")', "czy gracz ma narzędzie"],
+  ["damage(player, 20)", "zadaj obrażenia"],
+  ["heal(player, 20)", "ulecz"],
+  ["getHealth(player) / setHealth(player, 100)", "zdrowie (0-100)"],
 ];
 
 export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void) {

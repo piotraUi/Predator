@@ -1,5 +1,5 @@
 // Fizyka postaci: grawitacja, skoki i zderzenia z klockami (AABB).
-import type { Part } from "../../../shared/types.ts";
+import type { Part } from "./types.ts";
 
 export const PLAYER_HALF = 0.9; // połowa szerokości postaci
 export const PLAYER_HEIGHT = 5.2;
@@ -198,4 +198,52 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
       touched.push(box.part);
   }
   return { touched, landedOn };
+}
+
+/** Przecięcie promienia z prostopadłościanem (metoda slabów). Zwraca odległość albo null. */
+export function rayBox(
+  ox: number, oy: number, oz: number,
+  dx: number, dy: number, dz: number,
+  minX: number, minY: number, minZ: number,
+  maxX: number, maxY: number, maxZ: number,
+): number | null {
+  let tmin = 0;
+  let tmax = Infinity;
+  const axes: [number, number, number, number][] = [
+    [ox, dx, minX, maxX],
+    [oy, dy, minY, maxY],
+    [oz, dz, minZ, maxZ],
+  ];
+  for (const [o, d, lo, hi] of axes) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < lo || o > hi) return null;
+      continue;
+    }
+    let t1 = (lo - o) / d;
+    let t2 = (hi - o) / d;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  return tmin;
+}
+
+/** Pierwszy klocek z kolizją na drodze promienia (kierunek musi być znormalizowany). */
+export function raycastParts(
+  world: CollisionWorld,
+  ox: number, oy: number, oz: number,
+  dx: number, dy: number, dz: number,
+  maxDist: number,
+): { dist: number; part: Part } | null {
+  const ex = ox + dx * maxDist;
+  const ez = oz + dz * maxDist;
+  const candidates = world.query(Math.min(ox, ex), Math.max(ox, ex), Math.min(oz, ez), Math.max(oz, ez));
+  let best: { dist: number; part: Part } | null = null;
+  for (const b of candidates) {
+    if (!b.part.collide || b.part.transparency >= 0.999) continue;
+    const t = rayBox(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ);
+    if (t !== null && t <= maxDist && (!best || t < best.dist)) best = { dist: t, part: b.part };
+  }
+  return best;
 }

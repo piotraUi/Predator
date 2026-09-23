@@ -26,6 +26,13 @@ export interface ScriptHost {
   setScore(player: string, value: number): void;
   setSpeed(player: string, speed: number): void;
   setJump(player: string, jump: number): void;
+  giveTool(player: string, toolName: string): boolean;
+  removeTool(player: string, toolName: string): void;
+  hasTool(player: string, toolName: string): boolean;
+  damage(player: string, amount: number): void;
+  heal(player: string, amount: number): void;
+  getHealth(player: string): number;
+  setHealth(player: string, hp: number): void;
 }
 
 /** 1000 instrukcji * 300 = 300 tys. instrukcji na jedno wywołanie */
@@ -33,7 +40,7 @@ const HOOK_EVERY = 1000;
 const MAX_HOOKS = 300;
 
 const PRELUDE = `
-local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {} }
+local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {} }
 local tasks = {}
 local now = 0
 
@@ -62,6 +69,10 @@ function onPlayerJoin(fn) table.insert(handlers.join, fn) end
 function onPlayerLeave(fn) table.insert(handlers.leave, fn) end
 function onChat(fn) table.insert(handlers.chat, fn) end
 function onRespawn(fn) table.insert(handlers.respawn, fn) end
+-- onDied(function(player, killer) ... end) - killer to "" gdy nikt nie zabił (lawa, upadek)
+function onDied(fn) table.insert(handlers.died, fn) end
+-- onToolUse(function(player, toolName) ... end)
+function onToolUse(fn) table.insert(handlers.tool, fn) end
 function onTouch(partName, fn)
   local list = handlers.touch[partName]
   if not list then
@@ -305,6 +316,34 @@ export class LuaEngine {
       h.setJump(this.str(L, 1), lauxlib.luaL_checknumber(L, 2));
       return 0;
     });
+    def("giveTool", (L) => {
+      lua.lua_pushboolean(L, h.giveTool(this.str(L, 1), this.str(L, 2)));
+      return 1;
+    });
+    def("removeTool", (L) => {
+      h.removeTool(this.str(L, 1), this.str(L, 2));
+      return 0;
+    });
+    def("hasTool", (L) => {
+      lua.lua_pushboolean(L, h.hasTool(this.str(L, 1), this.str(L, 2)));
+      return 1;
+    });
+    def("damage", (L) => {
+      h.damage(this.str(L, 1), lauxlib.luaL_checknumber(L, 2));
+      return 0;
+    });
+    def("heal", (L) => {
+      h.heal(this.str(L, 1), lauxlib.luaL_checknumber(L, 2));
+      return 0;
+    });
+    def("getHealth", (L) => {
+      lua.lua_pushnumber(L, h.getHealth(this.str(L, 1)));
+      return 1;
+    });
+    def("setHealth", (L) => {
+      h.setHealth(this.str(L, 1), lauxlib.luaL_checknumber(L, 2));
+      return 0;
+    });
   }
 
   /** Wywołuje globalną funkcję Lua z argumentami (tekst lub liczba) z limitem instrukcji. */
@@ -352,6 +391,12 @@ export class LuaEngine {
   }
   playerRespawned(player: string) {
     this.call("__fire", "respawn", player);
+  }
+  died(player: string, killer: string) {
+    this.call("__fire", "died", player, killer);
+  }
+  toolUsed(player: string, toolName: string) {
+    this.call("__fire", "tool", player, toolName);
   }
   chat(player: string, text: string) {
     this.call("__fire", "chat", player, text);

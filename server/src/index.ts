@@ -6,7 +6,8 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { demoObby } from "../../shared/world.ts";
+import type { WorldData } from "../../shared/types.ts";
+import { demoArena, demoObby } from "../../shared/world.ts";
 import { api } from "./api.ts";
 import { hashPassword } from "./auth.ts";
 import { config } from "./config.ts";
@@ -33,22 +34,23 @@ const server = http.createServer(app);
 const gameServer = new Server({ greet: false, transport: new WebSocketTransport({ server }) });
 gameServer.define("world", WorldRoom).filterBy(["worldId"]);
 
-// przy pierwszym uruchomieniu tworzymy przykładową grę
-if (worlds.count() === 0) {
-  let owner = users.byName("Predator");
-  if (!owner) {
-    const { hash, salt } = hashPassword(crypto.randomUUID());
-    owner = users.create("Predator", hash, salt);
-  }
-  const w = worlds.create(owner.id, "Tor przeszkód", demoObby(), 30);
-  worlds.update(w.id, {
-    name: w.name,
-    description: "Przykładowy tor przeszkód. Uważaj na lawę!",
-    maxPlayers: 30,
-    published: true,
-    data: demoObby(),
-  });
-  console.log("Utworzono przykładową grę 'Tor przeszkód'");
+// przykładowe gry - tworzone, jeśli ich jeszcze nie ma
+const demos: [string, string, () => WorldData][] = [
+  ["Tor przeszkód", "Przykładowy tor przeszkód. Uważaj na lawę!", demoObby],
+  ["Arena", "Walka na miecze i pistolety! Zbieraj bronie z złotych pól.", demoArena],
+];
+let owner = users.byName("Predator");
+if (!owner) {
+  const { hash, salt } = hashPassword(crypto.randomUUID());
+  owner = users.create("Predator", hash, salt);
+}
+const existing = new Set(worlds.byOwner(owner.id).map((w) => w.name));
+for (const [name, description, make] of demos) {
+  if (existing.has(name)) continue;
+  const data = make();
+  const w = worlds.create(owner.id, name, data, 30);
+  worlds.update(w.id, { name, description, maxPlayers: 30, published: true, data });
+  console.log(`Utworzono przykładową grę '${name}'`);
 }
 
 await gameServer.listen(config.port, config.host);

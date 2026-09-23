@@ -11,11 +11,13 @@ import {
   ShadowGenerator,
   StandardMaterial,
   Texture,
+  TransformNode,
   Vector3,
   VertexData,
   type AbstractMesh,
 } from "@babylonjs/core";
-import type { Part } from "../../../shared/types.ts";
+import type { Part, ToolDef } from "../../../shared/types.ts";
+import { buildToolModel } from "./toolModels.ts";
 
 export function createEngine(canvas: HTMLCanvasElement) {
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true, antialias: true });
@@ -127,6 +129,10 @@ function createWedge(name: string, scene: Scene) {
 export class WorldView {
   readonly meshes = new Map<string, AbstractMesh>();
   readonly materials: MaterialCache;
+  private parts = new Map<string, Part>();
+  private tools = new Map<string, ToolDef>();
+  /** modele narzędzi unoszące się nad polami "pickup" */
+  private pickups = new Map<string, { node: TransformNode; baseY: number }>();
   shadows: ShadowGenerator | null = null;
   sun: DirectionalLight;
   hemi: HemisphericLight;
@@ -161,6 +167,38 @@ export class WorldView {
       this.shadows.bias = 0.0008;
       this.shadows.normalBias = 0.02;
     }
+    // narzędzia do podniesienia kręcą się i unoszą
+    scene.onBeforeRenderObservable.add(() => {
+      if (this.pickups.size === 0) return;
+      const t = performance.now() / 1000;
+      for (const { node, baseY } of this.pickups.values()) {
+        node.rotation.y = t * 1.6;
+        node.position.y = baseY + Math.sin(t * 2.5) * 0.25;
+      }
+    });
+  }
+
+  /** Definicje narzędzi potrzebne do pokazania pól z narzędziami */
+  setTools(tools: ToolDef[]) {
+    this.tools = new Map(tools.map((t) => [t.id, t]));
+    for (const p of this.parts.values()) if (p.kind === "pickup" || this.pickups.has(p.id)) this.updatePickup(p);
+  }
+
+  private updatePickup(part: Part) {
+    this.pickups.get(part.id)?.node.dispose();
+    this.pickups.delete(part.id);
+    const def = part.kind === "pickup" && part.toolId ? this.tools.get(part.toolId) : undefined;
+    if (!def || part.transparency >= 0.999) return;
+    const model = buildToolModel(this.scene, def);
+    const baseY = part.y + part.sy / 2 + 1.6;
+    model.root.position.set(part.x, baseY, part.z);
+    model.root.scaling.setAll(1.3);
+    for (const m of model.meshes) {
+      m.metadata = { partId: part.id };
+      m.isPickable = true;
+      this.shadows?.addShadowCaster(m);
+    }
+    this.pickups.set(part.id, { node: model.root, baseY });
   }
 
   setSky(color: string) {
@@ -194,6 +232,7 @@ export class WorldView {
     }
     mesh.metadata = { partId: part.id };
     mesh.receiveShadows = true;
+    this.parts.set(part.id, part);
     this.shadows?.addShadowCaster(mesh);
     this.meshes.set(part.id, mesh);
     this.apply(part);
@@ -213,11 +252,15 @@ export class WorldView {
         : undefined;
     mesh.material = this.materials.get(part.color, part.material, part.transparency, grid);
     mesh.isVisible = part.transparency < 0.999;
+    this.updatePickup(part);
   }
 
   remove(id: string) {
     this.meshes.get(id)?.dispose();
     this.meshes.delete(id);
+    this.parts.delete(id);
+    this.pickups.get(id)?.node.dispose();
+    this.pickups.delete(id);
   }
 
   load(parts: Part[]) {
@@ -225,7 +268,6 @@ export class WorldView {
   }
 
   clear() {
-    for (const m of this.meshes.values()) m.dispose();
-    this.meshes.clear();
+    for (const id of [...this.meshes.keys()]) this.remove(id);
   }
 }

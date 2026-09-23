@@ -22,6 +22,13 @@ function makeHost() {
     setScore: (p, v) => scores.set(p, v),
     setSpeed: () => {},
     setJump: () => {},
+    giveTool: (p, n) => (log.push(`give:${p}:${n}`), true),
+    removeTool: (p, n) => log.push(`remove:${p}:${n}`),
+    hasTool: (_p, n) => n === "Miecz",
+    damage: (p, n) => log.push(`dmg:${p}:${n}`),
+    heal: (p, n) => log.push(`heal:${p}:${n}`),
+    getHealth: () => 75,
+    setHealth: (p, n) => log.push(`hp:${p}:${n}`),
   };
   return { host, log, parts, scores };
 }
@@ -87,5 +94,28 @@ test("błąd składni jest zgłaszany", () => {
   const e = new LuaEngine(host);
   e.runScript("zly", `if then`);
   assert.match(log[0], /^err:zly:1:/);
+  e.close();
+});
+
+test("narzędzia, zdrowie i śmierć", () => {
+  const { host, log, scores } = makeHost();
+  const e = new LuaEngine(host);
+  e.runScript("t", `
+    onToolUse(function(p, tool) if tool == "Różdżka" then heal(p, 10) end end)
+    onDied(function(p, killer) if killer ~= "" then addScore(killer, 1) end end)
+    onPlayerJoin(function(p)
+      if giveTool(p, "Miecz") and hasTool(p, "Miecz") and not hasTool(p, "Łuk") then
+        damage(p, getHealth(p) - 50)
+        removeTool(p, "Stary")
+        setHealth(p, 100)
+      end
+    end)
+  `);
+  e.playerJoined("a");
+  e.toolUsed("a", "Różdżka");
+  e.died("a", "b");
+  e.died("a", "");
+  assert.deepEqual(log, ["give:a:Miecz", "dmg:a:25", "remove:a:Stary", "hp:a:100", "heal:a:10"]);
+  assert.equal(scores.get("b"), 1);
   e.close();
 });

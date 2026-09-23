@@ -8,13 +8,15 @@ import {
   Vector3,
   type AbstractMesh,
 } from "@babylonjs/core";
-import type { Part, PartKind, PartShape, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
+import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
+import type { Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
 import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
 import { makePart, MAX_PARTS, newId } from "../../../shared/world.ts";
 import { api } from "../api.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
 import { h, modal, toast } from "../ui/dom.ts";
 import { openScriptEditor } from "./scriptEditor.ts";
+import { openToolEditor } from "./toolEditor.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Tool = "select" | "move" | "scale";
@@ -30,7 +32,13 @@ const PRESETS: { label: string; icon: string; part: Partial<Part> }[] = [
 ];
 
 const SHAPE_ICONS: Record<PartShape, string> = { box: "⬛", sphere: "⚪", cylinder: "🛢", wedge: "📐" };
-const KIND_LABELS: Record<PartKind, string> = { normal: "Zwykły", spawn: "Spawn (start)", kill: "Zabija (lawa)", bounce: "Trampolina" };
+const KIND_LABELS: Record<PartKind, string> = {
+  normal: "Zwykły",
+  spawn: "Spawn (start)",
+  kill: "Zabija (lawa)",
+  bounce: "Trampolina",
+  pickup: "Narzędzie do podniesienia",
+};
 
 const snap = (v: number, step: number) => Math.round(v / step) * step;
 const round = (v: number) => Math.round(v * 1000) / 1000;
@@ -65,6 +73,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     const redo: string[] = [];
 
     const view = new WorldView(scene, { shadows: false, skyColor: data.skyColor });
+    view.setTools(data.tools);
     view.load(data.parts);
 
     // ---------- kamera ----------
@@ -254,6 +263,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
       PRESETS.map((pr) =>
         h("button", { class: "dd-item", onClick: () => (addMenu.classList.add("hidden"), addPart(pr.part)) }, pr.icon + " " + pr.label),
       ),
+      h("button", { class: "dd-item", onClick: () => (addMenu.classList.add("hidden"), addPickup()) }, "🗡️ Narzędzie do podniesienia"),
     );
     const gridSel = h(
       "select",
@@ -307,6 +317,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     const explorer = h("div", { class: "panel-body" });
     const props = h("div", { class: "panel-body" });
     const scriptsList = h("div", { class: "panel-body" });
+    const toolsList = h("div", { class: "panel-body" });
     const leftPanel = h(
       "aside",
       { class: "studio-panel left" },
@@ -324,6 +335,13 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
         ),
       ),
       scriptsList,
+      h(
+        "div",
+        { class: "panel-title" },
+        "Narzędzia i bronie",
+        h("span", { class: "panel-actions" }, h("button", { class: "btn small", onClick: () => editTool(null) }, "+ Nowe")),
+      ),
+      toolsList,
     );
     const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości"), props);
 
@@ -420,7 +438,29 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
           select(p);
           changed();
         })),
-        field("Typ", select_(p.kind, Object.entries(KIND_LABELS) as [PartKind, string][], (v) => upd(() => (p.kind = v)))),
+        field(
+          "Typ",
+          select_(p.kind, Object.entries(KIND_LABELS) as [PartKind, string][], (v) => {
+            upd(() => {
+              p.kind = v;
+              if (v === "pickup") {
+                p.collide = false;
+                p.toolId ??= data.tools[0]?.id;
+              }
+            });
+            renderProps();
+          }),
+        ),
+        p.kind === "pickup"
+          ? data.tools.length
+            ? field(
+                "Narzędzie na tym polu",
+                select_(p.toolId ?? "", data.tools.map((t) => [t.id, `${toolIcon(t)} ${t.name}`] as [string, string]), (v) =>
+                  upd(() => (p.toolId = v)),
+                ),
+              )
+            : h("p", { class: "hint" }, "Najpierw zrób narzędzie w panelu „Narzędzia i bronie”.")
+          : "",
         field(
           "Materiał",
           select_(p.material ?? "plastic", [["plastic", "Plastik"], ["neon", "Neon (świeci)"], ["glass", "Szkło"], ["metal", "Metal"]], (v) =>
@@ -508,6 +548,62 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
       });
     }
 
+    // ---------- narzędzia ----------
+    function renderTools() {
+      toolsList.replaceChildren(
+        ...(data.tools.length
+          ? data.tools.map((t) =>
+              h(
+                "div",
+                { class: "script-item" },
+                h(
+                  "button",
+                  { class: "script-open", onClick: () => editTool(t), title: TOOL_TYPE_LABELS[t.type] },
+                  toolIcon(t) + " ",
+                  t.name,
+                  t.starter ? h("span", { class: "tree-kind" }, " od startu") : null,
+                ),
+                h(
+                  "button",
+                  {
+                    class: "icon-btn",
+                    title: "Usuń narzędzie",
+                    onClick: () => {
+                      if (!confirm(`Usunąć „${t.name}”?`)) return;
+                      data.tools = data.tools.filter((x) => x !== t);
+                      view.setTools(data.tools);
+                      changed();
+                      renderTools();
+                      renderProps();
+                    },
+                  },
+                  "🗑",
+                ),
+              ),
+            )
+          : [h("p", { class: "muted" }, "Brak narzędzi. Zrób miecz, pistolet albo apteczkę!")]),
+      );
+    }
+    function editTool(t: ToolDef | null, then?: (t: ToolDef) => void) {
+      if (!t && data.tools.length >= 30) return toast("Maksymalnie 30 narzędzi", "error");
+      openToolEditor(t, (res) => {
+        const i = data.tools.findIndex((x) => x.id === res.id);
+        if (i >= 0) data.tools[i] = res;
+        else data.tools.push(res);
+        view.setTools(data.tools);
+        changed();
+        renderTools();
+        renderProps();
+        then?.(res);
+      });
+    }
+    function addPickup() {
+      const place = (tool: ToolDef) =>
+        addPart({ name: "Narzędzie " + tool.name, kind: "pickup", toolId: tool.id, sx: 3, sy: 0.4, sz: 3, color: "#ffd24a", material: "neon", collide: false });
+      if (data.tools.length) place(data.tools[0]);
+      else editTool(null, place);
+    }
+
     // ---------- ustawienia gry ----------
     function openSettings() {
       const name = h("input", { value: info.name, maxLength: 40 });
@@ -516,6 +612,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
       const sky = h("input", { type: "color", value: data.skyColor });
       const grav = h("input", { type: "number", min: "10", max: "500", step: "1", value: String(data.gravity) });
       const pub = h("input", { type: "checkbox", checked: info.published });
+      const pvp = h("input", { type: "checkbox", checked: data.pvp });
       const close = modal(
         "Ustawienia gry",
         h(
@@ -526,6 +623,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
           h("label", null, `Maks. graczy na serwer (1–${MAX_PLAYERS_LIMIT})`, maxP),
           h("label", null, "Kolor nieba", sky),
           h("label", null, "Grawitacja (normalnie 196)", grav),
+          h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
           h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać")),
         ),
         [
@@ -536,6 +634,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
             onClick: async () => {
               data.skyColor = sky.value;
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
+              data.pvp = pvp.checked;
               view.setSky(data.skyColor);
               try {
                 info = await api.saveWorld(info.id, {
@@ -613,6 +712,7 @@ export function studioScreen(root: HTMLElement, params: { worldId: number }, go:
     renderExplorer();
     renderProps();
     renderScripts();
+    renderTools();
     setTool("move");
   }
 

@@ -38,6 +38,8 @@ Blockly.common.defineBlocksWithJsonArray([
   { type: "p_on_respawn", message0: "gdy gracz się odrodzi %1 %2", args0: [{ type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT },
   { type: "p_on_touch", message0: "gdy gracz dotknie klocka %1 %2 %3", args0: [partField("PART", "Meta"), { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT, tooltip: "Klocek wskazujesz po nazwie (z panelu Właściwości)" },
   { type: "p_on_chat", message0: "gdy gracz napisze na czacie %1 %2", args0: [{ type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT },
+  { type: "p_on_tool", message0: "gdy gracz użyje narzędzia %1 %2 %3", args0: [partField("TOOL", "Miecz"), { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT, tooltip: "Nazwa narzędzia z panelu Narzędzia i bronie" },
+  { type: "p_on_died", message0: "gdy gracz zginie %1 %2", args0: [{ type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT },
   { type: "p_every", message0: "co %1 sekund %2 %3", args0: [{ type: "field_number", name: "SEC", value: 1, min: 0.05 }, { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT },
   { type: "p_after", message0: "po %1 sekundach %2 %3", args0: [{ type: "field_number", name: "SEC", value: 3, min: 0 }, { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT },
 
@@ -63,10 +65,17 @@ Blockly.common.defineBlocksWithJsonArray([
   { type: "p_set_speed", message0: "ustaw prędkość gracza na %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Normalnie 16" },
   { type: "p_set_jump", message0: "ustaw siłę skoku gracza na %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Normalnie 50" },
 
+  { type: "p_give_tool", message0: "daj graczowi narzędzie %1", args0: [partField("TOOL", "Miecz")], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "p_remove_tool", message0: "zabierz graczowi narzędzie %1", args0: [partField("TOOL", "Miecz")], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "p_damage", message0: "zadaj graczowi %1 obrażeń", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "p_heal", message0: "ulecz gracza o %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "p_killer_score", message0: "dodaj zabójcy %1 punktów", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Działa w bloczku „gdy gracz zginie”" },
+
   // ---- wartości ----
   { type: "p_player_name", message0: "nick gracza", output: "String", colour: PLAYER },
   { type: "p_message", message0: "wiadomość z czatu", output: "String", colour: PLAYER },
   { type: "p_score", message0: "punkty gracza", output: "Number", colour: PLAYER },
+  { type: "p_health", message0: "zdrowie gracza", output: "Number", colour: PLAYER },
   { type: "p_player_count", message0: "liczba graczy", output: "Number", colour: PLAYER },
 ]);
 
@@ -83,6 +92,9 @@ g.forBlock["p_on_leave"] = (b) => `onPlayerLeave(function(player)\n${stmts(b)}en
 g.forBlock["p_on_respawn"] = (b) => `onRespawn(function(player)\n${stmts(b)}end)\n`;
 g.forBlock["p_on_touch"] = (b) => `onTouch(${part(b)}, function(player)\n${stmts(b)}end)\n`;
 g.forBlock["p_on_chat"] = (b) => `onChat(function(player, message)\n${stmts(b)}end)\n`;
+g.forBlock["p_on_tool"] = (b) =>
+  `onToolUse(function(player, toolName)\n  if toolName == ${q(String(b.getFieldValue("TOOL") ?? ""))} then\n${g.prefixLines(stmts(b), "  ")}  end\nend)\n`;
+g.forBlock["p_on_died"] = (b) => `onDied(function(player, killer)\n${stmts(b)}end)\n`;
 g.forBlock["p_every"] = (b) => `every(${num(b, "SEC")}, function()\n${stmts(b)}end)\n`;
 g.forBlock["p_after"] = (b) => `after(${num(b, "SEC")}, function()\n${stmts(b)}end)\n`;
 
@@ -105,6 +117,13 @@ g.forBlock["p_set_score"] = (b) => `if player then setScore(player, ${val(b, "N"
 g.forBlock["p_set_speed"] = (b) => `if player then setSpeed(player, ${val(b, "N", "16")}) end\n`;
 g.forBlock["p_set_jump"] = (b) => `if player then setJump(player, ${val(b, "N", "50")}) end\n`;
 
+const tool = (b: Blockly.Block) => q(String(b.getFieldValue("TOOL") ?? ""));
+g.forBlock["p_give_tool"] = (b) => `if player then giveTool(player, ${tool(b)}) end\n`;
+g.forBlock["p_remove_tool"] = (b) => `if player then removeTool(player, ${tool(b)}) end\n`;
+g.forBlock["p_damage"] = (b) => `if player then damage(player, ${val(b, "N", "10")}) end\n`;
+g.forBlock["p_heal"] = (b) => `if player then heal(player, ${val(b, "N", "10")}) end\n`;
+g.forBlock["p_killer_score"] = (b) => `if killer and killer ~= "" then addScore(killer, ${val(b, "N", "1")}) end\n`;
+g.forBlock["p_health"] = () => [`(player and getHealth(player) or 0)`, Order.ATOMIC];
 g.forBlock["p_player_name"] = () => [`(player and playerName(player) or "")`, Order.ATOMIC];
 g.forBlock["p_message"] = () => [`(message or "")`, Order.ATOMIC];
 g.forBlock["p_score"] = () => [`(player and getScore(player) or 0)`, Order.ATOMIC];
@@ -119,7 +138,7 @@ const TOOLBOX = {
   contents: [
     {
       kind: "category", name: "Zdarzenia", colour: EVENT,
-      contents: ["p_on_start", "p_on_join", "p_on_leave", "p_on_touch", "p_on_chat", "p_on_respawn", "p_every", "p_after"].map((t) => block(t)),
+      contents: ["p_on_start", "p_on_join", "p_on_leave", "p_on_touch", "p_on_chat", "p_on_respawn", "p_on_tool", "p_on_died", "p_every", "p_after"].map((t) => block(t)),
     },
     {
       kind: "category", name: "Ogólne", colour: VALUE,
@@ -148,6 +167,16 @@ const TOOLBOX = {
         block("p_set_speed", { inputs: { N: numShadow(32) } }),
         block("p_set_jump", { inputs: { N: numShadow(80) } }),
         block("p_player_name"), block("p_message"), block("p_score"), block("p_player_count"),
+      ],
+    },
+    {
+      kind: "category", name: "Narzędzia i walka", colour: 0,
+      contents: [
+        block("p_give_tool"), block("p_remove_tool"),
+        block("p_damage", { inputs: { N: numShadow(20) } }),
+        block("p_heal", { inputs: { N: numShadow(20) } }),
+        block("p_killer_score", { inputs: { N: numShadow(1) } }),
+        block("p_health"),
       ],
     },
     {

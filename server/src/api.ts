@@ -130,7 +130,7 @@ api.get("/worlds/:id", requireAuth, (req, res) => {
   const w = worlds.byId(Number(req.params.id));
   if (!w) return fail(res, 404, "Nie ma takiej gry");
   if (w.owner_id !== (req as AuthedRequest).user.id) return fail(res, 403, "To nie twoja gra");
-  res.json({ info: worldInfo(w), data: JSON.parse(w.data) });
+  res.json({ info: worldInfo(w), data: sanitizeWorld(JSON.parse(w.data)) });
 });
 
 api.put("/worlds/:id", requireAuth, (req, res) => {
@@ -144,7 +144,7 @@ api.put("/worlds/:id", requireAuth, (req, res) => {
     description: String(b.description ?? w.description).slice(0, 500),
     maxPlayers: Math.min(MAX_PLAYERS_LIMIT, Math.max(1, maxPlayers)),
     published: b.published === undefined ? !!w.published : !!b.published,
-    data: b.data === undefined ? JSON.parse(w.data) : sanitizeWorld(b.data),
+    data: sanitizeWorld(b.data === undefined ? JSON.parse(w.data) : b.data),
   });
   res.json(worldInfo(worlds.byId(w.id)!));
 });
