@@ -1,0 +1,106 @@
+# Buduje aplikacje: Windows (.exe), Android (.apk) i iOS (.ipa bez podpisu).
+# Uruchom ręcznie w zakładce Actions → "Zbuduj aplikacje" → Run workflow,
+# albo wypchnij tag, np. git tag v0.1.0 && git push --tags
+name: Zbuduj aplikacje
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    name: Testy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  windows:
+    name: Windows (.exe)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Zbuduj exe
+        working-directory: desktop
+        run: |
+          npm ci
+          npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Predator-Windows
+          path: desktop/release/*.exe
+
+  android:
+    name: Android (.apk)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - name: Zbuduj grę i projekt Android
+        working-directory: client
+        run: |
+          npm run build:app
+          npx cap add android
+          npx cap sync android
+      - name: Zbuduj APK
+        working-directory: client/android
+        run: ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Predator-Android
+          path: client/android/app/build/outputs/apk/debug/*.apk
+
+  ios:
+    name: iOS (.ipa bez podpisu)
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Zbuduj grę i projekt iOS
+        working-directory: client
+        run: |
+          npm run build:app
+          npx cap add ios
+          npx cap sync ios
+          # pozwól na połączenia http do Twojego serwera gry
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" ios/App/App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" ios/App/App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'Predator łączy się z serwerem gry w Twojej sieci.'" ios/App/App/Info.plist || true
+      - name: Zbuduj aplikację (bez podpisu)
+        working-directory: client/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release -sdk iphoneos \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -r Predator-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Predator-iOS
+          path: client/ios/App/Predator-unsigned.ipa

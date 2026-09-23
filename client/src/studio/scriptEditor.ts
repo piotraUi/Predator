@@ -1,0 +1,147 @@
+// Okno edycji skryptu: Lua (tekst) albo bloczki.
+import type { WorldScript } from "../../../shared/types.ts";
+import { h, toast } from "../ui/dom.ts";
+
+export const LUA_HELP: [string, string][] = [
+  ["onPlayerJoin(function(player) ... end)", "gdy gracz dołączy"],
+  ["onPlayerLeave(function(player) ... end)", "gdy gracz wyjdzie"],
+  ['onTouch("Nazwa", function(player) ... end)', "gdy gracz dotknie klocka o tej nazwie"],
+  ["onChat(function(player, message) ... end)", "gdy gracz coś napisze"],
+  ["onRespawn(function(player) ... end)", "gdy gracz się odrodzi"],
+  ["every(sekundy, function() ... end)", "powtarzaj co X sekund"],
+  ["after(sekundy, function() ... end)", "zrób raz po X sekundach"],
+  ["wait(sekundy)", "czekaj (tylko wewnątrz funkcji)"],
+  ['say("tekst")', "wiadomość do wszystkich"],
+  ['tell(player, "tekst")', "wiadomość do jednego gracza"],
+  ['print("tekst")', "wypisz w konsoli (F9 w grze)"],
+  ['setColor("Nazwa", "#ff0000")', "zmień kolor klocka"],
+  ['setPosition("Nazwa", x, y, z)', "przestaw klocek"],
+  ['move("Nazwa", dx, dy, dz)', "przesuń klocek o tyle"],
+  ['setSize("Nazwa", sx, sy, sz)', "zmień rozmiar"],
+  ['setVisible("Nazwa", true/false)', "pokaż / ukryj (i wyłącz kolizję)"],
+  ['setTransparency("Nazwa", 0.5)', "przezroczystość 0-1"],
+  ['setCollide("Nazwa", false)', "czy można przez niego przechodzić"],
+  ['getPosition("Nazwa")', "zwraca x, y, z klocka"],
+  ["kill(player)", "zabij gracza"],
+  ["teleport(player, x, y, z)", "teleportuj gracza"],
+  ["playerName(player)", "nick gracza"],
+  ["getPlayers()", "lista wszystkich graczy"],
+  ["getPlayerPosition(player)", "zwraca x, y, z gracza"],
+  ["addScore(player, 1) / setScore / getScore", "punkty w rankingu gry"],
+  ["setSpeed(player, 16)", "prędkość chodzenia (norm. 16)"],
+  ["setJump(player, 50)", "siła skoku (norm. 50)"],
+  ["time()", "sekundy od startu serwera"],
+];
+
+export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void) {
+  const nameInput = h("input", { class: "script-name", value: script.name, maxLength: 40 });
+  let dirty = false;
+  const markDirty = () => (dirty = true);
+  nameInput.addEventListener("input", markDirty);
+
+  const body = h("div", { class: "script-body" });
+  const overlay = h("div", { class: "script-editor" });
+  let getResult: () => WorldScript;
+  let cleanup = () => {};
+
+  const close = (save: boolean) => {
+    if (save) onSave(getResult());
+    else if (dirty && !confirm("Masz niezapisane zmiany w skrypcie. Zamknąć bez zapisywania?")) return;
+    cleanup();
+    overlay.remove();
+    window.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    e.stopPropagation();
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      e.preventDefault();
+      close(true);
+    }
+  };
+  window.addEventListener("keydown", onKey, true);
+
+  overlay.append(
+    h(
+      "div",
+      { class: "script-top" },
+      h("span", { class: "badge" }, script.type === "lua" ? "Lua" : "Bloczki"),
+      nameInput,
+      h("div", { class: "spacer" }),
+      h("button", { class: "btn", onClick: () => close(false) }, "Anuluj"),
+      h("button", { class: "btn primary", onClick: () => close(true) }, "✔ Gotowe"),
+    ),
+    body,
+  );
+  document.body.append(overlay);
+
+  if (script.type === "lua") {
+    const area = h("textarea", { class: "code", spellcheck: false, value: script.source });
+    area.addEventListener("input", markDirty);
+    area.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const s = area.selectionStart;
+        area.setRangeText("  ", s, area.selectionEnd, "end");
+        markDirty();
+      }
+    });
+    const help = h(
+      "div",
+      { class: "help" },
+      h("h3", null, "Co można użyć"),
+      h("p", { class: "muted" }, "Kliknij, żeby wstawić do kodu. Klocki wskazujesz po nazwie z panelu Właściwości."),
+      LUA_HELP.map(([code, desc]) =>
+        h(
+          "button",
+          {
+            class: "help-item",
+            onClick: () => {
+              area.setRangeText(code, area.selectionStart, area.selectionEnd, "end");
+              area.focus();
+              markDirty();
+            },
+          },
+          h("code", null, code),
+          h("span", null, desc),
+        ),
+      ),
+    );
+    body.append(area, help);
+    area.focus();
+    getResult = () => ({ ...script, name: nameInput.value.trim() || script.name, source: area.value });
+  } else {
+    const wsDiv = h("div", { class: "blockly" });
+    const preview = h("pre", { class: "lua-preview hidden" });
+    const toggle = h(
+      "button",
+      { class: "btn small preview-toggle", onClick: () => preview.classList.toggle("hidden") },
+      "Pokaż kod Lua",
+    );
+    body.append(wsDiv, preview, toggle);
+    const loading = h("div", { class: "loading" }, h("div", { class: "spinner" }), "Ładowanie bloczków…");
+    wsDiv.append(loading);
+    let editor: import("./blocks.ts").BlocksEditor | null = null;
+    getResult = () =>
+      editor
+        ? { ...script, name: nameInput.value.trim() || script.name, blocks: editor.getState(), source: editor.getLua() }
+        : { ...script, name: nameInput.value.trim() || script.name };
+    import("./blocks.ts")
+      .then(({ createBlocksEditor }) => {
+        loading.remove();
+        editor = createBlocksEditor(wsDiv, script.blocks);
+        const upd = () => (preview.textContent = editor!.getLua());
+        upd();
+        editor.onChange(() => {
+          markDirty();
+          upd();
+        });
+        const onResize = () => editor?.resize();
+        window.addEventListener("resize", onResize);
+        cleanup = () => {
+          window.removeEventListener("resize", onResize);
+          editor?.dispose();
+        };
+      })
+      .catch((e) => toast("Nie udało się wczytać bloczków: " + e.message, "error"));
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "predator",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Predator - klockowa gra-platforma w stylu Robloxa, działająca w przeglądarce, na PC i telefonach",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w client",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "test": "npm test -w server && tsx --test client/src/engine/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
