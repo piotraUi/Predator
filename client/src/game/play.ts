@@ -81,7 +81,7 @@ export function playScreen(
   go: (screen: string, params?: Record<string, unknown>) => void,
 ): () => void {
   const canvas = h("canvas", { class: "game-canvas" });
-  const loading = h("div", { class: "loading" }, h("div", { class: "spinner" }), "Łączenie z grą…");
+  const loading = h("div", { class: "loading" }, h("div", { class: "spinner" }), "Łączenie z grą…​");
   const wrap = h("div", { class: "play-screen" }, canvas, loading);
   root.append(wrap);
 
@@ -106,6 +106,16 @@ export function playScreen(
         return joining.then((r) => r as unknown as GameConnection);
       })();
 
+  // gdy serwer gry nie odpowiada (np. zablokowany port), nie czekamy w nieskończoność
+  let started = false;
+  const joinTimeout = setTimeout(() => {
+    if (started || disposed) return;
+    toast("Serwer gry nie odpowiada - sprawdź połączenie i spróbuj ponownie", "error");
+    leaving = true;
+    room?.leave();
+    back();
+  }, 20_000);
+
   join
     .then((r) => {
       if (disposed) {
@@ -128,6 +138,8 @@ export function playScreen(
     });
 
   function start(r: GameConnection, init: InitMsg) {
+    started = true;
+    clearTimeout(joinTimeout);
     loading.remove();
     const world = new WorldView(scene, { shadows: true, skyColor: init.world.skyColor });
     const parts = new Map<string, Part>(init.world.parts.map((p) => [p.id, p]));
@@ -774,6 +786,7 @@ export function playScreen(
   }
 
   return () => {
+    clearTimeout(joinTimeout);
     disposed = true;
     leaving = true;
     room?.leave();

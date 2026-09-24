@@ -1,4 +1,4 @@
-import type { FriendInfo, PublicUser, WorldData, WorldInfo } from "../../shared/types.ts";
+import type { ChatMessage, Conversation, FriendInfo, PublicUser, WorldData, WorldInfo } from "../../shared/types.ts";
 import type { CatalogItem } from "../../shared/catalog.ts";
 
 const LS_SERVER = "predator.server";
@@ -53,6 +53,9 @@ export class ApiError extends Error {
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
+  // bez limitu czasu telefon potrafi czekać w nieskończoność, gdy serwer jest nieosiągalny
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), method === "GET" ? 15_000 : 60_000);
   try {
     res = await fetch(getServerUrl() + "/api" + path, {
       method,
@@ -61,9 +64,15 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
         ...(getToken() ? { authorization: "Bearer " + getToken() } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ctrl.signal,
     });
   } catch {
-    throw new ApiError("Nie można połączyć się z serwerem", 0);
+    throw new ApiError(
+      ctrl.signal.aborted ? "Serwer nie odpowiada - sprawdź połączenie z siecią" : "Nie można połączyć się z serwerem",
+      0,
+    );
+  } finally {
+    clearTimeout(timer);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(data.error ?? "Błąd serwera", res.status);
@@ -80,17 +89,28 @@ export const api = {
   catalog: () => req<CatalogItem[]>("GET", "/catalog"),
   saveAvatar: (a: Partial<PublicUser["avatar"]>) => req<{ user: PublicUser }>("PUT", "/avatar", a),
   buy: (itemId: string) => req<{ user: PublicUser }>("POST", "/buy", { itemId }),
-  worlds: () => req<WorldInfo[]>("GET", "/worlds"),
+  worlds: (sort: "popular" | "rating" | "visits" | "new" | "" = "", q = "") =>
+    req<WorldInfo[]>("GET", `/worlds?sort=${sort}&q=${encodeURIComponent(q)}`),
+  worldInfo: (id: number) => req<WorldInfo>("GET", `/worlds/${id}/info`),
+  vote: (id: number, value: number) => req<WorldInfo>("POST", `/worlds/${id}/vote`, { value }),
   myWorlds: () => req<WorldInfo[]>("GET", "/worlds/mine"),
   createWorld: (name: string) => req<WorldInfo>("POST", "/worlds", { name }),
   getWorld: (id: number) => req<{ info: WorldInfo; data: WorldData }>("GET", "/worlds/" + id),
   saveWorld: (
     id: number,
-    body: Partial<{ name: string; description: string; maxPlayers: number; published: boolean; data: WorldData }>,
+    body: Partial<{ name: string; description: string; maxPlayers: number; published: boolean; data: WorldData; thumbnail: string }>,
   ) => req<WorldInfo>("PUT", "/worlds/" + id, body),
   deleteWorld: (id: number) => req("DELETE", "/worlds/" + id),
   friends: () => req<FriendInfo[]>("GET", "/friends"),
   addFriend: (username: string) => req<{ ok: true; accepted?: boolean }>("POST", "/friends/request", { username }),
   acceptFriend: (id: number) => req("POST", `/friends/${id}/accept`),
   removeFriend: (id: number) => req("DELETE", "/friends/" + id),
+  chat: () => req<Conversation[]>("GET", "/chat"),
+  chatWith: (id: number, after = 0) => req<ChatMessage[]>("GET", `/chat/${id}?after=${after}`),
+  sendChat: (id: number, text: string) => req<ChatMessage>("POST", `/chat/${id}`, { text }),
+  notifications: () => req<{ friendRequests: number; unreadMessages: number; coins: number }>("GET", "/notifications"),
 };
+
+/** Adres miniaturki gry (albo null) - ?v= zmienia się po każdym zapisie, więc przeglądarka może ją trzymać w pamięci */
+export const thumbnailUrl = (w: Pick<WorldInfo, "id" | "hasThumbnail" | "updatedAt">) =>
+  w.hasThumbnail ? `${getServerUrl()}/api/worlds/${w.id}/thumbnail?v=${w.updatedAt}` : null;

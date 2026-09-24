@@ -23,6 +23,10 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 | 📄 **Pliki .pgame** | gra zapisana w jednym pliku (JSON); dwuklik otwiera Predatora prosto w Studio, bez serwera; test gry offline ze skryptami |
 | 🪙 **Monety** | 50 na start, codzienny bonus, monety za granie (limit dzienny), twórca dostaje monety, gdy ktoś wchodzi do jego gry; sklep z czapkami i twarzami |
 | 🤝 **Znajomi** | zaproszenia, status online, „Dołącz” do gry, w którą gra znajomy |
+| 📱 **Menu** | jasny wygląd jak w aplikacjach mobilnych: na telefonie dolny pasek (Strona główna, Hity, Awatar, Czat), na komputerze menu boczne; rząd znajomych, „Polecane dla ciebie” z miniaturkami gier, wyszukiwarka, powiadomienia z czerwoną kropką |
+| 🔥 **Hity i oceny** | strona gry z dużym przyciskiem Graj, łapki w górę / w dół i „Ocena 93%”, listy: popularne, najlepiej oceniane, najczęściej odwiedzane, nowe |
+| ✉️ **Czat ze znajomymi** | prywatne wiadomości poza grą, licznik nieprzeczytanych |
+| 🖼 **Miniaturki** | zapis gry w Studio robi zdjęcie tego, co widać w edytorze, i ustawia je jako miniaturkę w menu |
 
 ## Uruchomienie serwera
 

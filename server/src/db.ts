@@ -52,7 +52,29 @@ CREATE TABLE IF NOT EXISTS friends (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, friend_id)
 );
+
+CREATE TABLE IF NOT EXISTS votes (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  value INTEGER NOT NULL, -- 1 = łapka w górę, -1 = w dół
+  PRIMARY KEY (user_id, world_id)
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  read INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS messages_to ON messages(to_id, read);
+CREATE INDEX IF NOT EXISTS messages_pair ON messages(from_id, to_id, id);
 `);
+
+// migracje starszych baz
+const worldCols = (db.prepare("PRAGMA table_info(worlds)").all() as { name: string }[]).map((c) => c.name);
+if (!worldCols.includes("thumbnail")) db.exec("ALTER TABLE worlds ADD COLUMN thumbnail TEXT");
 
 export interface UserRow {
   id: number;
@@ -67,6 +89,28 @@ export interface UserRow {
   earned_today: number;
   created_at: number;
 }
+
+/** Gra na liście - bez ciężkich danych świata i miniaturki */
+export interface WorldListRow {
+  id: number;
+  owner_id: number;
+  owner_name: string;
+  name: string;
+  description: string;
+  max_players: number;
+  published: number;
+  visits: number;
+  created_at: number;
+  updated_at: number;
+  has_thumb: number;
+  likes: number;
+  dislikes: number;
+}
+
+const LIST_COLS = `w.id, w.owner_id, u.username AS owner_name, w.name, w.description, w.max_players, w.published, w.visits,
+  w.created_at, w.updated_at, (w.thumbnail IS NOT NULL) AS has_thumb,
+  (SELECT COUNT(*) FROM votes v WHERE v.world_id = w.id AND v.value = 1) AS likes,
+  (SELECT COUNT(*) FROM votes v WHERE v.world_id = w.id AND v.value = -1) AS dislikes`;
 
 export interface WorldRow {
   id: number;
@@ -147,18 +191,24 @@ export const sessions = {
 
 export const worlds = {
   byId: (id: number) => db.prepare("SELECT * FROM worlds WHERE id = ?").get(id) as WorldRow | undefined,
-  published: () =>
+  published: (q = "") =>
     db
       .prepare(
-        "SELECT w.*, u.username AS owner_name FROM worlds w JOIN users u ON u.id = w.owner_id WHERE w.published = 1 ORDER BY w.visits DESC, w.updated_at DESC LIMIT 200",
+        `SELECT ${LIST_COLS} FROM worlds w JOIN users u ON u.id = w.owner_id
+         WHERE w.published = 1 AND (? = '' OR w.name LIKE '%' || ? || '%' OR u.username LIKE '%' || ? || '%')
+         ORDER BY w.visits DESC, w.updated_at DESC LIMIT 200`,
       )
-      .all() as unknown as (WorldRow & { owner_name: string })[],
+      .all(q, q, q) as unknown as WorldListRow[],
   byOwner: (ownerId: number) =>
     db
-      .prepare(
-        "SELECT w.*, u.username AS owner_name FROM worlds w JOIN users u ON u.id = w.owner_id WHERE w.owner_id = ? ORDER BY w.updated_at DESC",
-      )
-      .all(ownerId) as unknown as (WorldRow & { owner_name: string })[],
+      .prepare(`SELECT ${LIST_COLS} FROM worlds w JOIN users u ON u.id = w.owner_id WHERE w.owner_id = ? ORDER BY w.updated_at DESC`)
+      .all(ownerId) as unknown as WorldListRow[],
+  listRow: (id: number) =>
+    db.prepare(`SELECT ${LIST_COLS} FROM worlds w JOIN users u ON u.id = w.owner_id WHERE w.id = ?`).get(id) as unknown as
+      | WorldListRow
+      | undefined,
+  thumbnail: (id: number) => (db.prepare("SELECT thumbnail FROM worlds WHERE id = ?").get(id) as { thumbnail: string | null } | undefined)?.thumbnail ?? null,
+  setThumbnail: (id: number, thumb: string | null) => db.prepare("UPDATE worlds SET thumbnail = ? WHERE id = ?").run(thumb, id),
   create(ownerId: number, name: string, data: WorldData, maxPlayers: number): WorldRow {
     const now = Date.now();
     const r = db
@@ -178,12 +228,67 @@ export const worlds = {
   count: () => (db.prepare("SELECT COUNT(*) AS c FROM worlds").get() as { c: number }).c,
 };
 
+export const votes = {
+  get: (userId: number, worldId: number) =>
+    (db.prepare("SELECT value FROM votes WHERE user_id = ? AND world_id = ?").get(userId, worldId) as { value: number } | undefined)?.value ?? 0,
+  set(userId: number, worldId: number, value: number) {
+    if (value === 0) db.prepare("DELETE FROM votes WHERE user_id = ? AND world_id = ?").run(userId, worldId);
+    else
+      db.prepare("INSERT INTO votes (user_id, world_id, value) VALUES (?, ?, ?) ON CONFLICT(user_id, world_id) DO UPDATE SET value = excluded.value").run(
+        userId,
+        worldId,
+        value,
+      );
+  },
+};
+
+export interface MessageRow {
+  id: number;
+  from_id: number;
+  to_id: number;
+  text: string;
+  created_at: number;
+  read: number;
+}
+
+export const messages = {
+  send: (from: number, to: number, text: string) =>
+    Number(db.prepare("INSERT INTO messages (from_id, to_id, text, created_at) VALUES (?, ?, ?, ?)").run(from, to, text, Date.now()).lastInsertRowid),
+  /** rozmowa dwóch osób - ostatnie wiadomości (albo nowsze niż afterId) */
+  between(a: number, b: number, afterId = 0) {
+    return (
+      db
+        .prepare(
+          `SELECT * FROM messages WHERE ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)) AND id > ?
+           ORDER BY id DESC LIMIT 100`,
+        )
+        .all(a, b, b, a, afterId) as unknown as MessageRow[]
+    ).reverse();
+  },
+  markRead: (me: number, other: number) => db.prepare("UPDATE messages SET read = 1 WHERE to_id = ? AND from_id = ? AND read = 0").run(me, other),
+  unreadCount: (me: number) => (db.prepare("SELECT COUNT(*) AS c FROM messages WHERE to_id = ? AND read = 0").get(me) as { c: number }).c,
+  /** ostatnia wiadomość i liczba nieprzeczytanych dla każdej rozmowy */
+  conversations(me: number) {
+    return db
+      .prepare(
+        `SELECT m.*, (SELECT COUNT(*) FROM messages x WHERE x.to_id = ? AND x.from_id = CASE WHEN m.from_id = ? THEN m.to_id ELSE m.from_id END AND x.read = 0) AS unread
+         FROM messages m
+         WHERE m.id IN (
+           SELECT MAX(id) FROM messages WHERE from_id = ? OR to_id = ?
+           GROUP BY CASE WHEN from_id = ? THEN to_id ELSE from_id END
+         )
+         ORDER BY m.id DESC`,
+      )
+      .all(me, me, me, me, me) as unknown as (MessageRow & { unread: number })[];
+  },
+};
+
 export const friends = {
   /** Wszystkie relacje dotyczące użytkownika */
   list(userId: number) {
     return db
       .prepare(
-        `SELECT f.user_id, f.friend_id, f.status, u.username, u.id AS other_id
+        `SELECT f.user_id, f.friend_id, f.status, u.username, u.id AS other_id, u.avatar
          FROM friends f JOIN users u ON u.id = CASE WHEN f.user_id = ? THEN f.friend_id ELSE f.user_id END
          WHERE f.user_id = ? OR f.friend_id = ?`,
       )
@@ -193,6 +298,7 @@ export const friends = {
       status: string;
       username: string;
       other_id: number;
+      avatar: string;
     }[];
   },
   get(a: number, b: number) {

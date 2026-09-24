@@ -41,7 +41,7 @@ export function authScreen(root: HTMLElement, _p: unknown, go: (s: string) => vo
     submit,
     switchBtn,
     h("div", { class: "or" }, "albo"),
-    h("button", { class: "btn", type: "button", onClick: () => go("offline") }, "🧱 Studio bez serwera (pliki .pgame)"),
+    h("button", { class: "btn", type: "button", onClick: () => go("offline") }, "Studio bez serwera (pliki .pgame)"),
   );
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

@@ -10,6 +10,8 @@ export const config = {
   host: process.env.HOST ?? "0.0.0.0",
   dataDir: path.resolve(process.env.DATA_DIR ?? path.join(root, "data")),
   clientDist: path.join(root, "client", "dist"),
+  /** Pliki dołączone do serwera (np. miniaturki przykładowych gier) */
+  assetsDir: path.join(root, "server", "assets"),
   /** Monety za każdą minutę grania */
   coinsPerMinute: 2,
   /** Maksymalnie monet z grania na dzień */

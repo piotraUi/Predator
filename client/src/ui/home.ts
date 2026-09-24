@@ -1,373 +1,729 @@
-// Menu główne: lista gier, tworzenie, awatar ze sklepem i znajomi.
-import { ArcRotateCamera, Color4, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
-import type { CatalogItem } from "../../../shared/catalog.ts";
-import { DEFAULT_MAX_PLAYERS, type Avatar, type FriendInfo, type WorldInfo } from "../../../shared/types.ts";
-import { api, setToken } from "../api.ts";
-import { AvatarModel } from "../engine/avatar.ts";
-import { createEngine } from "../engine/world.ts";
+// Menu główne w stylu aplikacji mobilnej: górny pasek, znajomi, polecane gry, Hity, Awatar, Czat.
+// Na telefonie dolny pasek zakładek, na komputerze boczne menu. Bez silnika 3D (awatar wczytuje się osobno).
+import { DEFAULT_MAX_PLAYERS, worldRating, type ChatMessage, type FriendInfo, type WorldInfo } from "../../../shared/types.ts";
+import { GAME_EXT, parseGameFile } from "../../../shared/gamefile.ts";
+import { api, setToken, thumbnailUrl } from "../api.ts";
 import { session } from "../state.ts";
 import { openSettings } from "../settings.ts";
 import { pickFile } from "../files.ts";
-import { GAME_EXT, parseGameFile } from "../../../shared/gamefile.ts";
 import { ask, h, hashColor, modal, toast } from "./dom.ts";
+import { headshot } from "./headshot.ts";
+import { icon } from "./icons.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
-type Tab = "play" | "create" | "avatar" | "friends";
+type Route =
+  | { v: "home" }
+  | { v: "charts"; sort?: Sort }
+  | { v: "avatar" }
+  | { v: "chat"; with?: number }
+  | { v: "friends" }
+  | { v: "create" }
+  | { v: "game"; id: number }
+  | { v: "search"; q?: string };
+type Sort = "popular" | "rating" | "visits" | "new";
+type Cleanup = void | (() => void);
+type Ctx = { go: Go; nav: (r: Route, replace?: boolean) => void; back: () => void; refreshBadges: () => void };
 
-export function homeScreen(root: HTMLElement, params: { tab?: Tab }, go: Go) {
-  let tab: Tab = params.tab ?? "play";
-  let cleanupTab: (() => void) | null = null;
-  const content = h("main", { class: "home-content" });
-  const coins = h("span", { class: "coins" });
-  const name = h("span", { class: "username" });
-  const updateUser = () => {
-    const u = session.user!;
-    coins.textContent = "🪙 " + u.coins;
-    name.textContent = u.username;
+const MAIN_TABS = ["home", "charts", "avatar", "chat", "friends", "create"] as const;
+export const isHomeTab = (t: string) => (MAIN_TABS as readonly string[]).includes(t);
+
+export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: number }, go: Go) {
+  const main = h("main", { class: "pv-main" });
+  const stack: Route[] = [];
+  let current: Route = { v: "home" };
+  let viewId = 0;
+  let cleanupView: (() => void) | null = null;
+
+  // ---------- górny pasek ----------
+  const coinsNum = h("span");
+  const bellBadge = h("span", { class: "pv-badge hidden" });
+  const chatBadges: HTMLElement[] = [];
+  const mkChatBadge = () => {
+    const b = h("span", { class: "pv-badge hidden" });
+    chatBadges.push(b);
+    return b;
   };
-  updateUser();
-  const unsub = session.onChange(updateUser);
-
-  const navItems: [Tab, string, string][] = [
-    ["play", "🎮", "Graj"],
-    ["create", "🧱", "Twórz"],
-    ["avatar", "🧍", "Awatar"],
-    ["friends", "👥", "Znajomi"],
-  ];
-  const nav = h(
-    "nav",
-    { class: "home-nav" },
-    navItems.map(([id, icon, label]) =>
-      h("button", { class: "nav-btn", "data-tab": id, onClick: () => show(id) }, h("span", { class: "nav-icon" }, icon), h("span", null, label)),
+  const search = h("input", { class: "pv-search-input", type: "search", placeholder: "Szukaj gier", maxLength: 40 });
+  search.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && search.value.trim()) nav({ v: "search", q: search.value.trim() });
+  });
+  const top = h(
+    "header",
+    { class: "pv-top" },
+    h("button", { class: "pv-icon-btn pv-only-mobile", title: "Menu", onClick: () => toggleDrawer(true) }, icon("menu")),
+    h("button", { class: "pv-logo", onClick: () => nav({ v: "home" }) }, h("span", { class: "logo-block" }), h("span", null, "PREDATOR")),
+    h(
+      "div",
+      { class: "pv-top-links pv-only-desktop" },
+      h("button", { onClick: () => nav({ v: "charts" }) }, "Hity"),
+      h("button", { onClick: () => nav({ v: "create" }) }, "Twórz"),
+      h("button", { onClick: () => nav({ v: "avatar" }) }, "Awatar"),
     ),
+    h("label", { class: "pv-search pv-only-desktop" }, icon("search", 18), search),
+    h("div", { class: "spacer pv-only-mobile" }),
+    h("button", { class: "pv-icon-btn pv-only-mobile", title: "Szukaj", onClick: () => nav({ v: "search" }) }, icon("search")),
+    h(
+      "button",
+      { class: "pv-coins", title: "Monety - zdobywasz je grając", onClick: () => toast(`Masz ${session.user!.coins} monet. Graj w gry, żeby zdobyć więcej!`) },
+      icon("coin", 22),
+      coinsNum,
+    ),
+    h("button", { class: "pv-icon-btn pv-bell", title: "Powiadomienia", onClick: () => openNotifications() }, icon("bell"), bellBadge),
+    h("button", { class: "pv-icon-btn pv-only-desktop", title: "Ustawienia", onClick: () => openSettings() }, icon("settings")),
+  );
+
+  // ---------- boczne menu (komputer) / wysuwane menu (telefon) ----------
+  const sideUser = h("button", { class: "pv-side-user", onClick: () => nav({ v: "avatar" }) });
+  const sideItem = (r: Route["v"], ic: Parameters<typeof icon>[0], label: string, badge?: HTMLElement) =>
+    h("button", { class: "pv-side-item", "data-v": r, onClick: () => nav({ v: r } as Route) }, icon(ic, 22), h("span", null, label), badge ?? null);
+  const side = h(
+    "aside",
+    { class: "pv-side" },
+    sideUser,
+    sideItem("home", "home", "Strona główna"),
+    sideItem("charts", "fire", "Hity"),
+    sideItem("avatar", "person", "Awatar"),
+    sideItem("chat", "chat", "Czat", mkChatBadge()),
+    sideItem("friends", "users", "Znajomi"),
+    sideItem("create", "build", "Twórz"),
+    h("button", { class: "pv-side-item", onClick: () => go("offline") }, icon("folder", 22), h("span", null, "Studio bez serwera")),
+    h("div", { class: "pv-side-sep" }),
+    h("button", { class: "pv-side-item", onClick: () => (toggleDrawer(false), openSettings()) }, icon("settings", 22), h("span", null, "Ustawienia")),
     h(
       "button",
       {
-        class: "nav-btn logout",
+        class: "pv-side-item",
         onClick: async () => {
+          if (!(await ask("Wylogować się?", "Wyloguj", "Anuluj"))) return;
           await api.logout().catch(() => {});
           setToken(null);
           go("auth");
         },
       },
-      h("span", { class: "nav-icon" }, "🚪"),
+      icon("logout", 22),
       h("span", null, "Wyloguj"),
     ),
   );
-  const header = h(
-    "header",
-    { class: "home-header" },
-    h("div", { class: "logo small" }, h("span", { class: "logo-block" }), "PREDATOR"),
-    h("div", { class: "header-right" }, coins, name, h("button", { class: "icon-btn", title: "Ustawienia", onClick: () => openSettings() }, "⚙")),
+  const backdrop = h("div", { class: "pv-backdrop", onClick: () => toggleDrawer(false) });
+  const toggleDrawer = (open: boolean) => {
+    side.classList.toggle("open", open);
+    backdrop.classList.toggle("open", open);
+  };
+
+  // ---------- dolny pasek (telefon) ----------
+  const tabBtn = (r: Route["v"], ic: Parameters<typeof icon>[0] | null, label: string, badge?: HTMLElement) => {
+    const face = ic ? icon(ic, 26) : h("img", { class: "pv-tab-avatar", alt: "" });
+    return h("button", { class: "pv-tab", "data-v": r, onClick: () => nav({ v: r } as Route) }, h("span", { class: "pv-tab-ic" }, face, badge ?? null), h("span", null, label));
+  };
+  const bottom = h(
+    "nav",
+    { class: "pv-bottom" },
+    tabBtn("home", "home", "Strona główna"),
+    tabBtn("charts", "fire", "Hity"),
+    tabBtn("avatar", null, "Awatar"),
+    tabBtn("chat", "chat", "Czat", mkChatBadge()),
   );
-  const el = h("div", { class: "home" }, header, nav, content);
+
+  const el = h("div", { class: "pv" }, top, side, backdrop, main, bottom);
   root.append(el);
 
-  function show(t: Tab) {
-    tab = t;
-    cleanupTab?.();
-    cleanupTab = null;
-    content.replaceChildren();
-    for (const b of nav.querySelectorAll<HTMLElement>(".nav-btn[data-tab]")) b.classList.toggle("active", b.dataset.tab === t);
-    history.replaceState(null, "", "#" + t);
-    if (t === "play") playTab(content, go);
-    else if (t === "create") createTab(content, go);
-    else if (t === "avatar") cleanupTab = avatarTab(content);
-    else friendsTab(content, go).then((c) => (cleanupTab = c));
-  }
-  show(tab);
+  const updateUser = () => {
+    const u = session.user!;
+    coinsNum.textContent = String(u.coins);
+    const face = headshot(u.avatar);
+    sideUser.replaceChildren(h("img", { class: "pv-head", src: face, alt: "" }), h("b", null, u.username));
+    for (const img of bottom.querySelectorAll<HTMLImageElement>(".pv-tab-avatar")) img.src = face;
+  };
+  updateUser();
+  const unsub = session.onChange(updateUser);
 
-  // odświeżenie monet i codzienny bonus
+  // ---------- nawigacja ----------
+  const ctx: Ctx = { go, nav: (r, replace) => nav(r, replace), back: () => back(), refreshBadges: () => void pollNotifications() };
+  function nav(r: Route, replace = false) {
+    toggleDrawer(false);
+    const isTab = isHomeTab(r.v);
+    if (isTab) stack.length = 0;
+    else if (!replace) stack.push(current);
+    render(r);
+  }
+  function back() {
+    render(stack.pop() ?? { v: "home" });
+  }
+  function render(r: Route) {
+    current = r;
+    const id = ++viewId;
+    cleanupView?.();
+    cleanupView = null;
+    main.replaceChildren();
+    main.scrollTop = 0;
+    const tab = r.v === "game" || r.v === "search" ? "" : r.v;
+    for (const b of el.querySelectorAll<HTMLElement>("[data-v]")) b.classList.toggle("active", b.dataset.v === tab);
+    el.dataset.view = r.v;
+    if (isHomeTab(r.v)) history.replaceState(null, "", "#" + r.v);
+    const view = h("div", { class: "pv-view pv-" + r.v });
+    main.append(view);
+    const res: Cleanup | Promise<Cleanup> =
+      r.v === "home"
+        ? homeView(view, ctx)
+        : r.v === "charts"
+          ? chartsView(view, ctx, r.sort ?? "popular")
+          : r.v === "avatar"
+            ? avatarView(view)
+            : r.v === "chat"
+              ? r.with
+                ? conversationView(view, ctx, r.with)
+                : chatListView(view, ctx)
+              : r.v === "friends"
+                ? friendsView(view, ctx)
+                : r.v === "create"
+                  ? createView(view, ctx)
+                  : r.v === "game"
+                    ? gameView(view, ctx, r.id)
+                    : searchView(view, ctx, r.q ?? "");
+    Promise.resolve(res).then((c) => {
+      if (!c) return;
+      if (id === viewId) cleanupView = c;
+      else c(); // użytkownik zdążył przejść dalej
+    });
+  }
+
+  // ---------- powiadomienia (czerwone kropki) ----------
+  const setBadge = (b: HTMLElement, n: number) => {
+    b.textContent = n > 9 ? "9+" : String(n);
+    b.classList.toggle("hidden", n <= 0);
+  };
+  const pollNotifications = async () => {
+    try {
+      const n = await api.notifications();
+      setBadge(bellBadge, n.friendRequests);
+      for (const b of chatBadges) setBadge(b, n.unreadMessages);
+      if (session.user && session.user.coins !== n.coins) session.set({ ...session.user, coins: n.coins });
+    } catch {
+      /* brak sieci - spróbujemy za chwilę */
+    }
+  };
+  const notifTimer = setInterval(pollNotifications, 15_000);
+  pollNotifications();
+
+  async function openNotifications() {
+    const list = h("div", { class: "pv-notifs" }, h("div", { class: "muted" }, "Ładowanie…"));
+    const close = modal("Powiadomienia", list);
+    const refresh = async () => {
+      try {
+        const [friends, n] = await Promise.all([api.friends(), api.notifications()]);
+        const incoming = friends.filter((f) => f.status === "incoming");
+        const items: Node[] = incoming.map((f) =>
+          h(
+            "div",
+            { class: "pv-notif" },
+            h("img", { class: "pv-head small", src: headshot(f.avatar), alt: "" }),
+            h("div", { class: "pv-notif-text" }, h("b", null, f.username), " chce zostać twoim znajomym"),
+            h("button", { class: "btn small primary", onClick: async () => (await api.acceptFriend(f.id), refresh(), pollNotifications()) }, "Akceptuj"),
+            h("button", { class: "btn small", onClick: async () => (await api.removeFriend(f.id), refresh(), pollNotifications()) }, "Odrzuć"),
+          ),
+        );
+        if (n.unreadMessages)
+          items.push(
+            h(
+              "button",
+              { class: "pv-notif link-row", onClick: () => (close(), nav({ v: "chat" })) },
+              icon("chat", 22),
+              h("div", { class: "pv-notif-text" }, `Masz nieprzeczytane wiadomości: ${n.unreadMessages}`),
+            ),
+          );
+        list.replaceChildren(...(items.length ? items : [h("div", { class: "pv-empty" }, icon("bell", 36), "Brak nowych powiadomień")]));
+      } catch (e) {
+        list.replaceChildren(h("div", { class: "form-error" }, (e as Error).message));
+      }
+    };
+    refresh();
+  }
+
+  // ---------- start ----------
+  const t = params.tab ?? "home";
+  if (t === "game" && params.worldId) {
+    stack.push({ v: "home" });
+    render({ v: "game", id: params.worldId });
+  } else render({ v: (isHomeTab(t) ? t : "home") as "home" });
+
   api
     .me()
     .then(({ user, dailyBonus }) => {
       session.set(user);
-      if (dailyBonus) toast(`Codzienny bonus: +${dailyBonus} 🪙`, "good");
+      if (dailyBonus) toast(`Codzienny bonus: +${dailyBonus} monet`, "good");
     })
     .catch(() => {});
 
   return () => {
-    cleanupTab?.();
+    viewId++;
+    cleanupView?.();
+    clearInterval(notifTimer);
     unsub();
     el.remove();
   };
 }
 
-// ---------- Graj ----------
+// =====================================================================
+// wspólne kawałki
+// =====================================================================
 
-function worldCard(w: WorldInfo, onClick: () => void, extra?: Node) {
-  return h(
-    "div",
-    { class: "card", onClick },
-    h("div", { class: "thumb", style: `background:${hashColor(w.name)}` }, h("span", null, w.name.slice(0, 1).toUpperCase())),
-    h("div", { class: "card-title" }, w.name),
-    h("div", { class: "card-sub" }, "od " + w.ownerName),
+function thumb(w: WorldInfo, cls = "g-thumb") {
+  const url = thumbnailUrl(w);
+  const fallback = () =>
     h(
       "div",
-      { class: "card-stats" },
-      h("span", null, `👤 ${w.playing}/${w.maxPlayers}`),
-      h("span", null, `👁 ${w.visits}`),
+      { class: cls + " g-thumb-empty", style: `--c:${hashColor(w.name)}` },
+      h("span", null, w.name.slice(0, 1).toUpperCase()),
+    );
+  if (!url) return fallback();
+  const box = h("div", { class: cls });
+  const img = h("img", { src: url, alt: "", loading: "lazy", decoding: "async" });
+  img.addEventListener("error", () => box.replaceWith(fallback()));
+  box.append(img);
+  return box;
+}
+
+function ratingLabel(w: WorldInfo) {
+  const r = worldRating(w);
+  return r === null ? "Nowość" : `Ocena ${r}%`;
+}
+
+function gameCard(w: WorldInfo, onClick: () => void, extra?: Node) {
+  return h(
+    "div",
+    { class: "g-card", role: "button", tabIndex: 0, onClick, onKeydown: (e: KeyboardEvent) => e.key === "Enter" && onClick() },
+    thumb(w),
+    h("div", { class: "g-title" }, w.name),
+    h(
+      "div",
+      { class: "g-meta" },
+      h("span", null, icon("thumbUp", 14), ratingLabel(w)),
+      w.playing ? h("span", { class: "g-live" }, icon("person", 14), String(w.playing)) : null,
     ),
     extra ?? null,
   );
 }
 
-async function playTab(el: HTMLElement, go: Go) {
-  el.append(h("h1", null, "Gry"));
-  const grid = h("div", { class: "grid" }, h("div", { class: "muted" }, "Ładowanie…"));
-  el.append(grid);
-  try {
-    const list = await api.worlds();
-    grid.replaceChildren(
-      ...(list.length
-        ? list.map((w) => worldCard(w, () => openWorld(w, go)))
-        : [h("div", { class: "muted" }, "Nie ma jeszcze opublikowanych gier. Stwórz pierwszą w zakładce Twórz!")]),
+function gameGrid(list: WorldInfo[], ctx: Ctx, empty: string) {
+  if (!list.length) return h("div", { class: "pv-empty" }, icon("search", 36), empty);
+  return h("div", { class: "g-grid" }, list.map((w) => gameCard(w, () => ctx.nav({ v: "game", id: w.id }))));
+}
+
+const loading = () => h("div", { class: "pv-loading" }, h("div", { class: "spinner" }));
+const errorBox = (e: unknown, retry?: () => void) =>
+  h(
+    "div",
+    { class: "pv-empty" },
+    icon("offline", 36),
+    (e as Error).message,
+    retry ? h("button", { class: "btn", onClick: retry }, "Spróbuj ponownie") : null,
+  );
+
+function sectionHead(title: string, onMore?: () => void) {
+  return h(
+    "div",
+    { class: "pv-section-head" },
+    h("h2", null, title),
+    onMore ? h("button", { class: "pv-more", onClick: onMore }, "Więcej", icon("back", 16, "ic flip")) : null,
+  );
+}
+
+function friendBubble(f: FriendInfo, onClick: () => void) {
+  return h(
+    "button",
+    { class: "pv-friend", onClick, title: f.username },
+    h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: headshot(f.avatar), alt: "" }), f.online ? h("span", { class: "pv-dot" }) : null),
+    h("span", { class: "pv-friend-name" }, f.username),
+    f.playing ? h("span", { class: "pv-friend-game" }, f.playing.worldName) : null,
+  );
+}
+
+function friendMenu(f: FriendInfo, ctx: Ctx) {
+  const actions: { label: string; kind?: string; onClick: () => void }[] = [];
+  if (f.playing) {
+    const p = f.playing;
+    actions.push({ label: "Dołącz do gry", kind: "green", onClick: () => (close(), ctx.go("play", { worldId: p.worldId, roomId: p.roomId })) });
+  }
+  actions.push({ label: "Napisz", kind: "primary", onClick: () => (close(), ctx.nav({ v: "chat", with: f.id })) });
+  const close = modal(
+    f.username,
+    h(
+      "div",
+      { class: "pv-friend-card" },
+      h("img", { class: "pv-head big", src: headshot(f.avatar), alt: "" }),
+      h("div", { class: "muted" }, f.playing ? `Gra w: ${f.playing.worldName}` : f.online ? "Online" : "Offline"),
+    ),
+    actions,
+  );
+}
+
+// =====================================================================
+// Strona główna
+// =====================================================================
+
+function homeView(el: HTMLElement, ctx: Ctx): Cleanup {
+  const u = session.user!;
+  const hello = h(
+    "button",
+    { class: "pv-hello", onClick: () => ctx.nav({ v: "avatar" }) },
+    h("img", { class: "pv-head big", src: headshot(u.avatar), alt: "" }),
+    h("div", null, h("div", { class: "pv-hello-name" }, u.username), h("div", { class: "muted" }, "Edytuj awatar")),
+  );
+  const friendsRow = h("div", { class: "pv-friends-row" });
+  const friendsCount = h("span", { class: "muted" });
+  const games = h("div", null, loading());
+  el.append(
+    hello,
+    h(
+      "div",
+      { class: "pv-section-head" },
+      h("h2", null, "Znajomi ", friendsCount),
+      h("button", { class: "pv-more", onClick: () => ctx.nav({ v: "friends" }) }, "Wszyscy", icon("back", 16, "ic flip")),
+    ),
+    friendsRow,
+    sectionHead("Polecane dla ciebie", () => ctx.nav({ v: "charts" })),
+    games,
+  );
+
+  const addBtn = h(
+    "button",
+    { class: "pv-friend", onClick: () => ctx.nav({ v: "friends" }) },
+    h("span", { class: "pv-friend-face add" }, icon("userPlus", 30)),
+    h("span", { class: "pv-friend-name" }, "Dodaj znajomych"),
+  );
+  const loadFriends = async () => {
+    try {
+      const list = (await api.friends()).filter((f) => f.status === "accepted");
+      friendsCount.textContent = `(${list.length})`;
+      friendsRow.replaceChildren(addBtn, ...list.map((f) => friendBubble(f, () => friendMenu(f, ctx))));
+    } catch {
+      friendsRow.replaceChildren(addBtn);
+    }
+  };
+  loadFriends();
+  const loadGames = async () => {
+    games.replaceChildren(loading());
+    try {
+      games.replaceChildren(gameGrid(await api.worlds("popular"), ctx, "Nie ma jeszcze opublikowanych gier. Stwórz pierwszą w zakładce Twórz!"));
+    } catch (e) {
+      games.replaceChildren(errorBox(e, loadGames));
+    }
+  };
+  loadGames();
+  const timer = setInterval(loadFriends, 20_000);
+  return () => clearInterval(timer);
+}
+
+// =====================================================================
+// Hity
+// =====================================================================
+
+const SORTS: [Sort, string][] = [
+  ["popular", "Popularne teraz"],
+  ["rating", "Najlepiej oceniane"],
+  ["visits", "Najczęściej odwiedzane"],
+  ["new", "Nowe i zaktualizowane"],
+];
+
+function chartsView(el: HTMLElement, ctx: Ctx, sort: Sort) {
+  const chips = h("div", { class: "pv-chips" });
+  const out = h("div");
+  const load = async (s: Sort) => {
+    sort = s;
+    chips.replaceChildren(
+      ...SORTS.map(([id, label]) => h("button", { class: "pv-chip " + (id === s ? "active" : ""), onClick: () => load(id) }, label)),
     );
+    out.replaceChildren(loading());
+    try {
+      const list = await api.worlds(s);
+      if (sort === s) out.replaceChildren(gameGrid(list, ctx, "Pusto - nikt jeszcze nie opublikował gry."));
+    } catch (e) {
+      out.replaceChildren(errorBox(e, () => load(s)));
+    }
+  };
+  el.append(h("h1", null, "Hity"), chips, out);
+  load(sort);
+}
+
+// =====================================================================
+// Wyszukiwanie
+// =====================================================================
+
+function searchView(el: HTMLElement, ctx: Ctx, q: string): Cleanup {
+  const input = h("input", { type: "search", placeholder: "Szukaj gier", value: q, maxLength: 40 });
+  const out = h("div");
+  let timer = 0;
+  let seq = 0;
+  const run = async () => {
+    const my = ++seq;
+    const text = input.value.trim();
+    out.replaceChildren(loading());
+    try {
+      const list = await api.worlds("popular", text);
+      if (my === seq) out.replaceChildren(gameGrid(list, ctx, text ? `Brak gier dla „${text}”` : "Brak gier"));
+    } catch (e) {
+      if (my === seq) out.replaceChildren(errorBox(e, run));
+    }
+  };
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(run, 300);
+  });
+  el.append(
+    h(
+      "div",
+      { class: "pv-search-page" },
+      h("button", { class: "pv-icon-btn", title: "Wróć", onClick: () => ctx.back() }, icon("back")),
+      h("label", { class: "pv-search" }, icon("search", 18), input),
+    ),
+    out,
+  );
+  run();
+  if (!q) setTimeout(() => input.focus(), 50);
+  return () => clearTimeout(timer);
+}
+
+// =====================================================================
+// Strona gry
+// =====================================================================
+
+async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
+  el.append(loading());
+  let w: WorldInfo;
+  try {
+    w = await api.worldInfo(id);
   } catch (e) {
-    grid.replaceChildren(h("div", { class: "form-error" }, (e as Error).message));
+    el.replaceChildren(h("button", { class: "pv-back", onClick: () => ctx.back() }, icon("back", 20), "Wróć"), errorBox(e));
+    return;
+  }
+  const mine = w.ownerId === session.user!.id;
+  const likeBtn = h("button", { class: "pv-vote" });
+  const dislikeBtn = h("button", { class: "pv-vote" });
+  const bar = h("div", { class: "pv-vote-bar" }, h("div"));
+  const renderVotes = () => {
+    likeBtn.className = "pv-vote" + (w.myVote === 1 ? " on" : "");
+    dislikeBtn.className = "pv-vote" + (w.myVote === -1 ? " on bad" : "");
+    likeBtn.replaceChildren(icon("thumbUp", 22), String(w.likes));
+    dislikeBtn.replaceChildren(icon("thumbDown", 22), String(w.dislikes));
+    const r = worldRating(w);
+    (bar.firstChild as HTMLElement).style.width = (r ?? 0) + "%";
+    bar.classList.toggle("none", r === null);
+  };
+  const vote = async (v: number) => {
+    if (!w.published) return toast("Najpierw opublikuj grę", "error");
+    try {
+      w = await api.vote(w.id, w.myVote === v ? 0 : v);
+      renderVotes();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  };
+  likeBtn.addEventListener("click", () => vote(1));
+  dislikeBtn.addEventListener("click", () => vote(-1));
+  renderVotes();
+
+  const stat = (label: string, value: string) => h("div", { class: "pv-stat" }, h("div", { class: "muted" }, label), h("b", null, value));
+  const fmt = new Intl.NumberFormat("pl-PL");
+  el.replaceChildren(
+    h("button", { class: "pv-back", onClick: () => ctx.back() }, icon("back", 20), "Wróć"),
+    h(
+      "div",
+      { class: "pv-game" },
+      thumb(w, "pv-game-thumb"),
+      h(
+        "div",
+        { class: "pv-game-side" },
+        h("h1", null, w.name),
+        h("div", { class: "muted" }, "Twórca: ", h("b", null, w.ownerName)),
+        h(
+          "button",
+          {
+            class: "pv-play",
+            title: "Graj",
+            onClick: () => ctx.go("play", { worldId: w.id, back: { screen: "home", params: { tab: "game", worldId: w.id } } }),
+          },
+          icon("play", 34),
+        ),
+        h("div", { class: "pv-votes" }, likeBtn, bar, dislikeBtn),
+        mine
+          ? h("button", { class: "btn", onClick: () => ctx.go("studio", { worldId: w.id }) }, icon("edit", 18), " Edytuj w Studio")
+          : null,
+      ),
+    ),
+    h(
+      "div",
+      { class: "pv-stats" },
+      stat("Aktywni", fmt.format(w.playing)),
+      stat("Wizyty", fmt.format(w.visits)),
+      stat("Serwer", `${w.maxPlayers} graczy`),
+      stat("Aktualizacja", new Date(w.updatedAt).toLocaleDateString("pl-PL")),
+    ),
+    h("h2", null, "Opis"),
+    h("p", { class: "pv-desc" }, w.description || "Twórca nie dodał jeszcze opisu."),
+  );
+}
+
+// =====================================================================
+// Awatar (wczytywany osobno - potrzebuje silnika 3D)
+// =====================================================================
+
+async function avatarView(el: HTMLElement) {
+  el.append(h("h1", null, "Awatar"));
+  const box = h("div", null, loading());
+  el.append(box);
+  try {
+    const { avatarEditor } = await import("./avatarEditor.ts");
+    if (!box.isConnected) return;
+    box.replaceChildren();
+    return avatarEditor(box);
+  } catch (e) {
+    box.replaceChildren(errorBox(e));
   }
 }
 
-function openWorld(w: WorldInfo, go: Go) {
-  const close = modal(
-    w.name,
-    h(
-      "div",
-      { class: "world-details" },
-      h("div", { class: "thumb big", style: `background:${hashColor(w.name)}` }, h("span", null, w.name.slice(0, 1).toUpperCase())),
-      h("p", null, w.description || "Brak opisu."),
-      h("p", { class: "muted" }, `Twórca: ${w.ownerName} · Gra teraz: ${w.playing} · Wizyty: ${w.visits} · Maks. graczy: ${w.maxPlayers}`),
-    ),
-    [{ label: "▶ Graj", kind: "primary big", onClick: () => (close(), go("play", { worldId: w.id })) }],
-  );
+// =====================================================================
+// Czat
+// =====================================================================
+
+function timeLabel(at: number) {
+  const d = new Date(at);
+  const today = new Date().toDateString() === d.toDateString();
+  return today ? d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
 }
 
-// ---------- Twórz ----------
-
-async function createTab(el: HTMLElement, go: Go) {
-  const newBtn = h(
-    "button",
-    {
-      class: "btn primary",
-      onClick: async () => {
-        const input = h("input", { placeholder: "Nazwa gry", maxLength: 40, value: "Moja gra" });
-        const close = modal("Nowa gra", h("label", null, "Nazwa", input), [
-          {
-            label: "Utwórz",
-            kind: "primary",
-            onClick: async () => {
-              try {
-                const w = await api.createWorld(input.value);
-                close();
-                go("studio", { worldId: w.id });
-              } catch (e) {
-                toast((e as Error).message, "error");
-              }
-            },
-          },
-        ]);
-        input.select();
-      },
-    },
-    "+ Nowa gra",
-  );
-  const openBtn = h(
-    "button",
-    {
-      class: "btn",
-      onClick: async () => {
-        const f = await pickFile([GAME_EXT], "Gra Predator");
-        if (!f) return;
-        try {
-          const { data, ...meta } = parseGameFile(f.text);
-          go("studio", { file: { meta, data, path: f.path, fileName: f.name } });
-        } catch (e) {
-          toast((e as Error).message, "error");
-        }
-      },
-    },
-    "📂 Otwórz plik",
-  );
-  el.append(h("div", { class: "row between" }, h("h1", null, "Twoje gry"), h("div", { class: "row" }, openBtn, newBtn)));
-  el.append(
-    h(
-      "p",
-      { class: "muted" },
-      `Buduj w edytorze, pisz skrypty w Lua albo układaj bloczki i opublikuj grę, żeby inni mogli w nią grać. Domyślnie do ${DEFAULT_MAX_PLAYERS} graczy na serwer.`,
-    ),
-  );
-  const grid = h("div", { class: "grid" }, h("div", { class: "muted" }, "Ładowanie…"));
-  el.append(grid);
-  const list = await api.myWorlds().catch((e) => (toast(e.message, "error"), []));
-  grid.replaceChildren(
-    ...(list.length
-      ? list.map((w) =>
-          worldCard(
-            w,
-            () => go("studio", { worldId: w.id }),
-            h(
-              "div",
-              { class: "card-actions" },
-              h("span", { class: "badge " + (w.published ? "on" : "") }, w.published ? "Opublikowana" : "Prywatna"),
-              h("button", { class: "btn small", onClick: (e: Event) => (e.stopPropagation(), go("play", { worldId: w.id })) }, "▶"),
-            ),
-          ),
-        )
-      : [h("div", { class: "muted" }, "Nie masz jeszcze żadnych gier.")]),
-  );
-}
-
-// ---------- Awatar ----------
-
-const PALETTE = [
-  "#f5cd30", "#f8d9b4", "#d6a47a", "#a0694b", "#6b4430", "#3b2418",
-  "#ffffff", "#a3a2a5", "#636363", "#1b1b1b", "#c4281c", "#e63946",
-  "#ff8c00", "#ffd700", "#a4bd47", "#2ecc71", "#1e8449", "#0d69ac",
-  "#3498db", "#6ad2ff", "#8e44ad", "#ff66cc", "#ff9ecf", "#7f5539",
-];
-
-function avatarTab(el: HTMLElement): () => void {
-  const user = session.user!;
-  const avatar: Avatar = { ...user.avatar };
-  let saveTimer = 0;
-
-  const canvas = h("canvas", { class: "avatar-canvas" });
-  const { engine, dispose } = createEngine(canvas);
-  const scene = new Scene(engine);
-  scene.clearColor = new Color4(0, 0, 0, 0);
-  const cam = new ArcRotateCamera("c", -Math.PI / 2, 1.35, 13, new Vector3(0, 2.8, 0), scene);
-  cam.attachControl(true);
-  cam.lowerRadiusLimit = 7;
-  cam.upperRadiusLimit = 20;
-  cam.panningSensibility = 0;
-  new HemisphericLight("l", new Vector3(0.3, 1, -0.6), scene).intensity = 1.1;
-  const model = new AvatarModel(scene, avatar);
-  scene.onBeforeRenderObservable.add(() => {
-    model.root.rotation.y += engine.getDeltaTime() / 3000;
-    model.update(engine.getDeltaTime() / 1000);
-  });
-  engine.runRenderLoop(() => scene.render());
-
-  const save = () => {
-    model.setAvatar(avatar);
-    clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(async () => {
-      try {
-        session.set((await api.saveAvatar(avatar)).user);
-      } catch (e) {
-        toast((e as Error).message, "error");
-      }
-    }, 400);
-  };
-
-  const parts: [keyof Avatar, string][] = [
-    ["head", "Głowa"],
-    ["torso", "Tułów"],
-    ["arms", "Ręce"],
-    ["legs", "Nogi"],
-  ];
-  let partSel: keyof Avatar = "torso";
-  const swatches = h("div", { class: "swatches" });
-  const partBtns = h("div", { class: "seg" });
-  const renderColors = () => {
-    partBtns.replaceChildren(
-      ...parts.map(([k, label]) =>
-        h("button", { class: "seg-btn " + (k === partSel ? "active" : ""), onClick: () => ((partSel = k), renderColors()) }, label),
-      ),
-    );
-    swatches.replaceChildren(
-      ...PALETTE.map((c) =>
-        h("button", {
-          class: "swatch " + (avatar[partSel] === c ? "active" : ""),
-          style: `background:${c}`,
-          title: c,
-          onClick: () => {
-            avatar[partSel] = c;
-            save();
-            renderColors();
-          },
-        }),
-      ),
-      h("input", {
-        type: "color",
-        class: "swatch-picker",
-        value: avatar[partSel],
-        onInput: (e: Event) => {
-          avatar[partSel] = (e.target as HTMLInputElement).value;
-          save();
-        },
-      }),
-    );
-  };
-  renderColors();
-
-  const shop = h("div", { class: "shop" });
-  const renderShop = (catalog: CatalogItem[]) => {
-    const u = session.user!;
-    const section = (type: "hat" | "face", title: string) =>
-      h(
-        "div",
-        null,
-        h("h3", null, title),
+async function chatListView(el: HTMLElement, ctx: Ctx) {
+  el.append(h("h1", null, "Czat"));
+  const list = h("div", { class: "pv-list" }, loading());
+  el.append(list);
+  const load = async () => {
+    try {
+      const [convs, friends] = await Promise.all([api.chat(), api.friends()]);
+      const talked = new Set(convs.map((c) => c.friend.id));
+      const others = friends.filter((f) => f.status === "accepted" && !talked.has(f.id));
+      const rows: Node[] = convs.map((c) =>
         h(
-          "div",
-          { class: "items" },
-          catalog
-            .filter((i) => i.type === type)
-            .map((item) => {
-              const owned = u.inventory.includes(item.id);
-              const worn = avatar[type] === item.id;
-              return h(
-                "button",
-                {
-                  class: "item " + (worn ? "worn" : "") + (owned ? " owned" : ""),
-                  onClick: async () => {
-                    if (!owned) {
-                      if (u.coins < item.price) return toast("Za mało monet - graj, żeby zdobyć więcej!", "error");
-                      try {
-                        session.set((await api.buy(item.id)).user);
-                        toast(`Kupiono: ${item.name}`, "good");
-                      } catch (e) {
-                        return toast((e as Error).message, "error");
-                      }
-                    }
-                    avatar[type] = item.id;
-                    save();
-                    renderShop(catalog);
-                  },
-                },
-                h("div", { class: "item-name" }, item.name),
-                h("div", { class: "item-price" }, owned ? (worn ? "✔ Założone" : "Załóż") : `🪙 ${item.price}`),
-              );
-            }),
+          "button",
+          { class: "pv-row", onClick: () => ctx.nav({ v: "chat", with: c.friend.id }) },
+          h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: headshot(c.friend.avatar), alt: "" }), c.friend.online ? h("span", { class: "pv-dot" }) : null),
+          h(
+            "div",
+            { class: "pv-row-main" },
+            h("div", { class: "pv-row-top" }, h("b", null, c.friend.username), h("span", { class: "muted small" }, timeLabel(c.last.at))),
+            h("div", { class: "pv-row-sub" + (c.unread ? " unread" : "") }, (c.last.fromMe ? "Ty: " : "") + c.last.text),
+          ),
+          c.unread ? h("span", { class: "pv-badge inline" }, String(c.unread)) : null,
         ),
       );
-    shop.replaceChildren(section("hat", "Czapki"), section("face", "Twarze"));
+      if (others.length) {
+        rows.push(h("h3", { class: "pv-list-title" }, "Napisz do znajomego"));
+        rows.push(h("div", { class: "pv-friends-row" }, others.map((f) => friendBubble(f, () => ctx.nav({ v: "chat", with: f.id })))));
+      }
+      if (!rows.length)
+        rows.push(
+          h(
+            "div",
+            { class: "pv-empty" },
+            icon("chat", 36),
+            "Tu pojawią się rozmowy ze znajomymi.",
+            h("button", { class: "btn primary", onClick: () => ctx.nav({ v: "friends" }) }, "Dodaj znajomych"),
+          ),
+        );
+      list.replaceChildren(...rows);
+    } catch (e) {
+      list.replaceChildren(errorBox(e, load));
+    }
   };
-  api.catalog().then(renderShop).catch((e) => toast(e.message, "error"));
-
-  el.append(
-    h("h1", null, "Awatar"),
-    h(
-      "div",
-      { class: "avatar-layout" },
-      h("div", { class: "avatar-preview" }, canvas),
-      h("div", { class: "avatar-edit" }, h("h3", null, "Kolory"), partBtns, swatches, shop),
-    ),
-  );
-  engine.resize();
-  return () => {
-    clearTimeout(saveTimer);
-    scene.dispose();
-    dispose();
-  };
+  await load();
+  const timer = setInterval(load, 10_000);
+  return () => clearInterval(timer);
 }
 
-// ---------- Znajomi ----------
+async function conversationView(el: HTMLElement, ctx: Ctx, friendId: number) {
+  const friends = await api.friends().catch(() => [] as FriendInfo[]);
+  const f = friends.find((x) => x.id === friendId && x.status === "accepted");
+  if (!f) {
+    el.append(h("button", { class: "pv-back", onClick: () => ctx.back() }, icon("back", 20), "Wróć"), h("div", { class: "pv-empty" }, "Możesz pisać tylko ze znajomymi."));
+    return;
+  }
+  el.classList.add("convo-open");
+  const log = h("div", { class: "pv-msgs" });
+  const input = h("input", { placeholder: "Napisz wiadomość…", maxLength: 200, enterKeyHint: "send" });
+  const sendBtn = h("button", { class: "pv-send", title: "Wyślij" }, icon("send", 22));
+  let lastId = 0;
+  let lastDay = "";
+  const add = (m: ChatMessage) => {
+    if (m.id <= lastId) return;
+    lastId = m.id;
+    const day = new Date(m.at).toDateString();
+    if (day !== lastDay) {
+      lastDay = day;
+      log.append(h("div", { class: "pv-msg-day" }, new Date(m.at).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" })));
+    }
+    log.append(h("div", { class: "pv-msg " + (m.fromMe ? "me" : "them") }, h("span", null, m.text), h("small", null, timeLabel(m.at))));
+  };
+  const scrollDown = () => (log.scrollTop = log.scrollHeight);
+  const poll = async () => {
+    try {
+      const list = await api.chatWith(friendId, lastId);
+      if (list.some((m) => !m.fromMe)) ctx.refreshBadges(); // przeczytane - znika czerwona kropka
+      if (list.length) {
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+        list.forEach(add);
+        if (atBottom) scrollDown();
+      }
+    } catch {
+      /* spróbujemy znowu */
+    }
+  };
+  const send = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    try {
+      add(await api.sendChat(friendId, text));
+      scrollDown();
+    } catch (e) {
+      input.value = text;
+      toast((e as Error).message, "error");
+    }
+    input.focus();
+  };
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", (e) => e.key === "Enter" && send());
 
-async function friendsTab(el: HTMLElement, go: Go) {
-  const input = h("input", { placeholder: "Nick znajomego", maxLength: 20 });
-  const list = h("div", { class: "friends" });
+  el.append(
+    h(
+      "div",
+      { class: "pv-convo" },
+      h(
+        "div",
+        { class: "pv-convo-head" },
+        h("button", { class: "pv-icon-btn", title: "Wróć", onClick: () => ctx.back() }, icon("back")),
+        h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head small", src: headshot(f.avatar), alt: "" }), f.online ? h("span", { class: "pv-dot" }) : null),
+        h("div", null, h("b", null, f.username), h("div", { class: "muted small" }, f.playing ? `Gra w: ${f.playing.worldName}` : f.online ? "Online" : "Offline")),
+        h("div", { class: "spacer" }),
+        f.playing
+          ? h("button", { class: "btn small green", onClick: () => ctx.go("play", { worldId: f.playing!.worldId, roomId: f.playing!.roomId }) }, "Dołącz")
+          : null,
+      ),
+      log,
+      h("div", { class: "pv-compose" }, input, sendBtn),
+    ),
+  );
+  await poll();
+  if (!lastId) log.append(h("div", { class: "pv-msg-day" }, `Przywitaj się z ${f.username}!`));
+  scrollDown();
+  const timer = setInterval(poll, 3000);
+  return () => clearInterval(timer);
+}
+
+// =====================================================================
+// Znajomi
+// =====================================================================
+
+async function friendsView(el: HTMLElement, ctx: Ctx) {
+  const input = h("input", { placeholder: "Wpisz nick gracza", maxLength: 20 });
+  const list = h("div", { class: "pv-list" }, loading());
   const add = async () => {
     if (!input.value.trim()) return;
     try {
@@ -382,60 +738,60 @@ async function friendsTab(el: HTMLElement, go: Go) {
   input.addEventListener("keydown", (e) => e.key === "Enter" && add());
   el.append(
     h("h1", null, "Znajomi"),
-    h("div", { class: "row" }, input, h("button", { class: "btn primary", onClick: add }, "Dodaj")),
+    h("div", { class: "pv-add-friend" }, h("label", { class: "pv-search" }, icon("userPlus", 18), input), h("button", { class: "btn primary", onClick: add }, "Dodaj")),
     list,
   );
 
   const row = (f: FriendInfo) => {
     const actions: Node[] = [];
+    const small = (label: string, kind: string, fn: () => void) => h("button", { class: "btn small " + kind, onClick: (e: Event) => (e.stopPropagation(), fn()) }, label);
     if (f.status === "incoming") {
       actions.push(
-        h("button", { class: "btn small primary", onClick: async () => (await api.acceptFriend(f.id), refresh()) }, "Akceptuj"),
-        h("button", { class: "btn small", onClick: async () => (await api.removeFriend(f.id), refresh()) }, "Odrzuć"),
+        small("Akceptuj", "primary", async () => (await api.acceptFriend(f.id), refresh())),
+        small("Odrzuć", "", async () => (await api.removeFriend(f.id), refresh())),
       );
     } else if (f.status === "outgoing") {
-      actions.push(
-        h("span", { class: "muted" }, "Zaproszenie wysłane"),
-        h("button", { class: "btn small", onClick: async () => (await api.removeFriend(f.id), refresh()) }, "Anuluj"),
-      );
+      actions.push(small("Anuluj", "", async () => (await api.removeFriend(f.id), refresh())));
     } else {
       if (f.playing) {
-        const playing = f.playing;
-        actions.push(
-          h("button", { class: "btn small primary", onClick: () => go("play", { worldId: playing.worldId, roomId: playing.roomId }) }, "Dołącz"),
-        );
+        const p = f.playing;
+        actions.push(small("Dołącz", "green", () => ctx.go("play", { worldId: p.worldId, roomId: p.roomId })));
       }
       actions.push(
+        h("button", { class: "pv-icon-btn", title: "Napisz", onClick: (e: Event) => (e.stopPropagation(), ctx.nav({ v: "chat", with: f.id })) }, icon("chat", 20)),
         h(
           "button",
           {
-            class: "btn small",
-            onClick: async () => {
+            class: "pv-icon-btn",
+            title: "Usuń ze znajomych",
+            onClick: async (e: Event) => {
+              e.stopPropagation();
               if (await ask(`Usunąć ${f.username} ze znajomych?`, "Usuń", "Anuluj", true)) {
                 await api.removeFriend(f.id);
                 refresh();
               }
             },
           },
-          "Usuń",
+          icon("trash", 20),
         ),
       );
     }
     const status =
-      f.status !== "accepted"
-        ? ""
-        : f.playing
-          ? `Gra w: ${f.playing.worldName}`
-          : f.online
-            ? "Online"
-            : "Offline";
+      f.status === "incoming"
+        ? "Chce zostać twoim znajomym"
+        : f.status === "outgoing"
+          ? "Zaproszenie wysłane"
+          : f.playing
+            ? `Gra w: ${f.playing.worldName}`
+            : f.online
+              ? "Online"
+              : "Offline";
     return h(
       "div",
-      { class: "friend" },
-      h("div", { class: "friend-avatar", style: `background:${hashColor(f.username)}` }, f.username.slice(0, 1).toUpperCase(),
-        f.status === "accepted" ? h("span", { class: "dot " + (f.online ? "on" : "") }) : null),
-      h("div", { class: "friend-info" }, h("b", null, f.username), h("div", { class: "muted" }, status)),
-      h("div", { class: "friend-actions" }, actions),
+      { class: "pv-row", onClick: () => f.status === "accepted" && friendMenu(f, ctx) },
+      h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: headshot(f.avatar), alt: "" }), f.online && f.status === "accepted" ? h("span", { class: "pv-dot" }) : null),
+      h("div", { class: "pv-row-main" }, h("b", null, f.username), h("div", { class: "pv-row-sub" + (f.playing ? " playing" : "") }, status)),
+      h("div", { class: "pv-row-actions" }, actions),
     );
   };
 
@@ -443,18 +799,100 @@ async function friendsTab(el: HTMLElement, go: Go) {
     try {
       const friends = await api.friends();
       const incoming = friends.filter((f) => f.status === "incoming");
-      const rest = friends.filter((f) => f.status !== "incoming");
+      const accepted = friends.filter((f) => f.status === "accepted");
+      const outgoing = friends.filter((f) => f.status === "outgoing");
       list.replaceChildren(
-        incoming.length ? h("h3", null, "Zaproszenia") : "",
+        incoming.length ? h("h3", { class: "pv-list-title" }, `Zaproszenia (${incoming.length})`) : "",
         ...incoming.map(row),
-        h("h3", null, `Znajomi (${rest.filter((f) => f.status === "accepted").length})`),
-        ...(rest.length ? rest.map(row) : [h("div", { class: "muted" }, "Dodaj znajomych po nicku, żeby razem grać.")]),
+        h("h3", { class: "pv-list-title" }, `Znajomi (${accepted.length})`),
+        ...(accepted.length ? accepted.map(row) : [h("div", { class: "pv-empty small" }, "Dodaj znajomych po nicku, żeby razem grać i pisać.")]),
+        outgoing.length ? h("h3", { class: "pv-list-title" }, "Wysłane zaproszenia") : "",
+        ...outgoing.map(row),
       );
     } catch (e) {
-      list.replaceChildren(h("div", { class: "form-error" }, (e as Error).message));
+      list.replaceChildren(errorBox(e, refresh));
     }
   };
   await refresh();
   const timer = setInterval(refresh, 10_000);
   return () => clearInterval(timer);
+}
+
+// =====================================================================
+// Twórz
+// =====================================================================
+
+async function createView(el: HTMLElement, ctx: Ctx) {
+  const newGame = () => {
+    const input = h("input", { placeholder: "Nazwa gry", maxLength: 40, value: "Moja gra" });
+    const close = modal("Nowa gra", h("label", null, "Nazwa", input), [
+      {
+        label: "Utwórz",
+        kind: "primary",
+        onClick: async () => {
+          try {
+            const w = await api.createWorld(input.value);
+            close();
+            ctx.go("studio", { worldId: w.id });
+          } catch (e) {
+            toast((e as Error).message, "error");
+          }
+        },
+      },
+    ]);
+    input.select();
+  };
+  const openFile = async () => {
+    const f = await pickFile([GAME_EXT], "Gra Predator");
+    if (!f) return;
+    try {
+      const { data, ...meta } = parseGameFile(f.text);
+      ctx.go("studio", { file: { meta, data, path: f.path, fileName: f.name } });
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  };
+  el.append(
+    h("h1", null, "Twórz"),
+    h(
+      "div",
+      { class: "pv-create-actions" },
+      h("button", { class: "pv-create-card primary", onClick: newGame }, icon("plus", 28), h("b", null, "Nowa gra"), h("span", null, "Zacznij w Predator Studio")),
+      h("button", { class: "pv-create-card", onClick: openFile }, icon("folder", 28), h("b", null, "Otwórz plik"), h("span", null, `Gra zapisana jako ${GAME_EXT}`)),
+      h("button", { class: "pv-create-card", onClick: () => ctx.go("offline") }, icon("offline", 28), h("b", null, "Bez serwera"), h("span", null, "Szablony i test offline")),
+    ),
+    h("p", { class: "muted" }, `Buduj w edytorze, pisz skrypty w Lua albo układaj bloczki i opublikuj grę. Domyślnie do ${DEFAULT_MAX_PLAYERS} graczy na serwer.`),
+    sectionHead("Twoje gry"),
+  );
+  const out = h("div", null, loading());
+  el.append(out);
+  try {
+    const list = await api.myWorlds();
+    out.replaceChildren(
+      list.length
+        ? h(
+            "div",
+            { class: "g-grid" },
+            list.map((w) =>
+              gameCard(
+                w,
+                () => ctx.go("studio", { worldId: w.id }),
+                h(
+                  "div",
+                  { class: "g-actions" },
+                  h("span", { class: "pv-pill " + (w.published ? "on" : "") }, w.published ? "Publiczna" : "Prywatna"),
+                  h(
+                    "button",
+                    { class: "pv-icon-btn", title: "Strona gry", onClick: (e: Event) => (e.stopPropagation(), ctx.nav({ v: "game", id: w.id })) },
+                    icon("play", 18),
+                  ),
+                ),
+              ),
+            ),
+          )
+        : h("div", { class: "pv-empty" }, icon("build", 36), "Nie masz jeszcze żadnych gier.", h("button", { class: "btn primary", onClick: newGame }, "Stwórz pierwszą")),
+    );
+  } catch (e) {
+    out.replaceChildren(errorBox(e));
+  }
 }

@@ -157,6 +157,28 @@ export interface WorldInfo {
   visits: number;
   playing: number;
   updatedAt: number;
+  hasThumbnail: boolean;
+  likes: number;
+  dislikes: number;
+  /** głos zalogowanego gracza: 1, -1 albo 0 */
+  myVote?: number;
+}
+
+/** Ocena gry w procentach (jak "Ocena 93%") albo null, gdy nikt jeszcze nie głosował */
+export const worldRating = (w: Pick<WorldInfo, "likes" | "dislikes">) =>
+  w.likes + w.dislikes > 0 ? Math.round((w.likes / (w.likes + w.dislikes)) * 100) : null;
+
+export interface ChatMessage {
+  id: number;
+  fromMe: boolean;
+  text: string;
+  at: number;
+}
+
+export interface Conversation {
+  friend: { id: number; username: string; avatar: Avatar; online: boolean };
+  last: ChatMessage;
+  unread: number;
 }
 
 export interface Avatar {
@@ -179,6 +201,7 @@ export interface PublicUser {
 export interface FriendInfo {
   id: number;
   username: string;
+  avatar: Avatar;
   status: "accepted" | "incoming" | "outgoing";
   online: boolean;
   /** gdzie gra znajomy (jeśli gra) */

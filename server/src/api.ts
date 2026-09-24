@@ -1,6 +1,8 @@
 import express, { type Response } from "express";
 import { CATALOG, findItem } from "../../shared/catalog.ts";
-import type { Avatar, FriendInfo, WorldInfo } from "../../shared/types.ts";
+import { DEFAULT_AVATAR } from "../../shared/catalog.ts";
+import { filterChat } from "../../shared/chatFilter.ts";
+import type { Avatar, ChatMessage, Conversation, FriendInfo, WorldInfo } from "../../shared/types.ts";
 import { DEFAULT_MAX_PLAYERS, MAX_PLAYERS_LIMIT } from "../../shared/types.ts";
 import { emptyWorld, sanitizeWorld } from "../../shared/world.ts";
 import {
@@ -12,7 +14,7 @@ import {
   type AuthedRequest,
 } from "./auth.ts";
 import { config } from "./config.ts";
-import { friends, sessions, toPublicUser, users, worlds, type WorldRow } from "./db.ts";
+import { friends, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 
 export const api = express.Router();
@@ -24,20 +26,40 @@ const fail = (res: Response, status: number, error: string) => res.status(status
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const MAX_WORLDS_PER_USER = 20;
 
-function worldInfo(w: WorldRow & { owner_name?: string }): WorldInfo {
+function worldInfo(w: WorldListRow): WorldInfo {
   return {
     id: w.id,
     name: w.name,
     description: w.description,
     ownerId: w.owner_id,
-    ownerName: w.owner_name ?? users.byId(w.owner_id)?.username ?? "?",
+    ownerName: w.owner_name,
     maxPlayers: w.max_players,
     published: !!w.published,
     visits: w.visits,
     playing: presence.worldCount(w.id),
     updatedAt: w.updated_at,
+    hasThumbnail: !!w.has_thumb,
+    likes: w.likes,
+    dislikes: w.dislikes,
   };
 }
+
+const infoById = (id: number) => {
+  const row = worlds.listRow(id);
+  return row ? worldInfo(row) : undefined;
+};
+
+const parseAvatar = (json: string): Avatar => {
+  try {
+    return { ...DEFAULT_AVATAR, ...JSON.parse(json) };
+  } catch {
+    return DEFAULT_AVATAR;
+  }
+};
+
+/** Miniaturka gry: obrazek JPEG/PNG/WebP jako data URL, maks. ~300 KB */
+const THUMB_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+const MAX_THUMB = 400_000;
 
 // ---------- Konta ----------
 
@@ -109,8 +131,51 @@ api.post("/buy", requireAuth, (req, res) => {
 
 // ---------- Gry (światy) ----------
 
-api.get("/worlds", requireAuth, (_req, res) => {
-  res.json(worlds.published().map(worldInfo));
+/** Lista opublikowanych gier: ?q=szukaj&sort=popular|rating|visits|new */
+api.get("/worlds", requireAuth, (req, res) => {
+  const q = String(req.query.q ?? "").trim().slice(0, 40);
+  const list = worlds.published(q).map(worldInfo);
+  const rating = (w: WorldInfo) => (w.likes + 1) / (w.likes + w.dislikes + 2); // wygładzone, żeby 1 głos nie dawał 100%
+  switch (req.query.sort) {
+    case "popular":
+      list.sort((a, b) => b.playing - a.playing || b.visits - a.visits);
+      break;
+    case "rating":
+      list.sort((a, b) => rating(b) - rating(a) || b.visits - a.visits);
+      break;
+    case "new":
+      list.sort((a, b) => b.updatedAt - a.updatedAt);
+      break;
+  }
+  res.json(list);
+});
+
+/** Strona gry - dla opublikowanych albo własnych */
+api.get("/worlds/:id/info", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const info = infoById(Number(req.params.id));
+  if (!info || (!info.published && info.ownerId !== me.id)) return fail(res, 404, "Nie ma takiej gry");
+  res.json({ ...info, myVote: votes.get(me.id, info.id) });
+});
+
+/** Miniaturka - zwykły obrazek (bez logowania, żeby działał w <img>) */
+api.get("/worlds/:id/thumbnail", (req, res) => {
+  const thumb = worlds.thumbnail(Number(req.params.id));
+  const m = thumb ? /^data:(image\/[a-z]+);base64,(.*)$/.exec(thumb) : null;
+  if (!m) return fail(res, 404, "Brak miniaturki");
+  res.setHeader("Content-Type", m[1]);
+  // adres zawiera ?v=<data zmiany>, więc można trzymać długo
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.end(Buffer.from(m[2], "base64"));
+});
+
+api.post("/worlds/:id/vote", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const info = infoById(Number(req.params.id));
+  if (!info || !info.published) return fail(res, 404, "Nie ma takiej gry");
+  const v = Number(req.body?.value);
+  votes.set(me.id, info.id, v > 0 ? 1 : v < 0 ? -1 : 0);
+  res.json({ ...infoById(info.id)!, myVote: votes.get(me.id, info.id) });
 });
 
 api.get("/worlds/mine", requireAuth, (req, res) => {
@@ -123,7 +188,7 @@ api.post("/worlds", requireAuth, (req, res) => {
     return fail(res, 400, `Możesz mieć maksymalnie ${MAX_WORLDS_PER_USER} gier`);
   const name = String(req.body?.name ?? "").trim().slice(0, 40) || "Moja gra";
   const w = worlds.create(user.id, name, emptyWorld(), DEFAULT_MAX_PLAYERS);
-  res.json(worldInfo(w));
+  res.json(infoById(w.id));
 });
 
 /** Pełne dane świata do edytora (tylko właściciel) */
@@ -131,7 +196,7 @@ api.get("/worlds/:id", requireAuth, (req, res) => {
   const w = worlds.byId(Number(req.params.id));
   if (!w) return fail(res, 404, "Nie ma takiej gry");
   if (w.owner_id !== (req as AuthedRequest).user.id) return fail(res, 403, "To nie twoja gra");
-  res.json({ info: worldInfo(w), data: sanitizeWorld(JSON.parse(w.data)) });
+  res.json({ info: infoById(w.id), data: sanitizeWorld(JSON.parse(w.data)) });
 });
 
 api.put("/worlds/:id", requireAuth, (req, res) => {
@@ -147,7 +212,9 @@ api.put("/worlds/:id", requireAuth, (req, res) => {
     published: b.published === undefined ? !!w.published : !!b.published,
     data: sanitizeWorld(b.data === undefined ? JSON.parse(w.data) : b.data),
   });
-  res.json(worldInfo(worlds.byId(w.id)!));
+  if (typeof b.thumbnail === "string" && b.thumbnail.length <= MAX_THUMB && THUMB_RE.test(b.thumbnail))
+    worlds.setThumbnail(w.id, b.thumbnail);
+  res.json(infoById(w.id));
 });
 
 api.delete("/worlds/:id", requireAuth, (req, res) => {
@@ -167,7 +234,7 @@ api.get("/friends", requireAuth, (req, res) => {
     const status: FriendInfo["status"] =
       f.status === "accepted" ? "accepted" : f.user_id === me.id ? "outgoing" : "incoming";
     const p = status === "accepted" ? presence.get(f.other_id) : { online: false, playing: null };
-    return { id: f.other_id, username: f.username, status, online: p.online, playing: p.playing };
+    return { id: f.other_id, username: f.username, avatar: parseAvatar(f.avatar), status, online: p.online, playing: p.playing };
   });
   list.sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username));
   res.json(list);
@@ -201,4 +268,58 @@ api.post("/friends/:id/accept", requireAuth, (req, res) => {
 api.delete("/friends/:id", requireAuth, (req, res) => {
   friends.remove((req as AuthedRequest).user.id, Number(req.params.id));
   res.json({ ok: true });
+});
+
+// ---------- Czat ze znajomymi ----------
+
+const toMsg = (m: MessageRow, me: number): ChatMessage => ({ id: m.id, fromMe: m.from_id === me, text: m.text, at: m.created_at });
+const areFriends = (a: number, b: number) => friends.get(a, b)?.status === "accepted";
+const lastSent = new Map<number, number>();
+
+api.get("/chat", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  presence.touch(me.id);
+  const list: Conversation[] = [];
+  for (const m of messages.conversations(me.id)) {
+    const otherId = m.from_id === me.id ? m.to_id : m.from_id;
+    const other = users.byId(otherId);
+    if (!other) continue;
+    list.push({
+      friend: { id: other.id, username: other.username, avatar: parseAvatar(other.avatar), online: presence.get(other.id).online },
+      last: toMsg(m, me.id),
+      unread: m.unread,
+    });
+  }
+  res.json(list);
+});
+
+api.get("/chat/:id", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const other = Number(req.params.id);
+  if (!areFriends(me.id, other)) return fail(res, 403, "Możesz pisać tylko ze znajomymi");
+  const after = Number(req.query.after) || 0;
+  const list = messages.between(me.id, other, after).map((m) => toMsg(m, me.id));
+  messages.markRead(me.id, other);
+  res.json(list);
+});
+
+api.post("/chat/:id", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const other = Number(req.params.id);
+  if (!areFriends(me.id, other)) return fail(res, 403, "Możesz pisać tylko ze znajomymi");
+  const now = Date.now();
+  if (now - (lastSent.get(me.id) ?? 0) < 500) return fail(res, 429, "Za szybko - chwilę poczekaj");
+  lastSent.set(me.id, now);
+  const text = filterChat(String(req.body?.text ?? ""));
+  if (!text) return fail(res, 400, "Pusta wiadomość");
+  const id = messages.send(me.id, other, text);
+  res.json({ id, fromMe: true, text, at: now } satisfies ChatMessage);
+});
+
+/** Liczniki do czerwonych kropek: zaproszenia i nieprzeczytane wiadomości */
+api.get("/notifications", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  presence.touch(me.id);
+  const requests = friends.list(me.id).filter((f) => f.status === "pending" && f.friend_id === me.id).length;
+  res.json({ friendRequests: requests, unreadMessages: messages.unreadCount(me.id), coins: users.byId(me.id)?.coins ?? 0 });
 });

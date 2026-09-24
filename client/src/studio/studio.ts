@@ -1,6 +1,7 @@
 // Studio - edytor świata: stawianie, przesuwanie i skalowanie klocków, skrypty i ustawienia gry.
 import {
   ArcRotateCamera,
+  CreateScreenshotUsingRenderTargetAsync,
   GizmoManager,
   PointerEventTypes,
   Ray,
@@ -70,7 +71,7 @@ export interface StudioFile {
 interface Source {
   online: boolean;
   published: boolean;
-  save(meta: GameMeta, data: WorldData, published: boolean): Promise<void>;
+  save(meta: GameMeta, data: WorldData, published: boolean, thumbnail?: string): Promise<void>;
 }
 
 class SaveCancelled extends Error {}
@@ -112,8 +113,8 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
         const src: Source = {
           online: true,
           published: info.published,
-          async save(meta, d, published) {
-            const res = await api.saveWorld(worldId, { ...meta, published, data: d });
+          async save(meta, d, published, thumbnail) {
+            const res = await api.saveWorld(worldId, { ...meta, published, data: d, thumbnail });
             src.published = res.published;
           },
         };
@@ -341,9 +342,23 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
     }
 
     // ---------- zapisywanie ----------
+    /** Miniaturka gry do menu - to, co twórca widzi w edytorze (bez zaznaczenia) */
+    async function captureThumbnail(): Promise<string | undefined> {
+      const boxes = [...view.meshes.values()].filter((m) => m.showBoundingBox);
+      try {
+        boxes.forEach((m) => (m.showBoundingBox = false));
+        const url = await CreateScreenshotUsingRenderTargetAsync(engine, camera, { width: 640, height: 360 }, "image/jpeg", 1, true);
+        return url.length < 390_000 ? url : undefined;
+      } catch {
+        return undefined; // bez miniaturki też da się zapisać
+      } finally {
+        boxes.forEach((m) => (m.showBoundingBox = true));
+      }
+    }
+
     async function save(quiet = false) {
       try {
-        await src.save(meta, data, src.published);
+        await src.save(meta, data, src.published, src.online ? await captureThumbnail() : undefined);
         dirty = false;
         desktop?.setDirty(false);
         saveBtn.classList.remove("unsaved");
