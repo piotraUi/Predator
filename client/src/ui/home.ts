@@ -528,7 +528,7 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
     h("button", { class: "pv-back", onClick: () => ctx.back() }, icon("back", 20), "Wróć"),
     h(
       "div",
-      { class: "pv-game" },
+      { class: "pv-game-top" },
       thumb(w, "pv-game-thumb"),
       h(
         "div",
@@ -825,13 +825,33 @@ async function friendsView(el: HTMLElement, ctx: Ctx) {
 async function createView(el: HTMLElement, ctx: Ctx) {
   const newGame = () => {
     const input = h("input", { placeholder: "Nazwa gry", maxLength: 40, value: "Moja gra" });
-    const close = modal("Nowa gra", h("label", null, "Nazwa", input), [
+    let mode: "3d" | "2d" = "3d";
+    const pick = h("div", { class: "mode-pick" });
+    const renderPick = () =>
+      pick.replaceChildren(
+        ...(
+          [
+            ["3d", "🧱", "Gra 3D", "Klocki, postacie, narzędzia - jak w Robloxie"],
+            ["2d", "🎮", "Gra 2D", "Platformówka z obrazków: skakanie, monety, poziomy"],
+          ] as const
+        ).map(([m, icon, label, desc]) =>
+          h(
+            "button",
+            { class: "mode-card" + (mode === m ? " active" : ""), onClick: () => ((mode = m), renderPick()) },
+            h("span", { class: "mode-icon" }, icon),
+            h("b", null, label),
+            h("span", null, desc),
+          ),
+        ),
+      );
+    renderPick();
+    const close = modal("Nowa gra", h("div", { class: "form" }, h("label", null, "Nazwa", input), pick), [
       {
         label: "Utwórz",
         kind: "primary",
         onClick: async () => {
           try {
-            const w = await api.createWorld(input.value);
+            const w = await api.createWorld(input.value, mode);
             close();
             ctx.go("studio", { worldId: w.id });
           } catch (e) {

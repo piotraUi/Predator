@@ -38,8 +38,12 @@ export interface TextVars {
   player: string;
 }
 
+/** skala ekranu: jak w GDevelop (dopasowanie do 1280x720), a na telefonie trzymanym pionowo - do krótszego boku */
+export function hudScale(w: number, h: number) {
+  return Math.max(Math.min(w / BASE_W, h / BASE_H), Math.min(w, h) / BASE_H);
+}
 export function fitScale(w: number, h: number, zoom: number) {
-  return Math.min(w / BASE_W, h / BASE_H) * zoom;
+  return hudScale(w, h) * zoom;
 }
 
 export class LevelView {
@@ -60,6 +64,25 @@ export class LevelView {
     public assets: AssetStore,
   ) {
     for (const o of world.objects) this.objs.set(o.id, o);
+  }
+
+  /** po dodaniu / usunięciu obiektów w edytorze */
+  refreshObjects() {
+    this.objs = new Map(this.world.objects.map((o) => [o.id, o]));
+    this.invalidate();
+  }
+
+  /** kamera, w której rysowana jest dana instancja (tło i ekran mają własne) */
+  camFor(i: Inst2D, cam: Camera2D, W: number, H: number): Camera2D {
+    if (i.layer === "bg") {
+      const p = i.parallax ?? 0;
+      return { x: cam.x * p + (1 - p) * (BASE_W / 2), y: cam.y * p + (1 - p) * (BASE_H / 2), scale: cam.scale };
+    }
+    if (i.layer === "hud") {
+      const s = hudScale(W, H);
+      return { x: W / s / 2, y: H / s / 2, scale: s };
+    }
+    return cam;
   }
 
   setLevel(level: Level2D) {
@@ -125,7 +148,7 @@ export class LevelView {
     ctx.fillStyle = this.background;
     ctx.fillRect(0, 0, W, H);
     const list = this.instances();
-    const hudScale = Math.min(W / BASE_W, H / BASE_H);
+    const hs = hudScale(W, H);
     // tło: warstwa z własną kamerą (parallax 0 = stoi w miejscu jak w GDevelop)
     for (const i of list) {
       if (i.layer !== "bg") continue;
@@ -143,7 +166,7 @@ export class LevelView {
       this.drawInst(ctx, W, H, cam, i, t, opts.editor, true);
     }
     for (const e of entities) this.drawEntity(ctx, W, H, cam, e, t);
-    if (this.level.ambient && !opts.editor) this.drawLights(ctx, W, H, cam, list, hudScale);
+    if (this.level.ambient && !opts.editor) this.drawLights(ctx, W, H, cam, list, hs);
     // napisy nad graczami
     ctx.font = `bold ${Math.max(11, Math.round(12 * Math.min(2, cam.scale)))}px system-ui, sans-serif`;
     ctx.textAlign = "center";
@@ -160,7 +183,7 @@ export class LevelView {
     ctx.textAlign = "left";
     // ekran (HUD)
     if (opts.hud !== false) {
-      const hudCam: Camera2D = { x: W / hudScale / 2, y: H / hudScale / 2, scale: hudScale };
+      const hudCam: Camera2D = { x: W / hs / 2, y: H / hs / 2, scale: hs };
       for (const i of list) if (i.layer === "hud") this.drawInst(ctx, W, H, hudCam, i, t, opts.editor, false);
     }
     ctx.restore();

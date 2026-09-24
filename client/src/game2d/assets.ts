@@ -76,6 +76,19 @@ export class AssetStore {
     });
   }
 
+  /** nowy obrazek / dźwięk dodany w edytorze */
+  add(a: Asset2D): Promise<void> {
+    if (a.type === "image") {
+      const img = new Image();
+      img.src = a.data;
+      this.images.set(a.id, img);
+      this.patterns.delete(a.id);
+      return img.decode().catch(() => {});
+    }
+    if (a.type === "sound") this.soundData.set(a.id, a.data);
+    return Promise.resolve();
+  }
+
   static forWorld(w: World2D) {
     return new AssetStore(w.assets);
   }

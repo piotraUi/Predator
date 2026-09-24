@@ -10,7 +10,7 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
-import type { AnimDef, CharacterDef, Part, PartKind, PartShape, ToolDef, WorldData, WorldScript } from "../../../shared/types.ts";
+import type { AnimDef, CharacterDef, Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
 import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
 import { makePart, MAX_PARTS, newId } from "../../../shared/world.ts";
 import { api } from "../api.ts";
@@ -76,7 +76,11 @@ interface Source {
 
 class SaveCancelled extends Error {}
 
-export function studioScreen(root: HTMLElement, params: { worldId?: number; file?: StudioFile }, go: Go) {
+export function studioScreen(
+  root: HTMLElement,
+  params: { worldId?: number; file?: StudioFile; loaded?: { info: WorldInfo; data: WorldData } },
+  go: Go,
+) {
   const canvas = h("canvas", { class: "studio-canvas" });
   const loading = h("div", { class: "loading" }, h("div", { class: "spinner" }), "Wczytywanie gry…");
   const viewport = h("div", { class: "studio-viewport" }, canvas, loading);
@@ -106,8 +110,7 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
     queueMicrotask(() => start({ ...file.meta }, file.data, src, file.dirty ?? false));
   } else {
     const worldId = params.worldId!;
-    api
-      .getWorld(worldId)
+    (params.loaded ? Promise.resolve(params.loaded) : api.getWorld(worldId))
       .then(({ info, data }) => {
         if (disposed) return;
         const src: Source = {

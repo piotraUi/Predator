@@ -88,6 +88,35 @@ To samo dzieje się automatycznie po wypchnięciu tagu, np. `git tag v0.1.0 && g
 - **APK (Android):** potrzebujesz Android Studio. Potem `cd client`, `npm run build:app`, `npx cap add android`, `npx cap open android`.
 - **iOS:** tylko na Macu z Xcode: `cd client`, `npm run build:app`, `npx cap add ios`, `npx cap open ios`.
 
+## Gry 2D
+
+Oprócz gier 3D w Predatorze można robić **platformówki 2D** z obrazków (pixel art). Przy tworzeniu gry wybierz **Gra 2D**.
+Gra 2D działa tak samo jak 3D: na serwerze z multiplayerem, w przeglądarce, na telefonie (joystick i przycisk skoku) i offline w Studio.
+
+- **Poziomy:** każdy gracz może być na innym poziomie; widzi tylko graczy ze swojego poziomu.
+- **Obiekty:** obrazek lub animacja (sprite), kafelki, napis, światło i niewidzialna strefa.
+- **Zachowania bez kodu:** platforma, platforma przenikalna od dołu, drabina. Do tego: zabija, moneta (dla każdego osobno albo wspólna), checkpoint, przejście na inny poziom, potwór chodzący w lewo i prawo, przycisk i brama, start i miejsce odrodzenia.
+- **Fizyka jak w GDevelop:** przyspieszanie, skok z przytrzymaniem, drabiny, ta sama grawitacja. Gry przeniesione z GDevelopa zachowują się tak samo.
+- **Postacie:** sprite z animacjami (stoi, idzie, skacze, spada, wspina się, ginie). Postać może mieć **towarzysza**, który biegnie za graczem i powtarza jego ruchy (jak pies w Ludziku).
+- **Ciemność i światła** (poziomy nocne), **napisy na ekranie** z `{coins}`, `{left}` i `{time}`, a także **czcionki bitmapowe** i dźwięki.
+- **Skrypty Lua** z dodatkowymi funkcjami 2D:
+  - poziomy i obiekty: `setLevel`, `playSound`, `setAnimation`, `countObjects`, `showFor`;
+  - ruch i kamera: `setForce`, `lockCamera`, `autoWalk`;
+  - gracze: `hidePlayer`, `restartLevel`.
+
+  Pełna lista jest w oknie skryptu w Studio.
+- **Import z GDevelopa:** Studio → Plik → „Importuj grę z GDevelopa (.zip)” (eksport HTML5). Przenosi sceny, obiekty, animacje, maski kolizji, dźwięki i światła. Logikę (zdarzenia) trzeba ustawić zachowaniami i w Lua.
+
+### Ludzik 4
+
+Gra **Ludzik 4** (z GDevelopa) jest przeniesiona do Predatora i serwer tworzy ją sam jako przykładową grę (`games/Ludzik 4.pgame`):
+
+- **Level 1:** monety, ogień, potwór, drabiny, checkpoint, przyspieszenie, liana i Michael Jackson. Postać do wyboru w menu: Ludzik z psem, Ludzik, Pies albo Nero.
+- **Level 1 część 2:** noc ze światłami, jazda w prawo.
+- **Multiplayer:** mapa dla drużyny. Przyciski otwierają bramy, monety są wspólne, a po zebraniu wszystkich otwierają się drzwi. Zamiast serwerów GDevelopa działa multiplayer Predatora: wchodzisz z menu gry („Idź do poziomu”).
+
+Plik powstaje z oryginalnego zipa skryptem `npx tsx scripts/port-ludzik.ts game.zip`.
+
 ## Pliki gier .pgame i Studio bez serwera
 
 Gra (świat, skrypty, narzędzia, postacie, animacje) zapisuje się do jednego pliku **`.pgame`**. W środku jest zwykły JSON, więc da się go też pisać albo poprawiać w edytorze tekstu:

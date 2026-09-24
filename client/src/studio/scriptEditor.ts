@@ -46,7 +46,45 @@ export const LUA_HELP: [string, string][] = [
   ['setSky("#102040")', "kolor nieba (np. noc)"],
 ];
 
-export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void) {
+export const LUA_HELP_2D: [string, string][] = [
+  ['onTouch("Obiekt", function(player) ... end)', "gdy gracz dotknie obiektu (nazwa obiektu albo instancji)"],
+  ["onLevelEnter(function(player, level) ... end)", "gdy gracz wejdzie na poziom"],
+  ["onPlayerJoin(function(player) ... end)", "gdy gracz dołączy"],
+  ["onDied(function(player) ... end)", "gdy gracz zginie"],
+  ["onChat(function(player, message) ... end)", "gdy gracz coś napisze"],
+  ["every(sekundy, function() ... end)", "powtarzaj co X sekund"],
+  ["after(sekundy, function() ... end)", "zrób raz po X sekundach"],
+  ["wait(sekundy)", "czekaj (tylko wewnątrz funkcji)"],
+  ['say("tekst") / tell(player, "tekst")', "wiadomość do wszystkich / do gracza"],
+  ['setLevel(player, "Poziom 2")', "przenieś gracza na poziom"],
+  ['restartLevel("Poziom 1")', "zacznij poziom od nowa (dla wszystkich na nim)"],
+  ["getLevel(player)", "nazwa poziomu gracza"],
+  ['getPlayersOnLevel("Poziom 1")', "lista graczy na poziomie"],
+  ['playSound("nazwa", player)', "zagraj dźwięk (bez player = wszystkim)"],
+  ['setAnimation("Drzwi", "Otwarte")', "zmień animację obiektu"],
+  ['setText("Napis", "tekst")', "zmień napis"],
+  ['hideObject("Most") / showObject("Most")', "schowaj / pokaż obiekt (dla wszystkich)"],
+  ['showFor(player, "Moneta")', "przywróć zebrane przez gracza rzeczy"],
+  ['countObjects("Moneta", "Poziom 1")', "ile widocznych obiektów"],
+  ['createObject("Potwor", x, y, "Poziom 1")', "stwórz obiekt"],
+  ['deleteObject("Potwor")', "usuń obiekt"],
+  ["setSpeed(player, 400) / setJump(player, 500)", "prędkość biegu / siła skoku"],
+  ['setPlayerAnimation(player, "walk", "Bieg")', "podmień animację (idle, walk, jump, fall, climb)"],
+  ["resetPlayerAnimations(player)", "przywróć animacje postaci"],
+  ["setForce(player, 500)", "stała siła w prawo (jazda); 0 = koniec"],
+  ["jump(player)", "podskok"],
+  ["lockCamera(player, x, y) / unlockCamera(player)", "zatrzymaj kamerę"],
+  ["autoWalk(player, 1)", "idź sam w prawo (-1 w lewo, 0 stop)"],
+  ["hidePlayer(player, true) / isHidden(player)", "schowaj gracza (np. wyszedł drzwiami)"],
+  ["getCoins / setCoins / addCoins(player, 1)", "monety gracza (licznik {coins})"],
+  ["teleport(player, x, y) / kill(player)", "przenieś / zabij"],
+  ['setCharacter(player, "Pies")', "zmień postać (bez nazwy = wybrana)"],
+  ['setBackground("#102040")', "kolor tła"],
+  ["addScore(player, 1)", "punkty w rankingu"],
+  ['print("tekst")', "wypisz w konsoli"],
+];
+
+export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void, helpList: [string, string][] = LUA_HELP) {
   const nameInput = h("input", { class: "script-name", value: script.name, maxLength: 40 });
   let dirty = false;
   const markDirty = () => (dirty = true);
@@ -103,7 +141,7 @@ export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) =
       { class: "help" },
       h("h3", null, "Co można użyć"),
       h("p", { class: "muted" }, "Kliknij, żeby wstawić do kodu. Klocki wskazujesz po nazwie z panelu Właściwości."),
-      LUA_HELP.map(([code, desc]) =>
+      helpList.map(([code, desc]) =>
         h(
           "button",
           {

@@ -14,7 +14,7 @@ const screens: Record<string, () => Promise<Screen>> = {
   auth: async () => authScreen as Screen,
   home: async () => (await import("./ui/home.ts")).homeScreen as Screen,
   play: async () => (await import("./game/launch.ts")).launchScreen as Screen,
-  studio: async () => (await import("./studio/studio.ts")).studioScreen as Screen,
+  studio: async () => (await import("./studio/open.ts")).studioOpenScreen as Screen,
   offline: async () => (await import("./ui/offline.ts")).offlineScreen as Screen,
 };
 

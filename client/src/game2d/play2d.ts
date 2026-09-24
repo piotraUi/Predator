@@ -713,7 +713,7 @@ export function play2dScreen(
     }
     // daleko poza ekranem - wraca do gracza
     const W = canvas.width / cam.scale, H = canvas.height / cam.scale;
-    if (Math.abs(pp.x - cam.x) > W / 2 + 100 || Math.abs(pp.y - cam.y) > H / 2 + 100) pet.hiddenFor = 2;
+    if (camInit && time - levelStart > 1 && (Math.abs(pp.x - cam.x) > W / 2 + 100 || Math.abs(pp.y - cam.y) > H / 2 + 100)) pet.hiddenFor = 2;
   }
 
   function draw() {

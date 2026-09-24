@@ -39,6 +39,27 @@ export async function pickDataUrl(ext: string[]): Promise<{ name: string; dataUr
   return { name: f.name, dataUrl, size: f.size };
 }
 
+/** Wybór jednego albo wielu plików z dysku (obrazki, dźwięki, zip) */
+export function pickFiles(ext: string[], multiple = false): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ext.join(",");
+    input.multiple = multiple;
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      resolve([...(input.files ?? [])]);
+      input.remove();
+    });
+    input.addEventListener("cancel", () => {
+      resolve([]);
+      input.remove();
+    });
+    document.body.append(input);
+    input.click();
+  });
+}
+
 function pickBrowserFile(ext: string[]): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");

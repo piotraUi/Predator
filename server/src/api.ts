@@ -1,3 +1,4 @@
+import { emptyWorld2D } from "../../shared/world2d.ts";
 import express, { type Response } from "express";
 import { CATALOG, findItem } from "../../shared/catalog.ts";
 import { DEFAULT_AVATAR } from "../../shared/catalog.ts";
@@ -187,7 +188,8 @@ api.post("/worlds", requireAuth, (req, res) => {
   if (worlds.byOwner(user.id).length >= MAX_WORLDS_PER_USER)
     return fail(res, 400, `Możesz mieć maksymalnie ${MAX_WORLDS_PER_USER} gier`);
   const name = String(req.body?.name ?? "").trim().slice(0, 40) || "Moja gra";
-  const w = worlds.create(user.id, name, emptyWorld(), DEFAULT_MAX_PLAYERS);
+  const data = req.body?.mode === "2d" ? { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: emptyWorld2D() } : emptyWorld();
+  const w = worlds.create(user.id, name, data, DEFAULT_MAX_PLAYERS);
   res.json(infoById(w.id));
 });
 
