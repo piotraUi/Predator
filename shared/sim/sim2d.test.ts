@@ -5,8 +5,9 @@ import { test } from "node:test";
 import { parseGameFile } from "../gamefile.ts";
 import { Sim2D } from "./sim2d.ts";
 
-const file = path.join(import.meta.dirname, "..", "..", "games", "Ludzik 4.pgame");
-const hasGame = fs.existsSync(file);
+// testy uruchamiane z folderu server/ albo z głównego
+const file = [path.resolve("games", "Ludzik 4.pgame"), path.resolve("..", "games", "Ludzik 4.pgame")].find((f) => fs.existsSync(f)) ?? "";
+const hasGame = !!file;
 
 function setup() {
   const { data } = parseGameFile(fs.readFileSync(file, "utf8"));
