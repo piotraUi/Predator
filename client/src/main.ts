@@ -2,7 +2,7 @@ import "./style.css";
 import { api, getServerUrl, getToken, needsServerAddress, setToken } from "./api.ts";
 import { session } from "./state.ts";
 import { authScreen } from "./ui/auth.ts";
-import { h, toast } from "./ui/dom.ts";
+import { h, logo, toast } from "./ui/dom.ts";
 import { desktop, launchFile, type OpenedFile } from "./files.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
 
@@ -56,9 +56,9 @@ window.addEventListener("vite:preloadError", (e) => {
 });
 
 /** Ekran ładowania, który po dłuższym czasie pokazuje przycisk odświeżenia */
-export function loadingScreen(text: string) {
+export function loadingScreen(text: string, withLogo = false) {
   const extra = h("div", { class: "loading-extra" });
-  const el = h("div", { class: "loading" }, h("div", { class: "spinner" }), h("span", null, text), extra);
+  const el = h("div", { class: "loading" }, withLogo ? logo(false, "logo-img boot") : null, h("div", { class: "spinner" }), withLogo ? null : h("span", null, text), extra);
   const timer = setTimeout(() => {
     extra.replaceChildren(
       h("p", { class: "muted" }, "To trwa dłużej niż zwykle. Sprawdź połączenie z internetem albo Wi-Fi."),
@@ -122,7 +122,7 @@ function openGameFile(f: OpenedFile) {
 desktop?.onFileOpened((f) => openGameFile(f));
 
 async function boot() {
-  const loading = loadingScreen("Predator");
+  const loading = loadingScreen("Predator", true);
   root.append(loading.el);
   const launched = await launchFile();
   if (launched && openGameFile(launched)) {

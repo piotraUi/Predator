@@ -64,6 +64,10 @@ export function modal(title: string, body: Node, actions: { label: string; kind?
   return close;
 }
 
+/** Logo Predatora (obrazek z public/) */
+export const logo = (studio = false, cls = "logo-img") =>
+  h("img", { class: cls, src: import.meta.env.BASE_URL + (studio ? "logo-studio.png" : "logo.png"), alt: studio ? "Predator Studio" : "Predator", draggable: false });
+
 export const isTouch = () => matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
 
 export function initials(name: string) {

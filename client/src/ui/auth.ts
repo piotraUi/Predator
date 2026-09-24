@@ -1,6 +1,6 @@
 import { api, getServerUrl, needsServerAddress, setServerUrl, setToken } from "../api.ts";
 import { session } from "../state.ts";
-import { h, toast } from "./dom.ts";
+import { h, logo, toast } from "./dom.ts";
 
 export function authScreen(root: HTMLElement, _p: unknown, go: (s: string) => void) {
   let mode: "login" | "register" = "login";
@@ -31,7 +31,7 @@ export function authScreen(root: HTMLElement, _p: unknown, go: (s: string) => vo
   const form = h(
     "form",
     { class: "auth-form" },
-    h("div", { class: "logo" }, h("span", { class: "logo-block" }), "PREDATOR"),
+    h("div", { class: "logo" }, logo()),
     h("p", { class: "muted center" }, "Buduj, graj i baw się ze znajomymi"),
     needsServerAddress ? h("label", null, "Serwer", server) : null,
     h("label", null, "Nick", user),

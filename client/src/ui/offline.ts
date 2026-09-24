@@ -5,7 +5,7 @@ import { demoArena, demoObby, emptyWorld } from "../../../shared/world.ts";
 import { demoCity } from "../../../shared/demos/city.ts";
 import { pickFile } from "../files.ts";
 import { session } from "../state.ts";
-import { h, toast } from "./dom.ts";
+import { h, logo, toast } from "./dom.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 
@@ -37,7 +37,7 @@ export function offlineScreen(root: HTMLElement, _p: unknown, go: Go) {
     h(
       "div",
       { class: "offline-box" },
-      h("div", { class: "logo" }, h("span", { class: "logo-block" }), "PREDATOR STUDIO"),
+      h("div", { class: "logo" }, logo(true)),
       h(
         "p",
         { class: "muted center" },

@@ -6,7 +6,7 @@ import { api, setToken, thumbnailUrl } from "../api.ts";
 import { session } from "../state.ts";
 import { openSettings } from "../settings.ts";
 import { pickFile } from "../files.ts";
-import { ask, h, hashColor, modal, toast } from "./dom.ts";
+import { ask, h, hashColor, logo, modal, toast } from "./dom.ts";
 import { headshot } from "./headshot.ts";
 import { icon } from "./icons.ts";
 
@@ -51,7 +51,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
     "header",
     { class: "pv-top" },
     h("button", { class: "pv-icon-btn pv-only-mobile", title: "Menu", onClick: () => toggleDrawer(true) }, icon("menu")),
-    h("button", { class: "pv-logo", onClick: () => nav({ v: "home" }) }, h("span", { class: "logo-block" }), h("span", null, "PREDATOR")),
+    h("button", { class: "pv-logo", title: "Strona główna", onClick: () => nav({ v: "home" }) }, logo()),
     h(
       "div",
       { class: "pv-top-links pv-only-desktop" },

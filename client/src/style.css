@@ -784,3 +784,15 @@ body:is([data-screen="home"], [data-screen="auth"], [data-screen="offline"]) .te
 }
 body:is([data-screen="home"], [data-screen="auth"], [data-screen="offline"]) .logo-block { box-shadow: inset 0 0 0 0.28em #fff; }
 body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space: normal; }
+
+/* logo z obrazka */
+.logo-img { display: block; height: 64px; width: auto; max-width: 100%; object-fit: contain; user-select: none; }
+.pv-logo .logo-img { height: 34px; }
+.logo-img.boot { height: 72px; margin-bottom: 8px; }
+.offline-box .logo-img { height: 56px; }
+.tb-logo { height: 26px; width: auto; margin: 0 8px 0 4px; flex-shrink: 0; user-select: none; }
+@media (max-width: 760px) {
+  .tb-logo { display: none; }
+  .pv-logo .logo-img { height: 30px; }
+  .offline-box .logo-img { height: 40px; }
+}

@@ -18,7 +18,7 @@ import { desktop, pickDataUrl, pickFile, saveTextFile } from "../files.ts";
 import { session } from "../state.ts";
 import { fileNameFor, GAME_EXT, makeGameFile, parseGameFile, type GameMeta } from "../../../shared/gamefile.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
-import { ask, h, modal, toast } from "../ui/dom.ts";
+import { ask, h, logo, modal, toast } from "../ui/dom.ts";
 import { openScriptEditor } from "./scriptEditor.ts";
 import { openToolEditor } from "./toolEditor.ts";
 import { openCharacterEditor } from "./characterEditor.ts";
@@ -462,6 +462,7 @@ export function studioScreen(root: HTMLElement, params: { worldId?: number; file
     const toolbar = h(
       "div",
       { class: "studio-toolbar" },
+      logo(true, "tb-logo"),
       h(
         "button",
         {
