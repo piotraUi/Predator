@@ -33,6 +33,8 @@ export class LocalRoom implements GameConnection {
       {
         send: (_sid, type, msg) => this.deliver(type, msg),
         broadcast: (type, msg, except) => except !== this.sid && this.deliver(type, msg),
+        // test w Studio: odznaka tylko się pokazuje, nic nie jest zapisywane
+        badge: (_sid, name) => this.testBadge(copy, name),
       },
       { id: 0, name, ownerName: user.username },
     );
@@ -40,6 +42,15 @@ export class LocalRoom implements GameConnection {
     queueMicrotask(() =>
       this.sim.join(this.sid, { userId: 0, username: user.username, avatar: user.avatar ?? DEFAULT_AVATAR, isOwner: true }),
     );
+    for (const b of copy.badges ?? []) if (b.trigger === "join") setTimeout(() => this.testBadge(copy, b.id), 2500);
+  }
+
+  private shownBadges = new Set<string>();
+  private testBadge(data: WorldData, name: string) {
+    const b = data.badges?.find((x) => x.name === name || x.id === name);
+    if (!b || this.shownBadges.has(b.id)) return;
+    this.shownBadges.add(b.id);
+    this.deliver("badge", { name: b.name, icon: b.icon, description: b.description, reward: b.reward, test: true });
   }
 
   private deliver(type: string, msg: unknown) {

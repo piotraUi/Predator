@@ -34,4 +34,14 @@ export const presence = {
     else worldCounts.set(worldId, n);
   },
   worldCount: (worldId: number) => worldCounts.get(worldId) ?? 0,
+  /** ile osób jest teraz online i ile gra */
+  stats() {
+    let online = 0, playing = 0;
+    for (const id of map.keys()) {
+      const p = presence.get(id);
+      if (p.online) online++;
+      if (p.playing) playing++;
+    }
+    return { online, playing };
+  },
 };

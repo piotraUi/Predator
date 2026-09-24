@@ -29,6 +29,7 @@ import { CHAR_EXT, parseCharacterFile } from "../../../shared/gamefile.ts";
 import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared/world.ts";
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
+import { badgeEditor } from "./badgeEditor.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Tool = "select" | "move" | "scale";
@@ -991,6 +992,7 @@ export function studioScreen(
         h("option", { value: "" }, "Własny awatar gracza"),
         data.characters.map((c) => h("option", { value: c.id, selected: data.playerCharacter === c.id }, "🧍 " + c.name)),
       );
+      const badges = badgeEditor(data.badges);
       const close = modal(
         "Ustawienia gry",
         h(
@@ -1003,6 +1005,7 @@ export function studioScreen(
           h("label", null, "Grawitacja (normalnie 196)", grav),
           h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
+          badges.el,
           src.online
             ? h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać"))
             : h("p", { class: "muted", style: "font-size:13px;margin:0" }, "Gra z pliku - żeby ją opublikować, wyślij ją na serwer (Plik → Wyślij na serwer)."),
@@ -1016,6 +1019,7 @@ export function studioScreen(
               data.skyColor = sky.value;
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
               data.pvp = pvp.checked;
+              data.badges = badges.read();
               data.playerCharacter = playerChar.value || undefined;
               renderCharacters();
               view.setSky(data.skyColor);

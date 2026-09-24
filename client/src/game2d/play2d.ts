@@ -362,7 +362,11 @@ export function play2dScreen(
   });
   conn.onMessage("collected", (id: string) => view.hiddenLocal.add(id));
   conn.onMessage("uncollected", (id: string) => view.hiddenLocal.delete(id));
-  conn.onMessage("coins", (n: number) => (coins = n));
+  conn.onMessage("coins", (n: number | { earned: number }) => {
+    // liczba = monety zebrane w grze, obiekt = monety Predatora za granie
+    if (typeof n === "number") coins = n;
+    else toast(`+${n.earned} 🪙 za granie`, "good");
+  });
   conn.onMessage("level", (s: LevelSync & { character?: string }) => {
     // najpierw niech się skończy animacja śmierci
     if (dead > 0) pendingSync = s;

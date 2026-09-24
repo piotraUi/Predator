@@ -809,6 +809,7 @@ export class Sim2D {
         const l = levelByName(this.w, S(level));
         return l ? [...this.players.values()].filter((p) => p.level === l.id).map((p) => p.sid) : [];
       },
+      awardBadge: (sid, name) => this.t.badge?.(S(sid), S(name)),
       setBackground: (color, level) => {
         const c = S(color);
         if (!/^#[0-9a-fA-F]{6}$/.test(c)) return;

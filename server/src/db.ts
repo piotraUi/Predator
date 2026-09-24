@@ -69,15 +69,37 @@ CREATE TABLE IF NOT EXISTS messages (
   read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS messages_to ON messages(to_id, read);
+
+-- odznaki (nagrody) zdobyte w grach
+CREATE TABLE IF NOT EXISTS user_badges (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  badge_id TEXT NOT NULL,
+  earned_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, world_id, badge_id)
+);
+
+-- powiadomienia systemowe (nagrody dla twórców, ogłoszenia admina)
+CREATE TABLE IF NOT EXISTS alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  read INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS alerts_user ON alerts(user_id, read);
 CREATE INDEX IF NOT EXISTS messages_pair ON messages(from_id, to_id, id);
 `);
 
 // migracje starszych baz
 const worldCols = (db.prepare("PRAGMA table_info(worlds)").all() as { name: string }[]).map((c) => c.name);
 if (!worldCols.includes("thumbnail")) db.exec("ALTER TABLE worlds ADD COLUMN thumbnail TEXT");
+const userCols = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
+if (!userCols.includes("banned")) db.exec("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0");
 
 export interface UserRow {
   id: number;
+  banned: number;
   username: string;
   pass_hash: string;
   salt: string;
@@ -134,8 +156,11 @@ export function toPublicUser(u: UserRow): PublicUser {
     coins: u.coins,
     avatar: { ...DEFAULT_AVATAR, ...(JSON.parse(u.avatar) as Partial<Avatar>) },
     inventory: JSON.parse(u.inventory) as string[],
+    ...(isAdminName(u.username) ? { admin: true } : {}),
   };
 }
+
+export const isAdminName = (name: string) => config.admins.some((a) => a.toLowerCase() === name.toLowerCase());
 
 export const users = {
   byId: (id: number) => db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined,
@@ -154,7 +179,18 @@ export const users = {
   setInventory: (id: number, inv: string[]) =>
     db.prepare("UPDATE users SET inventory = ? WHERE id = ?").run(JSON.stringify(inv), id),
   addCoins: (id: number, amount: number) =>
-    db.prepare("UPDATE users SET coins = coins + ? WHERE id = ?").run(amount, id),
+    db.prepare("UPDATE users SET coins = MAX(0, coins + ?) WHERE id = ?").run(amount, id),
+  setCoins: (id: number, coins: number) => db.prepare("UPDATE users SET coins = ? WHERE id = ?").run(Math.max(0, Math.round(coins)), id),
+  setPassword: (id: number, hash: string, salt: string) => db.prepare("UPDATE users SET pass_hash = ?, salt = ? WHERE id = ?").run(hash, salt, id),
+  setBanned(id: number, banned: boolean) {
+    db.prepare("UPDATE users SET banned = ? WHERE id = ?").run(banned ? 1 : 0, id);
+    if (banned) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  },
+  search: (q: string, limit = 50) =>
+    db
+      .prepare("SELECT * FROM users WHERE username LIKE ? ORDER BY created_at DESC LIMIT ?")
+      .all(`%${q.replace(/[%_]/g, "")}%`, limit) as unknown as UserRow[],
+  count: () => (db.prepare("SELECT COUNT(*) AS c FROM users").get() as { c: number }).c,
   /** Codzienny bonus - zwraca ile dodano (0 jeśli już odebrany dzisiaj) */
   claimDaily(id: number, amount: number): number {
     const r = db
@@ -228,6 +264,36 @@ export const worlds = {
   setOwner: (id: number, ownerId: number) => db.prepare("UPDATE worlds SET owner_id = ? WHERE id = ?").run(ownerId, id),
   addVisit: (id: number) => db.prepare("UPDATE worlds SET visits = visits + 1 WHERE id = ?").run(id),
   count: () => (db.prepare("SELECT COUNT(*) AS c FROM worlds").get() as { c: number }).c,
+  /** wszystkie gry (także prywatne) - dla admina */
+  all: (q = "", limit = 100) =>
+    db
+      .prepare(`SELECT ${LIST_COLS} FROM worlds w JOIN users u ON u.id = w.owner_id WHERE w.name LIKE ? OR u.username LIKE ? ORDER BY w.updated_at DESC LIMIT ?`)
+      .all(`%${q}%`, `%${q}%`, limit) as unknown as WorldListRow[],
+  /** podmiana samych danych gry (bez zmiany daty aktualizacji) */
+  setData: (id: number, data: WorldData) => db.prepare("UPDATE worlds SET data = ? WHERE id = ?").run(JSON.stringify(data), id),
+  setPublished: (id: number, published: boolean) => db.prepare("UPDATE worlds SET published = ? WHERE id = ?").run(published ? 1 : 0, id),
+};
+
+export const badges = {
+  /** zapisuje odznakę; true = nowa (jeszcze jej nie było) */
+  award: (userId: number, worldId: number, badgeId: string) =>
+    Number(db.prepare("INSERT OR IGNORE INTO user_badges (user_id, world_id, badge_id, earned_at) VALUES (?, ?, ?, ?)").run(userId, worldId, badgeId, Date.now()).changes) > 0,
+  has: (userId: number, worldId: number, badgeId: string) =>
+    !!db.prepare("SELECT 1 FROM user_badges WHERE user_id = ? AND world_id = ? AND badge_id = ?").get(userId, worldId, badgeId),
+  forWorld: (worldId: number) =>
+    db.prepare("SELECT badge_id, COUNT(*) AS n FROM user_badges WHERE world_id = ? GROUP BY badge_id").all(worldId) as unknown as { badge_id: string; n: number }[],
+  mine: (userId: number, worldId: number) =>
+    (db.prepare("SELECT badge_id FROM user_badges WHERE user_id = ? AND world_id = ?").all(userId, worldId) as unknown as { badge_id: string }[]).map((r) => r.badge_id),
+  countForUser: (userId: number) => (db.prepare("SELECT COUNT(*) AS c FROM user_badges WHERE user_id = ?").get(userId) as { c: number }).c,
+};
+
+export const alerts = {
+  add: (userId: number, text: string) => db.prepare("INSERT INTO alerts (user_id, text, created_at) VALUES (?, ?, ?)").run(userId, text.slice(0, 300), Date.now()),
+  unread: (userId: number) =>
+    db.prepare("SELECT id, text, created_at FROM alerts WHERE user_id = ? AND read = 0 ORDER BY id DESC LIMIT 30").all(userId) as unknown as { id: number; text: string; created_at: number }[],
+  markRead: (userId: number) => db.prepare("UPDATE alerts SET read = 1 WHERE user_id = ?").run(userId),
+  /** ogłoszenie dla wszystkich kont */
+  broadcast: (text: string) => db.prepare("INSERT INTO alerts (user_id, text, created_at) SELECT id, ?, ? FROM users").run(text.slice(0, 300), Date.now()),
 };
 
 export const votes = {

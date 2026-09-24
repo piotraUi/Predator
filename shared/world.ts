@@ -3,6 +3,7 @@ import { sanitizeWorld2D } from "./world2d.ts";
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
 import { DEFAULT_AVATAR } from "./catalog.ts";
 import type {
+  BadgeDef,
   Accessory,
   AnimDef,
   Avatar,
@@ -18,7 +19,7 @@ import type {
   WorldData,
   WorldScript,
 } from "./types.ts";
-import { JOINTS } from "./types.ts";
+import { JOINTS, MAX_BADGE_REWARD } from "./types.ts";
 
 export const MAX_PARTS = 5000;
 export const MAX_SCRIPTS = 50;
@@ -281,6 +282,7 @@ export function sanitizeWorld(input: unknown): WorldData {
     pvp: w.pvp !== false,
     skyColor: typeof w.skyColor === "string" && COLOR_RE.test(w.skyColor) ? w.skyColor : "#8ec8ff",
     gravity: num(w.gravity, 10, 500, 196.2),
+    badges: sanitizeBadges(w.badges),
     ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),
   };
 }
@@ -297,6 +299,10 @@ export function sanitizeLook(input: unknown): Avatar {
     legs: color(a.legs, DEFAULT_AVATAR.legs),
     hat: str(a.hat, 20, "none") || "none",
     face: str(a.face, 20, "smile") || "smile",
+    shirt: str(a.shirt, 30, "none") || "none",
+    pants: str(a.pants, 30, "none") || "none",
+    back: str(a.back, 30, "none") || "none",
+    neck: str(a.neck, 30, "none") || "none",
   };
 }
 
@@ -365,3 +371,26 @@ export function sanitizeAnimation(input: unknown): AnimDef {
     keyframes,
   };
 }
+
+export const MAX_BADGES = 30;
+
+export function sanitizeBadges(input: unknown): BadgeDef[] {
+  const out: BadgeDef[] = [];
+  for (const raw of Array.isArray(input) ? input.slice(0, MAX_BADGES) : []) {
+    const b = (raw ?? {}) as Record<string, unknown>;
+    const name = str(b.name, 40, "").trim();
+    if (!name) continue;
+    out.push({
+      id: str(b.id, 40, newId()) || newId(),
+      name,
+      description: str(b.description, 200, ""),
+      icon: [...str(b.icon, 16, "🏅")].slice(0, 2).join("") || "🏅",
+      trigger: b.trigger === "join" ? "join" : "script",
+      reward: Math.round(num(b.reward, 0, MAX_BADGE_REWARD, 0)),
+    });
+  }
+  return out;
+}
+
+/** Odznaka, którą dostaje każda nowa gra */
+export const welcomeBadge = (): BadgeDef => ({ id: newId(), name: "Witaj w grze!", description: "Za pierwsze wejście do gry", icon: "👋", trigger: "join", reward: 5 });

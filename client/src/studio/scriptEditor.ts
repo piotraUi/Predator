@@ -44,6 +44,7 @@ export const LUA_HELP: [string, string][] = [
   ["stopAnimation(player)", "zatrzymaj animację"],
   ['npcAnimation("Barista", "Machanie")', "animacja NPC (po nazwie klocka)"],
   ['setSky("#102040")', "kolor nieba (np. noc)"],
+  ['awardBadge(player, "Nazwa odznaki")', "daj graczowi odznakę (Ustawienia gry → Odznaki)"],
 ];
 
 export const LUA_HELP_2D: [string, string][] = [
@@ -81,6 +82,7 @@ export const LUA_HELP_2D: [string, string][] = [
   ['setCharacter(player, "Pies")', "zmień postać (bez nazwy = wybrana)"],
   ['setBackground("#102040")', "kolor tła"],
   ["addScore(player, 1)", "punkty w rankingu"],
+  ['awardBadge(player, "Nazwa odznaki")', "daj graczowi odznakę (Ustawienia gry → Odznaki)"],
   ['print("tekst")', "wypisz w konsoli"],
 ];
 

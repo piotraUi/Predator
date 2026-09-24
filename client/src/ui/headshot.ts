@@ -1,6 +1,8 @@
 // Płaskie miniaturki awatarów (głowa + ramiona) rysowane na płótnie - lekkie, bez silnika 3D.
 import type { Avatar } from "../../../shared/types.ts";
 import { drawFace } from "../engine/face.ts";
+import { drawShirtFront } from "../engine/clothes.ts";
+import { findItem } from "../../../shared/catalog.ts";
 
 const cache = new Map<string, string>();
 
@@ -74,12 +76,132 @@ function drawHat(ctx: CanvasRenderingContext2D, hat: string) {
       ctx.ellipse(64, 12, 26, 7, 0, 0, Math.PI * 2);
       ctx.stroke();
       break;
+    case "none":
+      break;
+    case "beanie":
+    case "frog":
+    case "propeller":
+    case "viking":
+    case "rainbowcap": {
+      ctx.fillStyle = findItem(hat)?.color ?? "#888";
+      ctx.beginPath();
+      ctx.ellipse(64, 40, 36, 24, 0, Math.PI, 0);
+      ctx.fill();
+      if (hat === "beanie") {
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(64, 12, 7, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (hat === "frog") {
+        for (const x of [48, 80]) {
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.arc(x, 20, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#111";
+          ctx.fillRect(x - 2, 18, 4, 4);
+        }
+      } else if (hat === "propeller") {
+        ctx.fillStyle = "#e63946";
+        ctx.fillRect(40, 12, 48, 4);
+      } else if (hat === "viking") {
+        ctx.fillStyle = "#f1faee";
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(64 + s * 30, 34);
+          ctx.quadraticCurveTo(64 + s * 50, 20, 64 + s * 46, 4);
+          ctx.lineTo(64 + s * 36, 26);
+          ctx.fill();
+        }
+      }
+      break;
+    }
+    case "catears":
+    case "bunny":
+    case "bear":
+      ctx.fillStyle = findItem(hat)?.color ?? "#888";
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        if (hat === "catears") {
+          ctx.moveTo(64 + s * 16, 36);
+          ctx.lineTo(64 + s * 32, 8);
+          ctx.lineTo(64 + s * 36, 38);
+        } else if (hat === "bunny") {
+          ctx.ellipse(64 + s * 16, 12, 8, 22, s * 0.15, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#c9c9d1";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = "#ffb3c7";
+          ctx.beginPath();
+          ctx.ellipse(64 + s * 16, 14, 4, 14, s * 0.15, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = findItem(hat)?.color ?? "#888";
+          continue;
+        }
+        else ctx.arc(64 + s * 28, 30, 11, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    case "predatorcrown":
+      ctx.fillStyle = "#111";
+      roundRect(ctx, 30, 30, 68, 12, 3);
+      ctx.fillStyle = "#e63946";
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(34 + i * 16, 32);
+        ctx.lineTo(42 + i * 16, 4);
+        ctx.lineTo(50 + i * 16, 32);
+        ctx.fill();
+      }
+      break;
+    case "chef":
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#b8bcc4";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(48, 18, 14, 0, Math.PI * 2);
+      ctx.arc(64, 12, 16, 0, Math.PI * 2);
+      ctx.arc(80, 18, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(38, 18, 52, 22, 3);
+      ctx.fill();
+      ctx.stroke();
+      break;
+    case "unicorn":
+      ctx.fillStyle = "#ffd60a";
+      ctx.beginPath();
+      ctx.moveTo(56, 34);
+      ctx.lineTo(72, 34);
+      ctx.lineTo(64, 2);
+      ctx.fill();
+      break;
+    case "dino":
+      ctx.fillStyle = "#43aa8b";
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(40 + i * 14, 34);
+        ctx.lineTo(47 + i * 14, 18);
+        ctx.lineTo(54 + i * 14, 34);
+        ctx.fill();
+      }
+      break;
+    default: {
+      // pozostałe czapki: prosty kształt w kolorze przedmiotu
+      const it = findItem(hat);
+      if (!it) break;
+      ctx.fillStyle = it.color ?? "#888";
+      roundRect(ctx, 34, 12, 60, 26, 10);
+      ctx.fillRect(22, 34, 84, 7);
+      break;
+    }
   }
 }
 
 /** Obrazek (data URL) z głową i ramionami postaci */
 export function headshot(a: Avatar): string {
-  const key = [a.head, a.torso, a.arms, a.hat, a.face].join("|");
+  const key = [a.head, a.torso, a.arms, a.hat, a.face, a.shirt, a.neck].join("|");
   const hit = cache.get(key);
   if (hit) return hit;
   const c = document.createElement("canvas");
@@ -89,8 +211,23 @@ export function headshot(a: Avatar): string {
   ctx.fillStyle = shade(a.arms, 0.92);
   roundRect(ctx, 6, 100, 26, 40, 6);
   roundRect(ctx, 96, 100, 26, 40, 6);
-  ctx.fillStyle = a.torso;
-  roundRect(ctx, 28, 96, 72, 44, 8);
+  const shirt = findItem(a.shirt ?? "none")?.cloth;
+  if (shirt) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(28, 96, 72, 44, 8);
+    ctx.clip();
+    drawShirtFront(ctx, shirt, 28, 92, 72, 72);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = a.torso;
+    roundRect(ctx, 28, 96, 72, 44, 8);
+  }
+  const neck = findItem(a.neck ?? "none");
+  if (neck && neck.id !== "none") {
+    ctx.fillStyle = neck.color ?? "#888";
+    roundRect(ctx, 50, 96, 28, 10, 4);
+  }
   // głowa
   ctx.fillStyle = shade(a.head, 0.85);
   roundRect(ctx, 30, 34, 68, 64, 16);

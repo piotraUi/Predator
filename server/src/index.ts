@@ -8,21 +8,23 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { WorldData } from "../../shared/types.ts";
-import { demoArena, demoObby } from "../../shared/world.ts";
+import { demoArena, demoObby, welcomeBadge } from "../../shared/world.ts";
 import { demoCity } from "../../shared/demos/city.ts";
 import { api } from "./api.ts";
+import { admin } from "./admin.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
-import { hashPassword } from "./auth.ts";
 import { config } from "./config.ts";
 import { users, worlds } from "./db.ts";
 import { WorldRoom } from "./rooms/WorldRoom.ts";
-import { DEMO_OWNER, GAME_CREATORS, giveGamesToCreator } from "./creators.ts";
+import { GAME_CREATORS, giveGamesToCreator } from "./creators.ts";
+import { setupPredatorAccount } from "./predatorAccount.ts";
 
 const app = express();
 // kompresja - gra pobiera się kilka razy szybciej (ważne na telefonach)
 app.use(compression());
 // aplikacje na telefon / exe łączą się z innego adresu, więc pozwalamy na CORS
 app.use(cors());
+app.use("/api/admin", admin);
 app.use("/api", api);
 app.get("/health", (_req, res) => res.json({ ok: true, name: "Predator" }));
 
@@ -70,20 +72,23 @@ if (fs.existsSync(path.join(config.gamesDir, "Ludzik 4.pgame")))
     fromFile("Ludzik 4.pgame"),
     "ludzik",
   ]);
-let owner = users.byName(DEMO_OWNER);
-if (!owner) {
-  const { hash, salt } = hashPassword(crypto.randomUUID());
-  owner = users.create(DEMO_OWNER, hash, salt);
-}
+// konto Predator: zawsze jest, ma swój wygląd, wszystkie przedmioty i jest adminem
+const owner = setupPredatorAccount();
 for (const [name, description, make, thumb] of demos) {
   // gra z przypisanym twórcą może już być na jego koncie
   const creator = GAME_CREATORS[name] ? users.byName(GAME_CREATORS[name]) : undefined;
   let id = worlds.byOwner(owner.id).find((w) => w.name === name)?.id ?? (creator && worlds.byOwner(creator.id).find((w) => w.name === name)?.id);
   if (!id) {
-    const data = make();
+    const data = { ...make(), badges: [welcomeBadge()] };
     id = worlds.create(owner.id, name, data, 30).id;
     worlds.update(id, { name, description, maxPlayers: 30, published: true, data });
     console.log(`Utworzono przykładową grę '${name}'`);
+  }
+  // starsze zapisy przykładowych gier dostają odznakę za wejście (raz - potem decyduje twórca)
+  const row = worlds.byId(id);
+  if (row) {
+    const raw = JSON.parse(row.data) as WorldData;
+    if (raw.badges === undefined) worlds.setData(id, { ...raw, badges: [welcomeBadge()] });
   }
   // gotowa miniaturka do menu (dopóki twórca nie zapisze własnej ze Studia)
   const file = path.join(config.assetsDir, "thumbs", thumb + ".jpg");

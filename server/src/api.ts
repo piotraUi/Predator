@@ -6,7 +6,7 @@ import { DEFAULT_AVATAR } from "../../shared/catalog.ts";
 import { filterChat } from "../../shared/chatFilter.ts";
 import type { Avatar, ChatMessage, Conversation, FriendInfo, WorldInfo } from "../../shared/types.ts";
 import { DEFAULT_MAX_PLAYERS, MAX_PLAYERS_LIMIT } from "../../shared/types.ts";
-import { emptyWorld, sanitizeWorld } from "../../shared/world.ts";
+import { emptyWorld, sanitizeWorld, welcomeBadge } from "../../shared/world.ts";
 import {
   checkPassword,
   hashPassword,
@@ -16,7 +16,7 @@ import {
   type AuthedRequest,
 } from "./auth.ts";
 import { config } from "./config.ts";
-import { friends, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
+import { alerts, badges, friends, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 
 export const api = express.Router();
@@ -82,6 +82,7 @@ api.post("/login", (req, res) => {
   const user = typeof username === "string" ? users.byName(username) : undefined;
   if (!user || typeof password !== "string" || !checkPassword(password, user))
     return fail(res, 401, "Zły nick lub hasło");
+  if (user.banned) return fail(res, 403, "To konto jest zablokowane przez administratora");
   res.json({ token: newSession(user.id), user: toPublicUser(user) });
 });
 
@@ -109,14 +110,18 @@ api.put("/avatar", requireAuth, (req, res) => {
   for (const k of ["head", "torso", "arms", "legs"] as const) {
     if (typeof a[k] === "string" && COLOR_RE.test(a[k]!)) next[k] = a[k]!;
   }
-  for (const k of ["hat", "face"] as const) {
+  for (const k of ["hat", "face", "shirt", "pants", "back", "neck"] as const) {
     const id = a[k];
-    if (typeof id === "string") {
-      const item = findItem(id);
-      if (!item || item.type !== k) return fail(res, 400, "Nieznany przedmiot");
-      if (!user.inventory.includes(id)) return fail(res, 403, "Nie masz tego przedmiotu");
-      next[k] = id;
+    if (typeof id !== "string") continue;
+    if (id === "none" && k !== "face") {
+      next[k] = "none";
+      continue;
     }
+    const item = findItem(id);
+    if (!item || item.type !== k) return fail(res, 400, "Nieznany przedmiot");
+    // darmowe rzeczy ma każdy (także konta sprzed dodania nowych przedmiotów)
+    if (!user.inventory.includes(id) && (item.price > 0 || item.offsale)) return fail(res, 403, "Nie masz tego przedmiotu");
+    next[k] = id;
   }
   users.setAvatar(user.id, next);
   res.json({ user: toPublicUser(users.byId(user.id)!) });
@@ -127,6 +132,7 @@ api.post("/buy", requireAuth, (req, res) => {
   const item = findItem(String(req.body?.itemId));
   if (!item) return fail(res, 404, "Nie ma takiego przedmiotu");
   if (user.inventory.includes(item.id)) return fail(res, 400, "Już to masz");
+  if (item.offsale) return fail(res, 400, "Tego nie da się kupić");
   if (user.coins < item.price) return fail(res, 400, "Za mało monet");
   users.addCoins(user.id, -item.price);
   users.setInventory(user.id, [...user.inventory, item.id]);
@@ -159,8 +165,18 @@ api.get("/worlds/:id/info", requireAuth, (req, res) => {
   const me = (req as AuthedRequest).user;
   const info = infoById(Number(req.params.id));
   if (!info || (!info.published && info.ownerId !== me.id)) return fail(res, 404, "Nie ma takiej gry");
-  res.json({ ...info, myVote: votes.get(me.id, info.id) });
+  res.json({ ...info, myVote: votes.get(me.id, info.id), badges: badgeInfo(info.id, me.id) });
 });
+
+/** odznaki gry: ile osób je zdobyło i czy mam je ja */
+function badgeInfo(worldId: number, userId: number): WorldInfo["badges"] {
+  const w = worlds.byId(worldId);
+  if (!w) return [];
+  const defs = sanitizeWorld(JSON.parse(w.data)).badges ?? [];
+  const counts = new Map(badges.forWorld(worldId).map((r) => [r.badge_id, r.n]));
+  const mine = new Set(badges.mine(userId, worldId));
+  return defs.map((d) => ({ ...d, earned: counts.get(d.id) ?? 0, mine: mine.has(d.id) }));
+}
 
 /** Miniaturka - zwykły obrazek (bez logowania, żeby działał w <img>) */
 api.get("/worlds/:id/thumbnail", (req, res) => {
@@ -191,7 +207,9 @@ api.post("/worlds", requireAuth, (req, res) => {
   if (worlds.byOwner(user.id).length >= MAX_WORLDS_PER_USER)
     return fail(res, 400, `Możesz mieć maksymalnie ${MAX_WORLDS_PER_USER} gier`);
   const name = String(req.body?.name ?? "").trim().slice(0, 40) || "Moja gra";
-  const data = req.body?.mode === "2d" ? { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: emptyWorld2D() } : emptyWorld();
+  const base = req.body?.mode === "2d" ? { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: emptyWorld2D() } : emptyWorld();
+  // każda nowa gra ma od razu odznakę za wejście - twórca może ją zmienić w Studio
+  const data = { ...base, badges: [welcomeBadge()] };
   const w = worlds.create(user.id, name, data, DEFAULT_MAX_PLAYERS);
   res.json(infoById(w.id));
 });
@@ -326,5 +344,15 @@ api.get("/notifications", requireAuth, (req, res) => {
   const me = (req as AuthedRequest).user;
   presence.touch(me.id);
   const requests = friends.list(me.id).filter((f) => f.status === "pending" && f.friend_id === me.id).length;
-  res.json({ friendRequests: requests, unreadMessages: messages.unreadCount(me.id), coins: users.byId(me.id)?.coins ?? 0 });
+  res.json({
+    friendRequests: requests,
+    unreadMessages: messages.unreadCount(me.id),
+    coins: users.byId(me.id)?.coins ?? 0,
+    alerts: alerts.unread(me.id).map((a) => ({ id: a.id, text: a.text, at: a.created_at })),
+  });
+});
+
+api.post("/notifications/read", requireAuth, (req, res) => {
+  alerts.markRead((req as AuthedRequest).user.id);
+  res.json({ ok: true });
 });

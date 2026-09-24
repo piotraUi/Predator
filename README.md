@@ -17,7 +17,9 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 | 📜 **Skrypty Lua** | uruchamiane na serwerze w piaskownicy (nieskończona pętla nie zawiesi serwera), zdarzenia, `wait()`, punkty, teleporty |
 | 🧩 **Bloczki** | programowanie jak w Scratchu (Blockly); bloczki zamieniają się w kod Lua |
 | 💬 **Czat** | dymki nad głowami, filtr wulgaryzmów (PL + EN), ochrona przed spamem |
-| 🧍 **Awatar** | kolory ciała, czapki i twarze, podgląd 3D |
+| 🧍 **Awatar** | ponad 100 przedmiotów: czapki (uszy kotka i króliczka, jednorożec, dinozaur, żabka, czapka ze śmigłem, kask astronauty…), twarze, **koszulki** (z kotkiem, dinozaurem, pizzą, tęczowa, galaktyka, bluzy z kapturem…), **spodnie** (jeansy, szorty, dres, tęczowe, piżama…), rzeczy na plecy (plecak z misiem, skorupa żółwia, peleryny, skrzydła, plecak odrzutowy) i na szyję; rzadkość przedmiotów, podgląd 3D |
+| 🏅 **Odznaki** | twórca ustawia w Studio nagrody dla graczy: za wejście do gry albo ze skryptu (`awardBadge(player, "Nazwa")`), każda z nagrodą w monetach; każda nowa gra ma od razu odznakę „Witaj w grze!”; twórca dostaje premię i powiadomienie za kolejne progi wizyt (1, 10, 50, 100, 500, 1000…) |
+| 🛡 **Panel admina** | dla kont **piotrek53_3** i **Predator**: statystyki, szukanie graczy, dawanie monet i przedmiotów, zmiana hasła, blokowanie kont (z wyrzuceniem z gry), ukrywanie, usuwanie i przekazywanie gier, ogłoszenia dla wszystkich |
 | 🧑‍🎤 **Postacie** | edytor postaci w Studio (kolory, twarz, czapka, skala, dodatki doczepione do części ciała), import modeli **.glb** (np. z Blendera, Mixamo), eksport/import **.pchar**; postacie jako NPC albo wygląd wszystkich graczy |
 | 🎞 **Animacje** | edytor animacji z osią czasu i klatkami kluczowymi, gotowe szablony (machanie, disco, ukłon, siedzenie…); animacje jako emotki, na NPC albo ze skryptu |
 | 📄 **Pliki .pgame** | gra zapisana w jednym pliku (JSON); dwuklik otwiera Predatora prosto w Studio, bez serwera; test gry offline ze skryptami |
@@ -64,6 +66,9 @@ Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` 
 | `PORT` | `2567` | port serwera |
 | `HOST` | `0.0.0.0` | na jakim adresie nasłuchiwać |
 | `DATA_DIR` | `./data` | gdzie zapisywać bazę danych (zrób kopię tego folderu!) |
+| `PREDATOR_PASSWORD` | (losowe) | hasło konta **Predator** |
+
+**Konto Predator** serwer tworzy sam przy każdym starcie (jeśli go nie ma) i ustawia na nim wszystko: skórkę Predatora (Korona Predatora, Koszulka Predatora, Skrzydła Predatora), wszystkie przedmioty, milion monet i uprawnienia admina. Hasło bierze ze zmiennej `PREDATOR_PASSWORD`, a jeśli jej nie ma, wymyśla je przy pierwszym starcie i zapisuje w pliku `konto-predator.txt` w folderze danych. Lista adminów jest w `server/src/config.ts`.
 
 Ilość monet za granie, dzienny limit i bonus zmienisz w `server/src/config.ts`.
 
@@ -167,6 +172,7 @@ end)
 | `setColor`, `setPosition`, `move`, `setSize`, `setVisible`, `setTransparency`, `setCollide`, `getPosition` | klocki |
 | `kill`, `teleport`, `playerName`, `getPlayers`, `getPlayerPosition`, `setSpeed`, `setJump` | gracze |
 | `addScore`, `setScore`, `getScore` | ranking w prawym górnym rogu |
+| `awardBadge(player, "Nazwa")` | daje graczowi odznakę ustawioną w Ustawieniach gry (raz na gracza, z nagrodą w monetach) |
 | `onToolUse(fn(player, toolName))`, `onDied(fn(player, killer))` | użycie narzędzia, śmierć gracza (`killer` = `""`, gdy nikt nie zabił) |
 | `giveTool`, `removeTool`, `hasTool` | ekwipunek (narzędzia po nazwie) |
 | `damage`, `heal`, `getHealth`, `setHealth` | zdrowie (0–100) |

@@ -17,6 +17,8 @@ const PLAYER_HEIGHT = 5.2;
 export interface SimTransport {
   send(sid: string, type: string, msg?: unknown): void;
   broadcast(type: string, msg?: unknown, exceptSid?: string): void;
+  /** skrypt przyznaje odznakę (nazwa odznaki z ustawień gry) */
+  badge?(sid: string, name: string): void;
 }
 
 export interface SimUser {
@@ -574,6 +576,9 @@ export class GameSim {
       this.log(String(e), true);
       return;
     }
+    this.lua.defineFunctions({
+      awardBadge: (sid, name) => this.t.badge?.(String(sid ?? ""), String(name ?? "")),
+    });
     for (const s of scripts) this.lua.runScript(s.name, s.source);
   }
 

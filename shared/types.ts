@@ -145,10 +145,26 @@ export interface WorldData {
   animations: AnimDef[];
   /** jeśli ustawione - wszyscy gracze wyglądają jak ta postać */
   playerCharacter?: string;
+  /** odznaki (nagrody) do zdobycia w tej grze */
+  badges?: BadgeDef[];
   /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste */
   mode?: "3d" | "2d";
   world2d?: World2D;
 }
+
+/** Odznaka do zdobycia w grze (jak w Robloxie) */
+export interface BadgeDef {
+  id: string;
+  name: string;
+  description: string;
+  /** emotka */
+  icon: string;
+  /** join = za wejście do gry, script = daje skrypt: awardBadge(player, "Nazwa") */
+  trigger: "join" | "script";
+  /** monety dla gracza (0-25) */
+  reward: number;
+}
+export const MAX_BADGE_REWARD = 25;
 
 export interface WorldInfo {
   id: number;
@@ -166,6 +182,8 @@ export interface WorldInfo {
   dislikes: number;
   /** głos zalogowanego gracza: 1, -1 albo 0 */
   myVote?: number;
+  /** odznaki gry (na stronie gry) */
+  badges?: (BadgeDef & { earned: number; mine: boolean })[];
 }
 
 /** Ocena gry w procentach (jak "Ocena 93%") albo null, gdy nikt jeszcze nie głosował */
@@ -192,6 +210,11 @@ export interface Avatar {
   legs: string;
   hat: string;
   face: string;
+  /** koszulka, spodnie, rzecz na plecach i na szyi ("none" = brak) */
+  shirt: string;
+  pants: string;
+  back: string;
+  neck: string;
 }
 
 export interface PublicUser {
@@ -200,6 +223,8 @@ export interface PublicUser {
   coins: number;
   avatar: Avatar;
   inventory: string[];
+  /** dostęp do panelu admina */
+  admin?: boolean;
 }
 
 export interface FriendInfo {

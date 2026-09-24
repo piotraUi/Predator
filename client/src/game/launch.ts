@@ -7,6 +7,7 @@ import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { session } from "../state.ts";
 import { h, toast } from "../ui/dom.ts";
+import { showBadge, type BadgeMsg } from "../ui/badgePopup.ts";
 import { BufferedConnection } from "./buffered.ts";
 import type { GameConnection } from "./connection.ts";
 
@@ -79,6 +80,10 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
           back();
         }
       };
+      c.onMessage("badge", (b: BadgeMsg) => {
+        showBadge(b);
+        if (session.user && typeof b.coins === "number") session.set({ ...session.user, coins: b.coins });
+      });
       c.onMessage("init", (m: unknown) => open("3d", m));
       c.onMessage("init2d", (m: unknown) => open("2d", m));
     })

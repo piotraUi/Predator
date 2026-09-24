@@ -12,6 +12,8 @@ export const config = {
   clientDist: path.join(root, "client", "dist"),
   /** Pliki dołączone do serwera (np. miniaturki przykładowych gier) */
   assetsDir: path.join(root, "server", "assets"),
+  /** konta z dostępem do panelu admina */
+  admins: ["piotrek53_3", "Predator"],
   /** gry .pgame dołączone do serwera */
   gamesDir: path.join(root, "games"),
   /** Monety za każdą minutę grania */

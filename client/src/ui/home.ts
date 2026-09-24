@@ -19,12 +19,13 @@ type Route =
   | { v: "friends" }
   | { v: "create" }
   | { v: "game"; id: number }
-  | { v: "search"; q?: string };
+  | { v: "search"; q?: string }
+  | { v: "admin" };
 type Sort = "popular" | "rating" | "visits" | "new";
 type Cleanup = void | (() => void);
 type Ctx = { go: Go; nav: (r: Route, replace?: boolean) => void; back: () => void; refreshBadges: () => void };
 
-const MAIN_TABS = ["home", "charts", "avatar", "chat", "friends", "create"] as const;
+const MAIN_TABS = ["home", "charts", "avatar", "chat", "friends", "create", "admin"] as const;
 export const isHomeTab = (t: string) => (MAIN_TABS as readonly string[]).includes(t);
 
 export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: number }, go: Go) {
@@ -86,6 +87,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
     sideItem("chat", "chat", "Czat", mkChatBadge()),
     sideItem("friends", "users", "Znajomi"),
     sideItem("create", "build", "Twórz"),
+    session.user?.admin ? sideItem("admin", "settings", "Panel admina") : null,
     h("button", { class: "pv-side-item", onClick: () => go("offline") }, icon("folder", 22), h("span", null, "Studio bez serwera")),
     h("div", { class: "pv-side-sep" }),
     h("button", { class: "pv-side-item", onClick: () => (toggleDrawer(false), openSettings()) }, icon("settings", 22), h("span", null, "Ustawienia")),
@@ -179,7 +181,9 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
                   ? createView(view, ctx)
                   : r.v === "game"
                     ? gameView(view, ctx, r.id)
-                    : searchView(view, ctx, r.q ?? "");
+                    : r.v === "admin"
+                      ? adminView(view)
+                      : searchView(view, ctx, r.q ?? "");
     Promise.resolve(res).then((c) => {
       if (!c) return;
       if (id === viewId) cleanupView = c;
@@ -195,7 +199,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
   const pollNotifications = async () => {
     try {
       const n = await api.notifications();
-      setBadge(bellBadge, n.friendRequests);
+      setBadge(bellBadge, n.friendRequests + (n.alerts?.length ?? 0));
       for (const b of chatBadges) setBadge(b, n.unreadMessages);
       if (session.user && session.user.coins !== n.coins) session.set({ ...session.user, coins: n.coins });
     } catch {
@@ -231,6 +235,9 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
               h("div", { class: "pv-notif-text" }, `Masz nieprzeczytane wiadomości: ${n.unreadMessages}`),
             ),
           );
+        for (const a of n.alerts ?? [])
+          items.push(h("div", { class: "pv-notif pv-alert-row" }, h("div", { class: "pv-notif-text" }, a.text), h("span", { class: "muted small" }, timeAgo(a.at))));
+        if (n.alerts?.length) api.readAlerts().then(pollNotifications, () => {});
         list.replaceChildren(...(items.length ? items : [h("div", { class: "pv-empty" }, icon("bell", 36), "Brak nowych powiadomień")]));
       } catch (e) {
         list.replaceChildren(h("div", { class: "form-error" }, (e as Error).message));
@@ -560,7 +567,60 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
     ),
     h("h2", null, "Opis"),
     h("p", { class: "pv-desc" }, w.description || "Twórca nie dodał jeszcze opisu."),
+    ...(w.badges?.length
+      ? [h("h2", null, "Odznaki"), h(
+          "div",
+          { class: "pv-badges" },
+          w.badges.map((b) =>
+            h(
+              "div",
+              { class: "pv-badge-card" + (b.mine ? " mine" : "") },
+              h("div", { class: "pv-badge-ic" }, b.icon || "🏅"),
+              h(
+                "div",
+                { class: "pv-badge-main" },
+                h("b", null, b.name),
+                h("div", { class: "muted small" }, b.description || (b.trigger === "join" ? "Wejdź do gry" : "")),
+                h(
+                  "div",
+                  { class: "small" },
+                  b.mine ? "✅ Masz ją · " : "",
+                  `Zdobyło: ${fmt.format(b.earned)}`,
+                  b.reward ? ` · Nagroda: ${b.reward} 🪙` : "",
+                ),
+              ),
+            ),
+          ),
+        )]
+      : []),
   );
+}
+
+function timeAgo(at: number) {
+  const m = Math.round((Date.now() - at) / 60000);
+  if (m < 1) return "teraz";
+  if (m < 60) return `${m} min`;
+  if (m < 60 * 24) return `${Math.round(m / 60)} godz.`;
+  return new Date(at).toLocaleDateString("pl-PL");
+}
+
+// =====================================================================
+// Panel admina (wczytywany osobno)
+// =====================================================================
+
+async function adminView(el: HTMLElement) {
+  el.append(h("h1", null, "Panel admina"));
+  if (!session.user?.admin) return void el.append(h("div", { class: "pv-empty" }, "Brak dostępu"));
+  const box = h("div", null, loading());
+  el.append(box);
+  try {
+    const { adminPanel } = await import("./adminPanel.ts");
+    if (!box.isConnected) return;
+    box.replaceChildren();
+    adminPanel(box);
+  } catch (e) {
+    box.replaceChildren(errorBox(e));
+  }
 }
 
 // =====================================================================

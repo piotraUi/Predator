@@ -108,7 +108,47 @@ export const api = {
   chat: () => req<Conversation[]>("GET", "/chat"),
   chatWith: (id: number, after = 0) => req<ChatMessage[]>("GET", `/chat/${id}?after=${after}`),
   sendChat: (id: number, text: string) => req<ChatMessage>("POST", `/chat/${id}`, { text }),
-  notifications: () => req<{ friendRequests: number; unreadMessages: number; coins: number }>("GET", "/notifications"),
+  notifications: () =>
+    req<{ friendRequests: number; unreadMessages: number; coins: number; alerts?: { id: number; text: string; at: number }[] }>(
+      "GET",
+      "/notifications",
+    ),
+  readAlerts: () => req("POST", "/notifications/read"),
+};
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  coins: number;
+  banned: boolean;
+  admin: boolean;
+  createdAt: number;
+  online: boolean;
+  items: number;
+}
+export interface AdminWorld {
+  id: number;
+  name: string;
+  ownerName: string;
+  published: boolean;
+  visits: number;
+  playing: number;
+  updatedAt: number;
+}
+
+/** panel admina - serwer sprawdza, czy konto jest adminem */
+export const adminApi = {
+  stats: () => req<{ users: number; worlds: number; online: number; playing: number; rooms: number; items: number }>("GET", "/admin/stats"),
+  users: (q = "") => req<AdminUser[]>("GET", "/admin/users?q=" + encodeURIComponent(q)),
+  coins: (id: number, amount: number, set = false) => req<AdminUser>("POST", `/admin/users/${id}/coins`, { amount, set }),
+  ban: (id: number, banned: boolean) => req<AdminUser>("POST", `/admin/users/${id}/ban`, { banned }),
+  give: (id: number, itemId: string) => req<AdminUser>("POST", `/admin/users/${id}/give`, { itemId }),
+  password: (id: number, password: string) => req("POST", `/admin/users/${id}/password`, { password }),
+  worlds: (q = "") => req<AdminWorld[]>("GET", "/admin/worlds?q=" + encodeURIComponent(q)),
+  publish: (id: number, published: boolean) => req("POST", `/admin/worlds/${id}/publish`, { published }),
+  owner: (id: number, username: string) => req("POST", `/admin/worlds/${id}/owner`, { username }),
+  deleteWorld: (id: number) => req("DELETE", "/admin/worlds/" + id),
+  announce: (text: string) => req<{ ok: true; rooms: number }>("POST", "/admin/announce", { text }),
 };
 
 /** Adres miniaturki gry (albo null) - ?v= zmienia się po każdym zapisie, więc przeglądarka może ją trzymać w pamięci */

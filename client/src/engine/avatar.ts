@@ -11,6 +11,7 @@ import {
   StandardMaterial,
   TransformNode,
   Vector3,
+  Vector4,
   type ShadowGenerator,
 } from "@babylonjs/core";
 import { samplePose } from "../../../shared/anim.ts";
@@ -18,6 +19,9 @@ import type { ActionAnim, AnimDef, Anim, Avatar, CharacterDef, Joint, Pose, Tool
 import { JOINTS } from "../../../shared/types.ts";
 import { hexColor } from "./color.ts";
 import { drawFace } from "./face.ts";
+import { clothCanvas } from "./clothes.ts";
+import { buildBack, buildHat, buildNeck } from "./wearables.ts";
+import { findItem } from "../../../shared/catalog.ts";
 import { buildToolModel, type ToolModelNode } from "./toolModels.ts";
 import { createWedge } from "./world.ts";
 
@@ -40,69 +44,6 @@ function mat(scene: Scene, color: string | Color3, emissive = false) {
   return m;
 }
 
-function buildHat(scene: Scene, hat: string, parent: TransformNode) {
-  const node = new TransformNode("hat", scene);
-  node.parent = parent;
-  node.position.y = 0.6; // czubek głowy
-  const add = (m: Mesh, color: string | Color3, emissive = false) => {
-    m.parent = node;
-    m.material = mat(scene, color, emissive);
-    return m;
-  };
-  switch (hat) {
-    case "cap": {
-      const top = add(MeshBuilder.CreateSphere("cap", { diameter: 1.25, slice: 0.5, segments: 14 }, scene), "#d62828");
-      top.position.y = -0.12;
-      const brim = add(MeshBuilder.CreateBox("brim", { width: 1.1, height: 0.08, depth: 0.7 }, scene), "#d62828");
-      brim.position.set(0, -0.1, -0.75);
-      break;
-    }
-    case "party": {
-      const c = add(MeshBuilder.CreateCylinder("party", { diameterTop: 0, diameterBottom: 0.9, height: 1.2, tessellation: 20 }, scene), "#ff4fa3");
-      c.position.y = 0.55;
-      const ball = add(MeshBuilder.CreateSphere("pom", { diameter: 0.25 }, scene), "#ffe600");
-      ball.position.y = 1.18;
-      break;
-    }
-    case "tophat": {
-      const t = add(MeshBuilder.CreateCylinder("top", { diameter: 0.95, height: 1.1, tessellation: 24 }, scene), "#1b1b1b");
-      t.position.y = 0.5;
-      const b = add(MeshBuilder.CreateCylinder("brim", { diameter: 1.6, height: 0.08, tessellation: 24 }, scene), "#1b1b1b");
-      b.position.y = 0;
-      const band = add(MeshBuilder.CreateCylinder("band", { diameter: 0.97, height: 0.18, tessellation: 24 }, scene), "#b00020");
-      band.position.y = 0.18;
-      break;
-    }
-    case "crown": {
-      const base = add(MeshBuilder.CreateCylinder("crown", { diameter: 1.1, height: 0.35, tessellation: 24 }, scene), "#ffc300");
-      base.position.y = 0.12;
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        const sp = add(MeshBuilder.CreateCylinder("spike", { diameterTop: 0, diameterBottom: 0.25, height: 0.4, tessellation: 8 }, scene), "#ffc300");
-        sp.position.set(Math.cos(a) * 0.45, 0.48, Math.sin(a) * 0.45);
-        const gem = add(MeshBuilder.CreateSphere("gem", { diameter: 0.14 }, scene), i % 2 ? "#e0115f" : "#1e90ff", true);
-        gem.position.set(Math.cos(a) * 0.55, 0.12, Math.sin(a) * 0.55);
-      }
-      break;
-    }
-    case "horns": {
-      for (const s of [-1, 1]) {
-        const h = add(MeshBuilder.CreateCylinder("horn", { diameterTop: 0, diameterBottom: 0.3, height: 0.7, tessellation: 10 }, scene), "#8b0000");
-        h.position.set(s * 0.4, 0.2, 0);
-        h.rotation.z = -s * 0.5;
-      }
-      break;
-    }
-    case "halo": {
-      const t = add(MeshBuilder.CreateTorus("halo", { diameter: 1.1, thickness: 0.1, tessellation: 32 }, scene), "#fff5a0", true);
-      t.position.y = 0.55;
-      break;
-    }
-    default:
-      break;
-  }
-  return node;
-}
 
 interface Limb {
   pivot: TransformNode;
@@ -118,6 +59,10 @@ export class AvatarModel {
   private limbs: { la: Limb; ra: Limb; ll: Limb; rl: Limb };
   private allMeshes: Mesh[] = [];
   private hatNode: TransformNode | null = null;
+  private backNode: TransformNode | null = null;
+  private neckNode: TransformNode | null = null;
+  private spinning: Mesh[] = [];
+  private clothTex: DynamicTexture[] = [];
   private faceTex: DynamicTexture;
   private t = 0;
   private dead = false;
@@ -148,7 +93,9 @@ export class AvatarModel {
     this.body = new TransformNode("body", scene);
     this.body.parent = this.root;
 
-    this.torso = MeshBuilder.CreateBox("torso", { width: 2, height: 2, depth: 1 }, scene);
+    // przód i tył tułowia: lewa połowa tekstury koszulki (nadruk), boki: prawa połowa (sam wzór)
+    const front = new Vector4(0, 0, 0.5, 1), side = new Vector4(0.5, 0, 1, 1);
+    this.torso = MeshBuilder.CreateBox("torso", { width: 2, height: 2, depth: 1, faceUV: [front, front, side, side, side, side] }, scene);
     this.torso.parent = this.body;
     this.torso.position.y = 3;
 
@@ -196,10 +143,23 @@ export class AvatarModel {
   setAvatar(a: Avatar) {
     const s = this.scene;
     for (const m of this.bodyMats) m.dispose();
+    for (const t of this.clothTex) t.dispose();
+    this.clothTex = [];
+    const texMat = (canvas: HTMLCanvasElement) => {
+      const t = new DynamicTexture("cloth", canvas, s, false);
+      t.update();
+      this.clothTex.push(t);
+      const m = new StandardMaterial("clothMat", s);
+      m.diffuseTexture = t;
+      m.specularColor = new Color3(0.1, 0.1, 0.1);
+      return m;
+    };
+    const shirt = findItem(a.shirt ?? "none")?.cloth;
+    const pants = findItem(a.pants ?? "none")?.cloth;
     const head = mat(s, a.head);
-    const torso = mat(s, a.torso);
-    const arms = mat(s, a.arms);
-    const legs = mat(s, a.legs);
+    const torso = shirt ? texMat(clothCanvas("shirt", shirt, a.arms)) : mat(s, a.torso);
+    const arms = shirt ? texMat(clothCanvas("sleeve", shirt, a.arms)) : mat(s, a.arms);
+    const legs = pants ? texMat(clothCanvas("leg", pants, a.legs)) : mat(s, a.legs);
     this.bodyMats = [head, torso, arms, legs];
     this.head.material = head;
     this.torso.material = torso;
@@ -209,11 +169,21 @@ export class AvatarModel {
     drawFace(ctx, a.face);
     this.faceTex.update();
     this.hatNode?.dispose();
-    this.hatNode = buildHat(s, a.hat, this.head);
-    for (const m of this.hatNode.getChildMeshes()) {
-      m.isPickable = false;
-      this.shadows?.addShadowCaster(m);
-    }
+    this.backNode?.dispose();
+    this.neckNode?.dispose();
+    this.spinning = [];
+    const hat = buildHat(s, a.hat, this.head, mat);
+    const back = buildBack(s, a.back ?? "none", this.torso, mat);
+    this.hatNode = hat.node;
+    this.backNode = back.node;
+    this.neckNode = buildNeck(s, a.neck ?? "none", this.torso, mat);
+    if (hat.spin) this.spinning.push(hat.spin);
+    if (back.spin) this.spinning.push(back.spin);
+    for (const n of [this.hatNode, this.backNode, this.neckNode])
+      for (const m of n.getChildMeshes()) {
+        m.isPickable = false;
+        this.shadows?.addShadowCaster(m);
+      }
   }
 
   get headNode() {
@@ -316,7 +286,7 @@ export class AvatarModel {
   private setBodyHidden(hidden: boolean) {
     this.bodyHidden = hidden;
     for (const m of this.allMeshes) m.isVisible = !hidden;
-    for (const m of this.hatNode?.getChildMeshes() ?? []) m.isVisible = !hidden;
+    for (const n of [this.hatNode, this.backNode, this.neckNode]) for (const m of n?.getChildMeshes() ?? []) m.isVisible = !hidden;
     for (const m of this.accessories) (m as Mesh).isVisible = !hidden;
   }
 
@@ -435,6 +405,11 @@ export class AvatarModel {
 
   update(dt: number) {
     this.t += dt;
+    // śmigło czapki / płomień plecaka odrzutowego
+    for (const m of this.spinning) {
+      if (m.parent?.name === "back") m.scaling.y = 0.8 + Math.sin(this.t * 30) * 0.2;
+      else m.rotation.y += dt * 12;
+    }
     if (this.flashT > 0 || this.bodyMats[0]?.emissiveColor.r) {
       this.flashT = Math.max(0, this.flashT - dt);
       const k = this.flashT / 0.3;

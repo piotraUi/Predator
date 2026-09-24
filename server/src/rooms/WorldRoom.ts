@@ -3,20 +3,25 @@
 import { Room, type Client } from "colyseus";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
 import { Sim2D } from "../../../shared/sim/sim2d.ts";
-import { GAME_PROTOCOL } from "../../../shared/types.ts";
+import { GAME_PROTOCOL, type BadgeDef } from "../../../shared/types.ts";
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
-import { toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
+import { alerts, badges, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
 import { presence } from "../presence.ts";
 
 const TICK_MS = 50; // 20 razy na sekundę
+/** nagrody dla twórcy za kolejne progi wizyt: [wizyty, monety] */
+const VISIT_MILESTONES: [number, number][] = [
+  [1, 10], [10, 25], [50, 50], [100, 100], [500, 250], [1000, 500], [5000, 1000], [10000, 2500],
+];
 const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto"];
 
 export class WorldRoom extends Room {
   private world!: WorldRow;
   private sim!: GameSim | Sim2D;
   private joinedAt = new Map<string, { userId: number; at: number }>();
+  private badgeDefs: BadgeDef[] = [];
 
   onCreate(options: { worldId?: number }) {
     const world = worlds.byId(Number(options.worldId));
@@ -28,6 +33,7 @@ export class WorldRoom extends Room {
 
     // sanitizeWorld uzupełnia też brakujące pola w starszych zapisach
     const data = sanitizeWorld(JSON.parse(world.data));
+    this.badgeDefs = data.badges ?? [];
     const Sim = data.mode === "2d" ? Sim2D : GameSim;
     this.sim = new Sim(
       data,
@@ -36,6 +42,11 @@ export class WorldRoom extends Room {
         broadcast: (type, msg, exceptSid) => {
           const except = exceptSid ? this.clients.find((c) => c.sessionId === exceptSid) : undefined;
           this.broadcast(type, msg, except ? { except } : undefined);
+        },
+        badge: (sid, name) => {
+          const def = this.badgeDefs.find((b) => b.name === name || b.id === name);
+          const j = this.joinedAt.get(sid);
+          if (def && j) this.giveBadge(sid, j.userId, def);
         },
       },
       { id: world.id, name: world.name, ownerName: users.byId(world.owner_id)?.username ?? "?" },
@@ -58,7 +69,10 @@ export class WorldRoom extends Room {
 
   onJoin(client: Client, _options: unknown, user: UserRow) {
     worlds.addVisit(this.world.id);
-    if (user.id !== this.world.owner_id) users.addCoins(this.world.owner_id, config.creatorCoinsPerVisit);
+    if (user.id !== this.world.owner_id) {
+      users.addCoins(this.world.owner_id, config.creatorCoinsPerVisit);
+      this.visitMilestone();
+    }
     presence.setPlaying(user.id, { worldId: this.world.id, worldName: this.world.name, roomId: this.roomId });
     presence.setWorldCount(this.world.id, 1);
     this.joinedAt.set(client.sessionId, { userId: user.id, at: Date.now() });
@@ -68,6 +82,35 @@ export class WorldRoom extends Room {
       avatar: toPublicUser(user).avatar,
       isOwner: user.id === this.world.owner_id,
     });
+    // odznaki za samo wejście do gry (chwilę później, żeby gra zdążyła się wczytać)
+    for (const def of this.badgeDefs)
+      if (def.trigger === "join") this.clock.setTimeout(() => this.giveBadge(client.sessionId, user.id, def), 2500);
+  }
+
+  /** przyznaje odznakę (raz na gracza) i wypłaca nagrodę w monetach */
+  private giveBadge(sid: string, userId: number, def: BadgeDef) {
+    if (!this.joinedAt.has(sid)) return;
+    if (!badges.award(userId, this.world.id, def.id)) return;
+    if (def.reward > 0) users.addCoins(userId, def.reward);
+    this.clients.find((c) => c.sessionId === sid)?.send("badge", {
+      name: def.name,
+      icon: def.icon,
+      description: def.description,
+      reward: def.reward,
+      coins: users.byId(userId)?.coins ?? 0,
+    });
+  }
+
+  /** twórca dostaje premię i powiadomienie, gdy gra przekroczy kolejny próg wizyt */
+  private visitMilestone() {
+    const visits = worlds.byId(this.world.id)?.visits ?? 0;
+    const m = VISIT_MILESTONES.find(([n]) => n === visits);
+    if (!m) return;
+    users.addCoins(this.world.owner_id, m[1]);
+    alerts.add(
+      this.world.owner_id,
+      `🏆 Twoja gra „${this.world.name}” ma już ${visits} ${visits === 1 ? "wizytę" : "wizyt"}! Nagroda: +${m[1]} monet.`,
+    );
   }
 
   onLeave(client: Client) {
@@ -77,6 +120,16 @@ export class WorldRoom extends Room {
     this.sim.leave(client.sessionId);
     presence.setPlaying(j.userId, null);
     presence.setWorldCount(this.world.id, -1);
+  }
+
+  /** ogłoszenie administratora na czacie gry */
+  announce(text: string) {
+    this.broadcast("chat", { from: "", text: "📢 " + text, system: true });
+  }
+
+  /** wyrzuca zablokowanego gracza */
+  kickUser(userId: number) {
+    for (const c of this.clients) if (this.joinedAt.get(c.sessionId)?.userId === userId) c.leave(4000);
   }
 
   onDispose() {

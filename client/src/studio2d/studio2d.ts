@@ -16,6 +16,7 @@ import { openSettings } from "../settings.ts";
 import { LUA_HELP_2D, openScriptEditor } from "../studio/scriptEditor.ts";
 import type { StudioFile } from "../studio/studio.ts";
 import { ask, h, logo, modal, toast } from "../ui/dom.ts";
+import { badgeEditor } from "../studio/badgeEditor.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 
@@ -1058,6 +1059,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         const s = h("select", null, h("option", { value: "" }, "(brak)"), w.assets.filter((a) => a.type === "sound").map((a) => h("option", { value: a.id, selected: w.sounds[k] === a.id }, a.name)));
         return { k, s, el: h("label", null, label, s) };
       });
+      const badges = badgeEditor(data.badges);
       const close = modal(
         "Ustawienia gry",
         h(
@@ -1070,6 +1072,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           h("div", { class: "grid2" }, physIn.map((p) => p.el)),
           h("div", { class: "prop-group" }, "Dźwięki"),
           h("div", { class: "grid2" }, soundSel.map((s) => s.el)),
+          badges.el,
           src.online
             ? h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać"))
             : h("p", { class: "muted", style: "font-size:13px;margin:0" }, "Gra z pliku - żeby ją opublikować, wyślij ją na serwer (Plik → Wyślij na serwer)."),
@@ -1093,6 +1096,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
                 else delete w.sounds[s.k];
               }
               src.published = pub.checked;
+              data.badges = badges.read();
               close();
               if (src.online) {
                 if (await save(true)) toast("Zapisano ustawienia", "good");

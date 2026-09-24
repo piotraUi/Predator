@@ -1,7 +1,7 @@
 // Edytor postaci: kolory, twarz, czapka, skala, dodatki doczepione do części ciała i zaimportowany model 3D.
 import { ArcRotateCamera, Color4, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
 import { JOINT_LABELS } from "../../../shared/anim.ts";
-import { CATALOG, DEFAULT_AVATAR } from "../../../shared/catalog.ts";
+import { CATALOG, DEFAULT_AVATAR, type ItemType } from "../../../shared/catalog.ts";
 import { CHAR_EXT, fileNameFor, makeCharacterFile } from "../../../shared/gamefile.ts";
 import type { Accessory, AnimDef, CharacterDef, Joint, PartShape } from "../../../shared/types.ts";
 import { JOINTS } from "../../../shared/types.ts";
@@ -55,11 +55,12 @@ export function openCharacterEditor(
     });
     return h("label", { class: "prop" }, h("span", null, label), inp);
   };
-  const itemSelect = (type: "hat" | "face") => {
+  const itemSelect = (type: ItemType) => {
     const sel = h(
       "select",
       null,
-      CATALOG.filter((i) => i.type === type).map((i) => h("option", { value: i.id, selected: c.look[type] === i.id }, i.name)),
+      type !== "hat" && type !== "face" ? h("option", { value: "none", selected: (c.look[type] ?? "none") === "none" }, "Brak") : null,
+      CATALOG.filter((i) => i.type === type).map((i) => h("option", { value: i.id, selected: c.look[type] === i.id }, i.icon + " " + i.name)),
     );
     sel.addEventListener("change", () => {
       c.look[type] = sel.value;
@@ -239,6 +240,8 @@ export function openCharacterEditor(
         h("h3", null, "Kolory"),
         h("div", { class: "xyz2" }, colorField("head", "Głowa"), colorField("torso", "Tułów"), colorField("arms", "Ręce"), colorField("legs", "Nogi")),
         h("div", { class: "xyz2" }, h("label", { class: "prop" }, h("span", null, "Twarz"), itemSelect("face")), h("label", { class: "prop" }, h("span", null, "Czapka"), itemSelect("hat"))),
+        h("div", { class: "xyz2" }, h("label", { class: "prop" }, h("span", null, "Koszulka"), itemSelect("shirt")), h("label", { class: "prop" }, h("span", null, "Spodnie"), itemSelect("pants"))),
+        h("div", { class: "xyz2" }, h("label", { class: "prop" }, h("span", null, "Plecy"), itemSelect("back")), h("label", { class: "prop" }, h("span", null, "Szyja"), itemSelect("neck"))),
         h("label", { class: "prop" }, h("span", null, "Skala postaci: ", scaleVal), scale),
         h("h3", null, "Model 3D"),
         modelBox,
