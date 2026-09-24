@@ -115,6 +115,8 @@ Gra **Ludzik 4** (z GDevelopa) jest przeniesiona do Predatora i serwer tworzy j�
 - **Level 1 część 2:** noc ze światłami, jazda w prawo.
 - **Multiplayer:** mapa dla drużyny. Przyciski otwierają bramy, monety są wspólne, a po zebraniu wszystkich otwierają się drzwi. Zamiast serwerów GDevelopa działa multiplayer Predatora: wchodzisz z menu gry („Idź do poziomu”).
 
+Twórcą gry jest **Fadnmade**. Jeśli konto o tym nicku już istnieje, serwer przy starcie przekazuje mu grę. Jeśli nie, gra trafia do tego, kto założy konto Fadnmade. Twórca może ją edytować w Studio i dostaje monety za wizyty. Listę gier z przypisanymi twórcami ustawisz w `server/src/creators.ts`.
+
 Plik powstaje z oryginalnego zipa skryptem `npx tsx scripts/port-ludzik.ts game.zip`.
 
 ## Pliki gier .pgame i Studio bez serwera

@@ -224,6 +224,8 @@ export const worlds = {
     ).run(f.name, f.description, f.maxPlayers, f.published ? 1 : 0, JSON.stringify(f.data), Date.now(), id);
   },
   remove: (id: number) => db.prepare("DELETE FROM worlds WHERE id = ?").run(id),
+  /** przekazanie gry innemu kontu (np. prawdziwemu twórcy) */
+  setOwner: (id: number, ownerId: number) => db.prepare("UPDATE worlds SET owner_id = ? WHERE id = ?").run(ownerId, id),
   addVisit: (id: number) => db.prepare("UPDATE worlds SET visits = visits + 1 WHERE id = ?").run(id),
   count: () => (db.prepare("SELECT COUNT(*) AS c FROM worlds").get() as { c: number }).c,
 };

@@ -16,6 +16,7 @@ import { hashPassword } from "./auth.ts";
 import { config } from "./config.ts";
 import { users, worlds } from "./db.ts";
 import { WorldRoom } from "./rooms/WorldRoom.ts";
+import { DEMO_OWNER, GAME_CREATORS, giveGamesToCreator } from "./creators.ts";
 
 const app = express();
 // kompresja - gra pobiera się kilka razy szybciej (ważne na telefonach)
@@ -69,15 +70,16 @@ if (fs.existsSync(path.join(config.gamesDir, "Ludzik 4.pgame")))
     fromFile("Ludzik 4.pgame"),
     "ludzik",
   ]);
-let owner = users.byName("Predator");
+let owner = users.byName(DEMO_OWNER);
 if (!owner) {
   const { hash, salt } = hashPassword(crypto.randomUUID());
-  owner = users.create("Predator", hash, salt);
+  owner = users.create(DEMO_OWNER, hash, salt);
 }
-const existing = new Set(worlds.byOwner(owner.id).map((w) => w.name));
 for (const [name, description, make, thumb] of demos) {
-  let id = worlds.byOwner(owner.id).find((w) => w.name === name)?.id;
-  if (!existing.has(name)) {
+  // gra z przypisanym twórcą może już być na jego koncie
+  const creator = GAME_CREATORS[name] ? users.byName(GAME_CREATORS[name]) : undefined;
+  let id = worlds.byOwner(owner.id).find((w) => w.name === name)?.id ?? (creator && worlds.byOwner(creator.id).find((w) => w.name === name)?.id);
+  if (!id) {
     const data = make();
     id = worlds.create(owner.id, name, data, 30).id;
     worlds.update(id, { name, description, maxPlayers: 30, published: true, data });
@@ -87,6 +89,7 @@ for (const [name, description, make, thumb] of demos) {
   const file = path.join(config.assetsDir, "thumbs", thumb + ".jpg");
   if (id && !worlds.thumbnail(id) && fs.existsSync(file))
     worlds.setThumbnail(id, "data:image/jpeg;base64," + fs.readFileSync(file).toString("base64"));
+  if (creator) giveGamesToCreator(creator);
 }
 
 await gameServer.listen(config.port, config.host);

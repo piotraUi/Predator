@@ -1,3 +1,4 @@
+import { giveGamesToCreator } from "./creators.ts";
 import { emptyWorld2D } from "../../shared/world2d.ts";
 import express, { type Response } from "express";
 import { CATALOG, findItem } from "../../shared/catalog.ts";
@@ -71,6 +72,8 @@ api.post("/register", (req, res) => {
   if (users.byName(username)) return fail(res, 409, "Ten nick jest już zajęty");
   const { hash, salt } = hashPassword(password);
   const user = users.create(username, hash, salt);
+  // twórca gry (np. Ludzik 4 -> Fadnmade) dostaje swoją grę, gdy założy konto
+  giveGamesToCreator(user);
   res.json({ token: newSession(user.id), user: toPublicUser(user) });
 });
 
