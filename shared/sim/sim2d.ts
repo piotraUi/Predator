@@ -533,7 +533,7 @@ export class Sim2D {
       if (jump) b.jumpWas = false;
       if (hazard || (s.level.killY !== null && b.box.y > s.level.killY + 200)) {
         b.box = { ...e.home };
-        b.vx = b.vy = 0;
+        b.vx = b.vy = b.fallV = b.jumpV = 0;
         e.flip = !!e.inst.flip;
       }
     }

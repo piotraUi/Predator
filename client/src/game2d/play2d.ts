@@ -481,7 +481,7 @@ export function play2dScreen(
       const p = checkpoint ?? respawnPoint();
       placeActor(me, p.x, p.y);
     }
-    me.body.vx = me.body.vy = 0;
+    me.body.vx = me.body.vy = me.body.fallV = me.body.jumpV = 0;
     if (pet) {
       const p = spritePos(me);
       placeActor(pet, p.x, p.y);

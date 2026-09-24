@@ -30,9 +30,9 @@ test("skok: wysokość zależy od przytrzymania (jak w GDevelop)", () => {
     return 70 - top;
   };
   const short = jump(1), long = jump(60);
-  // krótko: v^2/2g = 360^2/1050 ~ 123; długo: + 0.3 s * 360 = +108
-  assert.ok(short > 100 && short < 140, "krótki skok " + short);
-  assert.ok(long > 210 && long < 250, "długi skok " + long);
+  // jak w GDevelop (grawitacja działa na skok i na spadanie): krótko ~62 px, z przytrzymaniem 0.3 s ~104 px
+  assert.ok(short > 52 && short < 72, "krótki skok " + short);
+  assert.ok(long > 94 && long < 114, "długi skok " + long);
 });
 
 test("ściana zatrzymuje ruch w bok", () => {

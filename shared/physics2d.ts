@@ -84,7 +84,13 @@ export interface Body2D {
   onFloor: boolean;
   onLadder: boolean;
   jumping: boolean;
+  /** ile jeszcze trwa "przytrzymanie" skoku (s) */
   sustain: number;
+  /** jak w GDevelop: osobno prędkość skoku (w górę) i spadania (w dół), vy = fallV - jumpV */
+  jumpV: number;
+  fallV: number;
+  /** skok trzymany bez puszczania od początku skoku */
+  jumpHeld: boolean;
   /** poprzedni stan klawisza skoku (skok tylko po wciśnięciu) */
   jumpWas: boolean;
   /** skok wciśnięty przed chwilą - zadziała zaraz po wylądowaniu */
@@ -102,7 +108,7 @@ export interface Body2D {
 export function newBody(box: Box): Body2D {
   return {
     box: { ...box }, vx: 0, vy: 0, onFloor: false, onLadder: false, jumping: false, sustain: 0,
-    jumpWas: false, jumpBuffer: 0, dropThrough: 0, floorObj: null, blocked: false, force: 0,
+    jumpV: 0, fallV: 0, jumpHeld: false, jumpWas: false, jumpBuffer: 0, dropThrough: 0, floorObj: null, blocked: false, force: 0,
   };
 }
 
@@ -143,8 +149,10 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
 
   // --- drabina ---
   const onLadderNow = overlapsType(world, b.box, "ladder");
-  if (!onLadderNow) b.onLadder = false;
-  else if ((input.up || (input.down && !b.onFloor)) && !(b.jumping && b.vy < 0)) b.onLadder = true;
+  // stoi na szczycie drabiny i wciska "w dół" = schodzi po drabinie
+  const topBelow = input.down && b.onFloor && overlapsType(world, { x: b.box.x + EPS, y: b.box.y + b.box.h, w: b.box.w - 2 * EPS, h: 2 }, "ladder");
+  if (!onLadderNow && !topBelow) b.onLadder = false;
+  else if ((input.up || input.down) && (!b.onFloor || topBelow || input.up) && !(b.jumping && b.vy < 0)) b.onLadder = true;
 
   // --- poziomo ---
   const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -159,32 +167,39 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
   if (Math.abs(b.vx) > maxSpeed) b.vx = Math.sign(b.vx) * maxSpeed;
 
   // --- pionowo ---
+  const startJump = () => {
+    b.jumpBuffer = 0;
+    b.jumpV = p.jumpSpeed;
+    b.fallV = 0;
+    b.sustain = p.jumpSustain;
+    b.jumpHeld = true;
+    b.jumping = true;
+    b.onFloor = false;
+    jumped = true;
+  };
   if (b.onLadder) {
     b.jumping = false;
+    b.jumpV = b.fallV = 0;
     b.vy = input.up ? -p.ladderSpeed : input.down ? p.ladderSpeed : 0;
     if (b.jumpBuffer > 0) {
       b.onLadder = false;
-      b.jumpBuffer = 0;
-      b.vy = -p.jumpSpeed;
-      b.sustain = p.jumpSustain;
-      b.jumping = true;
-      jumped = true;
+      startJump();
     }
   } else {
-    if (b.jumpBuffer > 0 && b.onFloor) {
-      b.jumpBuffer = 0;
-      b.vy = -p.jumpSpeed;
-      b.sustain = p.jumpSustain;
-      b.jumping = true;
-      b.onFloor = false;
-      jumped = true;
+    if (b.jumpBuffer > 0 && b.onFloor) startJump();
+    if (b.jumping) {
+      // jak w GDevelop: prędkość skoku maleje po puszczeniu klawisza albo po czasie przytrzymania...
+      if (!input.jump) b.jumpHeld = false;
+      b.sustain -= dt;
+      if (!b.jumpHeld || b.sustain < 0) b.jumpV -= p.gravity * dt;
+      if (b.jumpV <= 0) {
+        b.jumpV = 0;
+        b.jumping = false;
+      }
     }
-    if (b.jumping && input.jump && b.sustain > 0) b.sustain -= dt;
-    else {
-      b.sustain = 0;
-      b.vy += p.gravity * dt;
-    }
-    if (b.vy > p.maxFallSpeed) b.vy = p.maxFallSpeed;
+    // ...a grawitacja i tak cały czas ciągnie w dół (dlatego skoki są niższe niż "fizycznie")
+    b.fallV = Math.min(p.maxFallSpeed, b.fallV + p.gravity * dt);
+    b.vy = b.fallV - b.jumpV;
   }
   if (input.down && b.onFloor && !b.onLadder) b.dropThrough = 0.25;
 
@@ -218,7 +233,8 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
     let move = dy;
     let hit: Solid | null = null;
     for (const s of world.query(sweep, tmp)) {
-      if (s.type === "ladder") continue;
+      // na szczycie drabiny można stanąć (jak na platformie przenikalnej)
+      if (s.type === "ladder" && (b.onLadder || b.dropThrough > 0 || s.box.y < bottom - 1 || ladderAbove(world, s))) continue;
       if (s.type === "jumpthru" && (b.dropThrough > 0 || s.box.y < bottom - 1 || b.onLadder)) continue;
       if (s.type === "solid" && s.box.y < bottom - 1) continue; // już w środku
       const d = s.box.y - bottom;
@@ -238,8 +254,10 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
       move = Math.max(move, s.box.y + s.box.h - b.box.y);
     }
     if (move !== dy) {
-      b.vy = 0;
-      b.sustain = 0;
+      // uderzenie głową w sufit
+      b.jumpV = 0;
+      b.jumping = false;
+      b.vy = b.fallV;
     }
     b.box.y += move;
   } else if (!b.onLadder || wasOnFloor) {
@@ -258,10 +276,18 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
   return jumped;
 }
 
+/** czy nad tą drabiną jest dalszy kawałek drabiny (wtedy to nie szczyt) */
+function ladderAbove(world: SolidWorld, s: Solid) {
+  for (const o of world.query({ x: s.box.x + EPS, y: s.box.y - 2, w: s.box.w - 2 * EPS, h: 2 }, [])) if (o !== s && o.type === "ladder" && o.box.y < s.box.y) return true;
+  return false;
+}
+
 function land(b: Body2D, s: Solid) {
   b.onFloor = true;
   b.jumping = false;
   b.sustain = 0;
+  b.jumpV = 0;
+  b.fallV = 0;
   if (b.vy > 0) b.vy = 0;
   b.floorObj = s.obj;
 }
