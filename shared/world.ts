@@ -18,6 +18,8 @@ import type {
   ToolType,
   WorldData,
   WorldScript,
+  WorldLight,
+  WorldSound,
 } from "./types.ts";
 import { JOINTS, MAX_BADGE_REWARD } from "./types.ts";
 
@@ -231,6 +233,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       ...(p.kind === "npc" && typeof p.characterId === "string" ? { characterId: p.characterId.slice(0, 40) } : {}),
       ...(typeof p.animId === "string" && p.animId ? { animId: p.animId.slice(0, 40) } : {}),
       ...(typeof p.group === "string" && p.group ? { group: p.group.slice(0, 40) } : {}),
+      ...(p.spin === true ? { spin: true } : {}),
     };
   });
   const rawScripts = Array.isArray(w.scripts) ? w.scripts.slice(0, MAX_SCRIPTS) : [];
@@ -284,6 +287,7 @@ export function sanitizeWorld(input: unknown): WorldData {
     skyColor: typeof w.skyColor === "string" && COLOR_RE.test(w.skyColor) ? w.skyColor : "#8ec8ff",
     gravity: num(w.gravity, 10, 500, 196.2),
     badges: sanitizeBadges(w.badges),
+    ...sanitizeAudioLight(w),
     ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),
   };
 }
@@ -395,3 +399,33 @@ export function sanitizeBadges(input: unknown): BadgeDef[] {
 
 /** Odznaka, którą dostaje każda nowa gra */
 export const welcomeBadge = (): BadgeDef => ({ id: newId(), name: "Witaj w grze!", description: "Za pierwsze wejście do gry", icon: "👋", trigger: "join", reward: 5 });
+
+export const MAX_SOUNDS = 30;
+/** dźwięk w danych gry: maks. ok. 3 MB (data URL) */
+export const MAX_SOUND_CHARS = 4_200_000;
+const SOUND_URL_RE = /^(data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+|\/game-assets\/[A-Za-z0-9_./-]+)$/;
+
+/** dźwięki, muzyka i światło gry 3D */
+export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, "sounds" | "music" | "light"> {
+  const out: Pick<WorldData, "sounds" | "music" | "light"> = {};
+  const sounds: WorldSound[] = [];
+  let total = 0;
+  for (const raw of Array.isArray(w.sounds) ? w.sounds.slice(0, MAX_SOUNDS) : []) {
+    const s = (raw ?? {}) as Record<string, unknown>;
+    const url = typeof s.url === "string" ? s.url : "";
+    if (url.length > MAX_SOUND_CHARS || !SOUND_URL_RE.test(url)) continue;
+    total += url.length;
+    if (total > MAX_SOUND_CHARS * 3) break;
+    const name = str(s.name, 40, "").trim();
+    if (!name) continue;
+    sounds.push({ id: str(s.id, 40, newId()) || newId(), name, url, volume: num(s.volume, 0, 1, 0.8) });
+  }
+  if (sounds.length) out.sounds = sounds;
+  if (typeof w.music === "string" && sounds.some((s) => s.name === w.music)) out.music = w.music;
+  if (w.light && typeof w.light === "object") {
+    const l = w.light as Record<string, unknown>;
+    const light: WorldLight = { brightness: num(l.brightness, 0.02, 1.5, 1), fog: num(l.fog, 0, 2000, 0), flashlight: l.flashlight === true };
+    if (light.brightness !== 1 || light.fog || light.flashlight) out.light = light;
+  }
+  return out;
+}

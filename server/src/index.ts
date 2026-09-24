@@ -30,6 +30,8 @@ app.use("/api/admin", admin);
 app.use("/api", api);
 app.use("/api", social);
 app.get("/health", (_req, res) => res.json({ ok: true, name: "Predator" }));
+// muzyka i dźwięki przykładowych gier (za duże, żeby trzymać je w danych gry)
+app.use("/game-assets", express.static(path.join(config.assetsDir, "games"), { maxAge: "7d", fallthrough: false }));
 
 // gra w przeglądarce - serwujemy zbudowanego klienta
 if (fs.existsSync(config.clientDist)) {
@@ -78,6 +80,11 @@ if (fs.existsSync(path.join(config.gamesDir, "Ludzik 4.pgame")))
     "ludzik",
   ]);
 for (const m of MINIGAMES) demos.push([m.name, m.description, m.make, m.thumb]);
+// gry przeniesione z paczki GamesToadd (npm run port-games)
+for (const [file, thumb] of [["Tacos World", "tacos"], ["Tunnel Escape", "tunnel"], ["Spelling Bee", "spelling"]]) {
+  const f = path.join(config.gamesDir, file + ".pgame");
+  if (fs.existsSync(f)) demos.push([file, parseGameFile(fs.readFileSync(f, "utf8")).description, fromFile(file + ".pgame"), thumb]);
+}
 // konto Predator: zawsze jest, ma swój wygląd, wszystkie przedmioty i jest adminem
 const owner = setupPredatorAccount();
 for (const [name, description, make, thumb] of demos) {

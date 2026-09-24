@@ -69,6 +69,14 @@ Przy pierwszym uruchomieniu powstają przykładowe gry:
 - **🏎️ Wyścigi**: wszyscy startują razem; turbo, błoto, skocznia nad wodą, ruchome spychacze, 3 checkpointy i punkty za miejsca.
 - **🗼 Wieża Piekieł**: spiralna wieża z 6 etapami (lawa, wąskie belki, bujające się i znikające płytki), bez checkpointów, runda 6 minut.
 
+Gry przeniesione z paczki GamesToadd (oryginalnie strony w three.js), teraz jako gry Predatora z multiplayerem:
+
+- **🌮 Tacos World**: biegaj po wielkiej tortilli i zbieraj kręcące się tacos (model 3D z oryginału), muzyka i chrupanie, ranking.
+- **🔦 Tunnel Escape**: horror w ciemnych tunelach z latarką. Znajdź 3 klucze (każdy gracz swoje) i dojdź do wyjścia, a potwór cię goni (szuka najkrótszej drogi w labiryncie). Pistolet od startu, amunicję trzeba znaleźć. Dwa poziomy.
+- **🐝 Spelling Bee**: pszczoła czyta słowo (angielskie albo polskie), a ty wpisujesz je w okienku. Pola zmieniają poziom trudności, po 5 błędach zaczyna się tryb koszmaru, a po 10 walka z Królową Os. Działają tajne kody z oryginału (`nyan`, `obra`, `burger`, `beaver`, `blue`).
+
+Przenosi je skrypt `npm run port-games` (kod w `scripts/ports/`). Duża muzyka leży w `server/assets/games/` i serwer udostępnia ją pod `/game-assets/`.
+
 Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` tworzy je od nowa).
 
 ### Ustawienia (zmienne środowiskowe)
@@ -184,6 +192,12 @@ end)
 | `setColor`, `setPosition`, `move`, `setSize`, `setVisible`, `setTransparency`, `setCollide`, `getPosition` | klocki |
 | `kill`, `teleport`, `playerName`, `getPlayers`, `getPlayerPosition`, `setSpeed`, `setJump` | gracze |
 | `addScore`, `setScore`, `getScore` | ranking w prawym górnym rogu |
+| `playSound(player, "nazwa")`, `setMusic("nazwa", player)` | dźwięki i muzyka (Ustawienia gry → Dźwięki); `""` zamiast gracza = wszyscy |
+| `speak(player, "tekst", "pl-PL")` | czytanie na głos (`"en-US"` po angielsku) |
+| `prompt(player, "id", "Pytanie?")`, `onAnswer(fn(player, id, text))` | okienko z pytaniem i odpowiedź gracza |
+| `setVisibleFor(player, "Nazwa", false)` | klocek widoczny / ukryty tylko dla jednego gracza |
+| `getPlayerLook(player)` | kierunek patrzenia gracza `{x, z}` |
+| `setSkyFor(player, "#000000")`, `setLight(jasność, mgła, player)` | niebo, jasność i mgła (np. horror); w Ustawieniach gry jest też 🔦 latarka |
 | `awardBadge(player, "Nazwa")` | daje graczowi odznakę ustawioną w Ustawieniach gry (raz na gracza, z nagrodą w monetach) |
 | `onToolUse(fn(player, toolName))`, `onDied(fn(player, killer))` | użycie narzędzia, śmierć gracza (`killer` = `""`, gdy nikt nie zabił) |
 | `giveTool`, `removeTool`, `hasTool` | ekwipunek (narzędzia po nazwie) |

@@ -5,7 +5,9 @@ import {
   Matrix,
   MeshBuilder,
   PointerEventTypes,
+  PointLight,
   Scene,
+  SpotLight,
   StandardMaterial,
   Vector3,
   type AbstractMesh,
@@ -15,10 +17,11 @@ import { Client } from "colyseus.js";
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { LocalRoom, type GameConnection } from "./connection.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, Emote, NetPlayer, Part, ToolDef, WorldData } from "../../../shared/types.ts";
-import { EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared/types.ts";
+import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { VoiceChat } from "./voice.ts";
+import { GameAudio } from "./audio3d.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
 import { CollisionWorld, PLAYER_RADIUS, raycastParts, stepBody, type Body } from "../../../shared/physics.ts";
@@ -164,7 +167,8 @@ export function playScreen(
     const world = new WorldView(scene, { shadows: true, skyColor: init.world.skyColor });
     const parts = new Map<string, Part>(init.world.parts.map((p) => [p.id, p]));
     world.load(init.world.parts);
-    for (const m of world.meshes.values()) {
+    for (const [id, m] of world.meshes) {
+      if (parts.get(id)?.spin) continue; // kręcące się klocki muszą się ruszać
       m.freezeWorldMatrix();
       m.doNotSyncBoundingInfo = true;
     }
@@ -397,6 +401,68 @@ export function playScreen(
       lastHp = hp;
     }
 
+    // ---------- światło, latarka, dźwięki, mowa ----------
+    let sky = init.world.skyColor;
+    const light = { ...DEFAULT_LIGHT, ...(init.world.light ?? {}) };
+    world.setLight(light.brightness, light.fog, sky);
+    const audio = new GameAudio(init.world.sounds, init.world.music);
+    cleanups.push(() => audio.dispose());
+    if (light.flashlight) {
+      // latarka świeci tam, gdzie patrzy kamera, a małe światło wokół gracza pozwala widzieć ściany obok
+      const torch = new SpotLight("torch", Vector3.Zero(), new Vector3(0, 0, 1), 1.15, 1.5, scene);
+      torch.intensity = 2.6;
+      torch.range = 90;
+      torch.diffuse = new Color3(1, 0.95, 0.8);
+      const glow = new PointLight("glow", Vector3.Zero(), scene);
+      glow.intensity = 0.45;
+      glow.range = 18;
+      scene.onBeforeRenderObservable.add(() => {
+        const head = new Vector3(body.x, body.y + 4.4, body.z);
+        const dir = camera.target.subtract(camera.position);
+        dir.y *= 0.6;
+        torch.position.copyFrom(head);
+        torch.direction = dir.normalize();
+        glow.position.copyFrom(head);
+      });
+    }
+
+    // okienko z pytaniem od skryptu (prompt) - odpowiedź trafia do onAnswer
+    const promptBox = h("div", { class: "prompt-box hidden" });
+    let promptId = "";
+    const showPrompt = (m: { id: string; question: string; speak?: string; lang?: string } | null) => {
+      if (!m) {
+        promptBox.classList.add("hidden");
+        return;
+      }
+      promptId = m.id;
+      const input = h("input", { class: "prompt-input", maxLength: 80, autocomplete: "off", placeholder: "Wpisz odpowiedź…" });
+      const send = () => {
+        const text = input.value.trim();
+        if (!text) return;
+        r.send("answer", { id: promptId, text });
+        promptBox.classList.add("hidden");
+        input.blur();
+      };
+      input.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") send();
+      });
+      promptBox.replaceChildren(
+        h("div", { class: "prompt-q" }, m.question),
+        h(
+          "div",
+          { class: "prompt-row" },
+          m.speak ? h("button", { class: "btn", title: "Posłuchaj jeszcze raz", onClick: () => audio.speak(m.speak!, m.lang) }, "🔊") : "",
+          input,
+          h("button", { class: "btn primary", onClick: send }, "OK"),
+        ),
+      );
+      promptBox.classList.remove("hidden");
+      if (m.speak) audio.speak(m.speak, m.lang);
+      setTimeout(() => input.focus(), 50);
+    };
+    wrap.append(promptBox);
+
     // emotki
     const emoteMenu = h(
       "div",
@@ -544,7 +610,7 @@ export function playScreen(
         const mesh = world.meshes.get(p.id);
         mesh?.unfreezeWorldMatrix();
         world.apply(p);
-        mesh?.freezeWorldMatrix();
+        if (!p.spin) mesh?.freezeWorldMatrix();
         collisions.set(p);
       }
     });
@@ -587,7 +653,19 @@ export function playScreen(
       }
       remotes.get(m.sid)?.model.playCustom(m.anim ? (animsById.get(m.anim) ?? null) : null);
     });
-    r.onMessage("sky", (c: string) => world.setSky(c));
+    r.onMessage("sky", (c: string) => {
+      sky = c;
+      world.setSky(c);
+    });
+    r.onMessage("light", (l: { brightness?: number; fog?: number }) => {
+      if (typeof l.brightness === "number") light.brightness = l.brightness;
+      if (typeof l.fog === "number") light.fog = l.fog;
+      world.setLight(light.brightness, light.fog, sky);
+    });
+    r.onMessage("sound", (m: { name: string }) => audio.play(m.name));
+    r.onMessage("music", (m: { name: string }) => audio.setMusic(m.name));
+    r.onMessage("speak", (m: { text: string; lang?: string }) => audio.speak(m.text, m.lang));
+    r.onMessage("prompt", (m: { id: string; question: string; speak?: string; lang?: string } | null) => showPrompt(m));
     r.onMessage("boost", (b: { secs: number; mult: number }) => {
       boostUntil = performance.now() + b.secs * 1000;
       boostMult = b.mult;

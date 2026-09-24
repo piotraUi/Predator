@@ -45,6 +45,15 @@ export const LUA_HELP: [string, string][] = [
   ['npcAnimation("Barista", "Machanie")', "animacja NPC (po nazwie klocka)"],
   ['setSky("#102040")', "kolor nieba (np. noc)"],
   ['awardBadge(player, "Nazwa odznaki")', "daj graczowi odznakę (Ustawienia gry → Odznaki)"],
+  ['playSound(player, "nazwa")', "zagraj dźwięk graczowi (\"\" = wszystkim) - Ustawienia gry → Dźwięki"],
+  ['setMusic("nazwa")', "muzyka w tle (drugi argument: tylko dla gracza)"],
+  ['speak(player, "Cześć!", "pl-PL")', "przeczytaj tekst na głos (\"en-US\" = po angielsku)"],
+  ['prompt(player, "pytanie1", "Ile to 2+2?")', "okienko z pytaniem - odpowiedź przychodzi do onAnswer"],
+  ["onAnswer(function(player, id, text) end)", "gracz odpowiedział w okienku prompt"],
+  ['setVisibleFor(player, "Moneta", false)', "pokaż / ukryj klocek tylko dla jednego gracza"],
+  ["getPlayerLook(player)", "kierunek patrzenia gracza: tabela {x, z}"],
+  ['setSkyFor(player, "#000000")', "kolor nieba tylko dla jednego gracza"],
+  ["setLight(0.2, 60, player)", "jasność i mgła (bez gracza = dla wszystkich)"],
 ];
 
 export const LUA_HELP_2D: [string, string][] = [

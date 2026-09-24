@@ -185,6 +185,12 @@ export class GameSim {
       }
       case "respawned":
         return this.onRespawned(sid);
+      case "answer": {
+        // odpowiedź z okienka prompt() skryptu
+        const v = (msg ?? {}) as Record<string, unknown>;
+        if (!this.players.has(sid) || typeof v.id !== "string" || typeof v.text !== "string") return;
+        return this.lua?.answered(sid, v.id.slice(0, 40), v.text.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 80));
+      }
     }
   }
 
@@ -582,8 +588,53 @@ export class GameSim {
       this.log(String(e), true);
       return;
     }
+    // cel: id gracza albo pusty tekst / nil = wszyscy
+    const to = (target: unknown, type: string, msg: unknown) => {
+      const sid = typeof target === "string" ? target : "";
+      if (sid) {
+        if (this.players.has(sid)) this.t.send(sid, type, msg);
+      } else this.t.broadcast(type, msg);
+    };
+    const soundName = (n: unknown) => {
+      const name = String(n ?? "");
+      if (name && !this.data.sounds?.some((x) => x.name === name)) this.log(`nie ma dźwięku „${name}” (Ustawienia gry → Dźwięki)`, true);
+      return name;
+    };
     this.lua.defineFunctions({
       awardBadge: (sid, name) => this.t.badge?.(String(sid ?? ""), String(name ?? "")),
+      playSound: (target, name) => to(target, "sound", { name: soundName(name) }),
+      setMusic: (name, target) => to(target, "music", { name: name ? soundName(name) : "" }),
+      speak: (target, text, lang) =>
+        to(target, "speak", { text: filterChat(String(text ?? "")).slice(0, 200), lang: typeof lang === "string" ? lang.slice(0, 10) : "pl-PL" }),
+      prompt: (target, id, question, sayText, lang) => {
+        if (typeof target !== "string" || !this.players.has(target)) return;
+        this.t.send(target, "prompt", {
+          id: String(id ?? "").slice(0, 40),
+          question: filterChat(String(question ?? "")).slice(0, 200),
+          ...(sayText ? { speak: String(sayText).slice(0, 200), lang: typeof lang === "string" ? lang.slice(0, 10) : "pl-PL" } : {}),
+        });
+      },
+      closePrompt: (target) => to(target, "prompt", null),
+      getPlayerLook: (sid) => {
+        const p = this.players.get(String(sid ?? ""));
+        return p ? [-Math.sin(p.ry), -Math.cos(p.ry)] : null;
+      },
+      setVisibleFor: (sid, name, visible) => {
+        const target = String(sid ?? "");
+        if (!this.players.has(target)) return;
+        const changes: (Partial<Part> & { id: string })[] = [];
+        for (const part of this.partsById.values())
+          if (part.name === name) changes.push({ id: part.id, transparency: visible ? part.transparency : 1, collide: visible ? part.collide : false });
+        if (changes.length) this.t.send(target, "part", changes);
+      },
+      setSkyFor: (sid, color) => {
+        if (typeof color === "string" && COLOR_RE.test(color)) to(sid, "sky", color);
+      },
+      setLight: (brightness, fog, target) =>
+        to(target, "light", {
+          ...(typeof brightness === "number" ? { brightness: Math.min(1.5, Math.max(0.02, brightness)) } : {}),
+          ...(typeof fog === "number" ? { fog: Math.min(2000, Math.max(0, fog)) } : {}),
+        }),
     });
     for (const s of scripts) this.lua.runScript(s.name, s.source);
   }

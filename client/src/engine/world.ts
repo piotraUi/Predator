@@ -137,7 +137,10 @@ export class WorldView {
   private characters = new Map<string, CharacterDef>();
   private animations = new Map<string, AnimDef>();
   /** postacie NPC stojące na klockach "npc" */
-  private npcs = new Map<string, { model: AvatarModel; key: string }>();
+  private npcs = new Map<string, { model: AvatarModel; key: string; target: Vector3; spin: boolean }>();
+  /** klocki, które się kręcą (tylko wygląd) */
+  private spinning = new Set<string>();
+  private baseLight = { hemi: 0.85, sun: 0.7 };
   /** w edytorze klocek NPC jest widoczny (półprzezroczysty), w grze - tylko postać */
   private editor: boolean;
   shadows: ShadowGenerator | null = null;
@@ -175,11 +178,23 @@ export class WorldView {
       this.shadows.bias = 0.0008;
       this.shadows.normalBias = 0.02;
     }
-    // NPC się animują
+    // NPC się animują i płynnie dochodzą do nowej pozycji (skrypty przesuwają je skokami)
     scene.onBeforeRenderObservable.add(() => {
-      if (this.npcs.size === 0) return;
       const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.1);
-      for (const n of this.npcs.values()) n.model.update(dt);
+      const k = Math.min(1, dt * 10);
+      for (const n of this.npcs.values()) {
+        const pos = n.model.root.position;
+        if (Vector3.DistanceSquared(pos, n.target) > 400) pos.copyFrom(n.target);
+        else pos.addInPlace(n.target.subtract(pos).scale(k));
+        if (n.spin) n.model.root.rotation.y += dt * 2;
+        n.model.update(dt);
+      }
+      if (this.spinning.size) {
+        for (const id of this.spinning) {
+          const m = this.meshes.get(id);
+          if (m) m.rotation.y += dt * 2;
+        }
+      }
     });
     // narzędzia do podniesienia kręcą się i unoszą
     scene.onBeforeRenderObservable.add(() => {
@@ -217,14 +232,18 @@ export class WorldView {
     const anim = part.animId ? this.animations.get(part.animId) : undefined;
     const key = `${char ? JSON.stringify(char).length + char.id : ""}|${anim?.id ?? ""}|${anim ? JSON.stringify(anim).length : 0}`;
     let n = existing;
+    const target = new Vector3(part.x, part.y - part.sy / 2, part.z);
     if (!n) {
-      n = { model: new AvatarModel(this.scene, DEFAULT_AVATAR, this.shadows), key: "" };
+      n = { model: new AvatarModel(this.scene, DEFAULT_AVATAR, this.shadows), key: "", target, spin: false };
       this.npcs.set(part.id, n);
       for (const m of n.model.root.getChildMeshes()) m.metadata = { partId: part.id };
+      n.model.root.position.copyFrom(target);
     }
     // postać stoi stopami na dole klocka
-    n.model.root.position.set(part.x, part.y - part.sy / 2, part.z);
-    n.model.root.rotation.y = (part.ry * Math.PI) / 180;
+    n.target = target;
+    if (this.editor) n.model.root.position.copyFrom(target);
+    n.spin = !!part.spin && !this.editor;
+    if (!n.spin) n.model.root.rotation.y = (part.ry * Math.PI) / 180;
     if (n.key !== key) {
       n.key = key;
       n.model.setLook(DEFAULT_AVATAR, char ?? null);
@@ -248,6 +267,21 @@ export class WorldView {
       this.shadows?.addShadowCaster(m);
     }
     this.pickups.set(part.id, { node: model.root, baseY });
+  }
+
+  /** jasność świata (1 = normalnie) i mgła (0 = daleka, domyślna) */
+  setLight(brightness: number, fog: number, sky: string) {
+    this.hemi.intensity = this.baseLight.hemi * brightness;
+    this.sun.intensity = this.baseLight.sun * brightness;
+    this.scene.ambientColor = new Color3(0.3, 0.3, 0.3).scale(Math.min(1, brightness));
+    if (fog > 0) {
+      this.scene.fogStart = fog * 0.25;
+      this.scene.fogEnd = fog;
+    } else {
+      this.scene.fogStart = 250;
+      this.scene.fogEnd = 700;
+    }
+    this.setSky(sky);
   }
 
   setSky(color: string) {
@@ -301,6 +335,8 @@ export class WorldView {
         : undefined;
     mesh.material = this.materials.get(part.color, part.material, part.transparency, grid);
     mesh.isVisible = part.transparency < 0.999;
+    if (part.spin && !this.editor) this.spinning.add(part.id);
+    else this.spinning.delete(part.id);
     if (part.kind === "npc") {
       // w grze widać samą postać; w Studio półprzezroczysty klocek, żeby dało się go zaznaczyć
       mesh.isVisible = this.editor;
@@ -318,6 +354,7 @@ export class WorldView {
     this.pickups.delete(id);
     this.npcs.get(id)?.model.dispose();
     this.npcs.delete(id);
+    this.spinning.delete(id);
   }
 
   load(parts: Part[]) {

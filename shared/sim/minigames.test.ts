@@ -7,7 +7,7 @@ import type { WorldData } from "../types.ts";
 import { GameSim } from "./gameSim.ts";
 
 /** symulacja z własnym zegarem (skrypty liczą czas z Date.now) */
-function run(data: WorldData) {
+export function run(data: WorldData) {
   const realNow = Date.now;
   let clock = realNow();
   Date.now = () => clock;

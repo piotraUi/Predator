@@ -30,6 +30,7 @@ import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
 import { badgeEditor } from "./badgeEditor.ts";
+import { soundsLightEditor } from "./soundsEditor.ts";
 import {
   behaviorIdOf,
   behaviorsOf,
@@ -1019,6 +1020,12 @@ export function studioScreen(
           h("input", { type: "checkbox", checked: p.collide, onChange: (e: Event) => upd(() => (p.collide = (e.target as HTMLInputElement).checked)) }),
           h("span", null, "Kolizja (nie można przez niego przejść)"),
         ),
+        h(
+          "label",
+          { class: "prop check" },
+          h("input", { type: "checkbox", checked: !!p.spin, onChange: (e: Event) => upd(() => ((e.target as HTMLInputElement).checked ? (p.spin = true) : delete p.spin)) }),
+          h("span", null, "🔄 Kręci się (np. moneta)"),
+        ),
       );
     }
 
@@ -1318,6 +1325,7 @@ export function studioScreen(
         data.characters.map((c) => h("option", { value: c.id, selected: data.playerCharacter === c.id }, "🧍 " + c.name)),
       );
       const badges = badgeEditor(data.badges);
+      const audioLight = soundsLightEditor(data);
       const close = modal(
         "Ustawienia gry",
         h(
@@ -1330,6 +1338,7 @@ export function studioScreen(
           h("label", null, "Grawitacja (normalnie 196)", grav),
           h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
+          audioLight.el,
           badges.el,
           src.online
             ? h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać"))
@@ -1344,6 +1353,9 @@ export function studioScreen(
               data.skyColor = sky.value;
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
               data.pvp = pvp.checked;
+              const al = audioLight.read();
+              for (const k of ["sounds", "music", "light"] as const) delete data[k];
+              Object.assign(data, JSON.parse(JSON.stringify(al)));
               data.badges = badges.read();
               data.playerCharacter = playerChar.value || undefined;
               renderCharacters();

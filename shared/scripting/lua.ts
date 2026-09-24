@@ -49,7 +49,7 @@ const HOOK_EVERY = 1000;
 const MAX_HOOKS = 300;
 
 const PRELUDE = `
-local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {} }
+local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {}, answer = {} }
 local tasks = {}
 local now = 0
 
@@ -82,6 +82,8 @@ function onRespawn(fn) table.insert(handlers.respawn, fn) end
 function onDied(fn) table.insert(handlers.died, fn) end
 -- onToolUse(function(player, toolName) ... end)
 function onToolUse(fn) table.insert(handlers.tool, fn) end
+-- onAnswer(function(player, id, text) ... end) - odpowiedź z okienka prompt()
+function onAnswer(fn) table.insert(handlers.answer, fn) end
 -- gry 2D: onLevelEnter(function(player, levelName) ... end)
 function onLevelEnter(fn) table.insert(handlers.level, fn) end
 function onTouch(partName, fn)
@@ -109,8 +111,8 @@ function after(seconds, fn)
   end)
 end
 
-function __fire(kind, a, b)
-  for _, fn in ipairs(handlers[kind]) do spawn(fn, a, b) end
+function __fire(kind, a, b, c)
+  for _, fn in ipairs(handlers[kind]) do spawn(fn, a, b, c) end
 end
 
 function __fireTouch(partName, player)
@@ -480,6 +482,9 @@ export class LuaEngine {
   }
   toolUsed(player: string, toolName: string) {
     this.call("__fire", "tool", player, toolName);
+  }
+  answered(player: string, id: string, text: string) {
+    this.call("__fire", "answer", player, id, text);
   }
   chat(player: string, text: string) {
     this.call("__fire", "chat", player, text);

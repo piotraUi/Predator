@@ -31,6 +31,8 @@ export interface Part {
   animId?: string;
   /** model ze Studia - części z tym samym id przesuwają się razem */
   group?: string;
+  /** kręci się w kółko (tylko wygląd - np. moneta, taco) */
+  spin?: boolean;
 }
 
 // ---------- Postacie ----------
@@ -149,10 +151,35 @@ export interface WorldData {
   playerCharacter?: string;
   /** odznaki (nagrody) do zdobycia w tej grze */
   badges?: BadgeDef[];
+  /** dźwięki gry 3D (skrypty: playSound, setMusic) */
+  sounds?: WorldSound[];
+  /** nazwa dźwięku grającego w pętli jako muzyka */
+  music?: string;
+  /** światło: jasność, mgła i latarka gracza */
+  light?: WorldLight;
   /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste */
   mode?: "3d" | "2d";
   world2d?: World2D;
 }
+
+/** Dźwięk w grze 3D: plik w danych gry (data URL) albo na serwerze (/game-assets/...) */
+export interface WorldSound {
+  id: string;
+  name: string;
+  url: string;
+  /** głośność 0-1 */
+  volume: number;
+}
+
+export interface WorldLight {
+  /** 0.05 = prawie ciemno, 1 = normalnie */
+  brightness: number;
+  /** odległość mgły (0 = bez mgły) */
+  fog: number;
+  /** gracz ma latarkę */
+  flashlight: boolean;
+}
+export const DEFAULT_LIGHT: WorldLight = { brightness: 1, fog: 0, flashlight: false };
 
 /** Odznaka do zdobycia w grze (jak w Robloxie) */
 export interface BadgeDef {
