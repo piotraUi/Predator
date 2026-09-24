@@ -182,6 +182,7 @@ test("klin: od strony skosu da się wejść, od wysokiej strony to ściana", () 
 // ---------- test "na ślepo": boty biegają po prawdziwych mapach ----------
 import { demoCity } from "./demos/city.ts";
 import { demoArena, demoObby } from "./world.ts";
+import { MINIGAMES } from "./demos/minigames.ts";
 
 function fuzz(name: string, parts: ReturnType<typeof demoCity>["parts"], seed: number) {
   let s = seed;
@@ -213,4 +214,5 @@ test("boty na mapach nigdy nie wchodzą w klocki", () => {
   fuzz("Predator City", demoCity().parts, 1);
   fuzz("Arena", demoArena().parts, 2);
   fuzz("Tor przeszkód", demoObby().parts, 3);
+  for (const [i, m] of MINIGAMES.entries()) fuzz(m.name, m.make().parts, 10 + i);
 });

@@ -1,6 +1,7 @@
 // Edytor awatara z podglądem 3D - osobny moduł, żeby menu nie musiało wczytywać Babylona.
 import { ArcRotateCamera, Color4, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
-import { ITEM_TYPES, RARITY_LABELS, type CatalogItem, type ItemType } from "../../../shared/catalog.ts";
+import { ITEM_TYPES, RARITY_LABELS, type CatalogItem, type ItemType, type WearType } from "../../../shared/catalog.ts";
+import type { Emote } from "../../../shared/types.ts";
 import { drawLeg, drawShirtFront } from "../engine/clothes.ts";
 import { headshot } from "./headshot.ts";
 import type { Avatar } from "../../../shared/types.ts";
@@ -34,8 +35,18 @@ export function avatarEditor(el: HTMLElement): () => void {
   cam.panningSensibility = 0;
   new HemisphericLight("l", new Vector3(0.3, 1, -0.6), scene).intensity = 1.1;
   const model = new AvatarModel(scene, avatar);
+  // podgląd emotki przez kilka sekund
+  let previewUntil = 0;
+  const previewEmote = (e: string) => {
+    model.anim = e as Emote;
+    previewUntil = performance.now() + 3500;
+  };
   scene.onBeforeRenderObservable.add(() => {
-    model.root.rotation.y += engine.getDeltaTime() / 3000;
+    if (previewUntil && performance.now() > previewUntil) {
+      previewUntil = 0;
+      model.anim = "idle";
+    }
+    if (!previewUntil) model.root.rotation.y += engine.getDeltaTime() / 3000;
     model.update(engine.getDeltaTime() / 1000);
   });
   engine.runRenderLoop(() => scene.render());
@@ -124,15 +135,18 @@ export function avatarEditor(el: HTMLElement): () => void {
     const list = catalog
       .filter((i) => i.type === tab && i.id !== "none")
       .filter((i) => (showOwned ? owns(i) : !i.offsale || owns(i)))
-      .sort((p, q) => Number(owns(q)) - Number(owns(p)) || p.price - q.price);
+      .sort((p, q) => Number(owns(q)) - Number(owns(p)) || Number(!!q.limited) - Number(!!p.limited) || p.price - q.price);
     const card = (item: CatalogItem) => {
       const owned = owns(item);
-      const worn = avatar[item.type] === item.id;
+      const isEmote = item.type === "emote";
+      const worn = !isEmote && avatar[item.type as WearType] === item.id;
+      const soldOut = !!item.limited && item.stockLeft === 0;
       return h(
         "button",
         {
           class: `item ${worn ? "worn" : ""} ${owned ? "owned" : ""} ${item.rarity ?? "common"}`,
           onClick: async () => {
+            if (!owned && soldOut) return toast("Wyprzedane! Ten przedmiot zdobędziesz już tylko przez wymianę ze znajomym.", "error");
             if (!owned) {
               if (u.coins < item.price) return toast("Za mało monet - graj, żeby zdobyć więcej!", "error");
               try {
@@ -142,27 +156,43 @@ export function avatarEditor(el: HTMLElement): () => void {
                 return toast((e as Error).message, "error");
               }
             }
+            if (isEmote) {
+              previewEmote(item.id);
+              if (!owned) api.catalog().then(renderShop, () => renderShop(catalog));
+              else renderShop(catalog);
+              return;
+            }
+            const slot = item.type as WearType;
             // kliknięcie założonej rzeczy ją zdejmuje (twarz zostaje)
-            avatar[item.type] = worn && item.type !== "face" ? "none" : item.id;
+            avatar[slot] = worn && slot !== "face" ? "none" : item.id;
             save();
-            renderShop(catalog);
+            if (item.limited && !owned) api.catalog().then(renderShop, () => renderShop(catalog));
+            else renderShop(catalog);
           },
         },
         item.isNew && !owned ? h("span", { class: "item-new" }, "Nowość") : null,
         thumb(item),
         h("div", { class: "item-name" }, item.name),
         item.rarity && item.rarity !== "common" ? h("div", { class: "item-rarity" }, RARITY_LABELS[item.rarity]) : null,
-        h("div", { class: "item-price" }, owned ? (worn ? "✓ Założone" : "Załóż") : [icon("coin", 16), String(item.price)]),
+        item.limited
+          ? h("div", { class: "item-limited" + (soldOut ? " out" : "") }, soldOut ? "Wyprzedane" : `Limitowany · ${item.stockLeft ?? item.limited}/${item.limited}`)
+          : null,
+        h(
+          "div",
+          { class: "item-price" },
+          owned ? (isEmote ? "▶ Pokaż" : worn ? "✓ Założone" : "Załóż") : soldOut ? "Tylko wymiana" : [icon("coin", 16), String(item.price)],
+        ),
       );
     };
+    const slot = tab as WearType;
     const none =
-      tab !== "face"
+      tab !== "face" && tab !== "emote"
         ? h(
             "button",
-            { class: "item " + (avatar[tab] === "none" ? "worn" : ""), onClick: () => ((avatar[tab] = "none"), save(), renderShop(catalog)) },
+            { class: "item " + (avatar[slot] === "none" ? "worn" : ""), onClick: () => ((avatar[slot] = "none"), save(), renderShop(catalog)) },
             h("span", { class: "item-thumb emoji" }, "🚫"),
             h("div", { class: "item-name" }, "Brak"),
-            h("div", { class: "item-price" }, avatar[tab] === "none" ? "✓" : "Zdejmij"),
+            h("div", { class: "item-price" }, avatar[slot] === "none" ? "✓" : "Zdejmij"),
           )
         : "";
     shop.replaceChildren(tabs, h("div", { class: "items" }, none, ...list.map(card)));

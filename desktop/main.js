@@ -11,6 +11,8 @@ const GAME_EXT = ".pgame";
 
 // własny adres app://predator/... - pliki gry ładowane z dysku.
 // Nie oznaczamy go jako "secure", żeby gra mogła łączyć się z serwerem po zwykłym http:// w sieci lokalnej.
+// ...ale mikrofon (czat głosowy) wymaga "bezpiecznej" strony - ten przełącznik daje go bez blokowania http://
+app.commandLine.appendSwitch("unsafely-treat-insecure-origin-as-secure", "app://predator");
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);

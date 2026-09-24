@@ -8,6 +8,7 @@ import { instBox, overlaps, type Box } from "../../../shared/world2d.ts";
 import { Input } from "../engine/input.ts";
 import type { GameConnection } from "../game/connection.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
+import { VoiceChat } from "../game/voice.ts";
 import { AssetStore, unlockAudio } from "./assets.ts";
 import { fitScale, LevelView, type Camera2D, type Entity2D } from "./render.ts";
 
@@ -307,6 +308,9 @@ export function play2dScreen(
     h("button", { class: "hud-btn", title: "Menu", onClick: () => (renderMenu(), menu.classList.toggle("hidden")) }, "☰"),
   );
   wrap.append(topbar, chat, board, menu);
+  // czat głosowy ze znajomymi (tylko w grze na serwerze)
+  const voice = params.offline ? null : new VoiceChat(conn, init.you);
+  if (voice) (topbar.insertBefore(voice.button, topbar.lastChild), wrap.append(voice.panel));
   const myName = init.players.find((p) => p.sid === init.you)?.username ?? "";
 
   function exit() {
@@ -793,6 +797,7 @@ export function play2dScreen(
     window.removeEventListener("pointerdown", unlock);
     window.removeEventListener("keydown", unlock);
     input.dispose();
+    voice?.dispose();
     if (!leaving) {
       leaving = true;
       conn.leave();

@@ -9,6 +9,7 @@ import { pickFile } from "../files.ts";
 import { ask, h, hashColor, logo, modal, toast } from "./dom.ts";
 import { headshot } from "./headshot.ts";
 import { icon } from "./icons.ts";
+import { groupsView, groupView, privateServersSection, profileView, reportDialog, tradesView } from "./social.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Route =
@@ -20,12 +21,16 @@ type Route =
   | { v: "create" }
   | { v: "game"; id: number }
   | { v: "search"; q?: string }
-  | { v: "admin" };
+  | { v: "admin" }
+  | { v: "profile"; name: string }
+  | { v: "groups" }
+  | { v: "group"; id: number }
+  | { v: "trades" };
 type Sort = "popular" | "rating" | "visits" | "new";
 type Cleanup = void | (() => void);
-type Ctx = { go: Go; nav: (r: Route, replace?: boolean) => void; back: () => void; refreshBadges: () => void };
+export type Ctx = { go: Go; nav: (r: Route, replace?: boolean) => void; back: () => void; refreshBadges: () => void };
 
-const MAIN_TABS = ["home", "charts", "avatar", "chat", "friends", "create", "admin"] as const;
+const MAIN_TABS = ["home", "charts", "avatar", "chat", "friends", "create", "admin", "groups", "trades"] as const;
 export const isHomeTab = (t: string) => (MAIN_TABS as readonly string[]).includes(t);
 
 export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: number }, go: Go) {
@@ -38,6 +43,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
   // ---------- górny pasek ----------
   const coinsNum = h("span");
   const bellBadge = h("span", { class: "pv-badge hidden" });
+  const tradeBadge = h("span", { class: "pv-badge inline hidden" });
   const chatBadges: HTMLElement[] = [];
   const mkChatBadge = () => {
     const b = h("span", { class: "pv-badge hidden" });
@@ -74,7 +80,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
   );
 
   // ---------- boczne menu (komputer) / wysuwane menu (telefon) ----------
-  const sideUser = h("button", { class: "pv-side-user", onClick: () => nav({ v: "avatar" }) });
+  const sideUser = h("button", { class: "pv-side-user", title: "Mój profil", onClick: () => nav({ v: "profile", name: session.user!.username }) });
   const sideItem = (r: Route["v"], ic: Parameters<typeof icon>[0], label: string, badge?: HTMLElement) =>
     h("button", { class: "pv-side-item", "data-v": r, onClick: () => nav({ v: r } as Route) }, icon(ic, 22), h("span", null, label), badge ?? null);
   const side = h(
@@ -86,6 +92,8 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
     sideItem("avatar", "person", "Awatar"),
     sideItem("chat", "chat", "Czat", mkChatBadge()),
     sideItem("friends", "users", "Znajomi"),
+    sideItem("groups", "users", "Grupy"),
+    sideItem("trades", "coin", "Wymiany", tradeBadge),
     sideItem("create", "build", "Twórz"),
     session.user?.admin ? sideItem("admin", "settings", "Panel admina") : null,
     h("button", { class: "pv-side-item", onClick: () => go("offline") }, icon("folder", 22), h("span", null, "Studio bez serwera")),
@@ -158,7 +166,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
     cleanupView = null;
     main.replaceChildren();
     main.scrollTop = 0;
-    const tab = r.v === "game" || r.v === "search" ? "" : r.v;
+    const tab = r.v === "game" || r.v === "search" || r.v === "profile" ? "" : r.v === "group" ? "groups" : r.v;
     for (const b of el.querySelectorAll<HTMLElement>("[data-v]")) b.classList.toggle("active", b.dataset.v === tab);
     el.dataset.view = r.v;
     if (isHomeTab(r.v)) history.replaceState(null, "", "#" + r.v);
@@ -183,7 +191,15 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
                     ? gameView(view, ctx, r.id)
                     : r.v === "admin"
                       ? adminView(view)
-                      : searchView(view, ctx, r.q ?? "");
+                      : r.v === "profile"
+                        ? profileView(view, ctx, r.name)
+                        : r.v === "groups"
+                          ? groupsView(view, ctx)
+                          : r.v === "group"
+                            ? groupView(view, ctx, r.id)
+                            : r.v === "trades"
+                              ? tradesView(view, ctx)
+                              : searchView(view, ctx, r.q ?? "");
     Promise.resolve(res).then((c) => {
       if (!c) return;
       if (id === viewId) cleanupView = c;
@@ -199,7 +215,8 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
   const pollNotifications = async () => {
     try {
       const n = await api.notifications();
-      setBadge(bellBadge, n.friendRequests + (n.alerts?.length ?? 0));
+      setBadge(bellBadge, n.friendRequests + (n.alerts?.length ?? 0) + (n.trades ?? 0));
+      setBadge(tradeBadge, n.trades ?? 0);
       for (const b of chatBadges) setBadge(b, n.unreadMessages);
       if (session.user && session.user.coins !== n.coins) session.set({ ...session.user, coins: n.coins });
     } catch {
@@ -226,6 +243,15 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
             h("button", { class: "btn small", onClick: async () => (await api.removeFriend(f.id), refresh(), pollNotifications()) }, "Odrzuć"),
           ),
         );
+        if (n.trades)
+          items.push(
+            h(
+              "button",
+              { class: "pv-notif link-row", onClick: () => (close(), nav({ v: "trades" })) },
+              h("span", { style: "font-size:22px" }, "🔁"),
+              h("div", { class: "pv-notif-text" }, `Propozycje wymiany czekają na Ciebie: ${n.trades}`),
+            ),
+          );
         if (n.unreadMessages)
           items.push(
             h(
@@ -274,7 +300,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
 // wspólne kawałki
 // =====================================================================
 
-function thumb(w: WorldInfo, cls = "g-thumb") {
+export function thumb(w: WorldInfo, cls = "g-thumb") {
   const url = thumbnailUrl(w);
   const fallback = () =>
     h(
@@ -311,13 +337,13 @@ function gameCard(w: WorldInfo, onClick: () => void, extra?: Node) {
   );
 }
 
-function gameGrid(list: WorldInfo[], ctx: Ctx, empty: string) {
+export function gameGrid(list: WorldInfo[], ctx: Ctx, empty: string) {
   if (!list.length) return h("div", { class: "pv-empty" }, icon("search", 36), empty);
   return h("div", { class: "g-grid" }, list.map((w) => gameCard(w, () => ctx.nav({ v: "game", id: w.id }))));
 }
 
-const loading = () => h("div", { class: "pv-loading" }, h("div", { class: "spinner" }));
-const errorBox = (e: unknown, retry?: () => void) =>
+export const loading = () => h("div", { class: "pv-loading" }, h("div", { class: "spinner" }));
+export const errorBox = (e: unknown, retry?: () => void) =>
   h(
     "div",
     { class: "pv-empty" },
@@ -326,7 +352,7 @@ const errorBox = (e: unknown, retry?: () => void) =>
     retry ? h("button", { class: "btn", onClick: retry }, "Spróbuj ponownie") : null,
   );
 
-function sectionHead(title: string, onMore?: () => void) {
+export function sectionHead(title: string, onMore?: () => void) {
   return h(
     "div",
     { class: "pv-section-head" },
@@ -351,6 +377,7 @@ function friendMenu(f: FriendInfo, ctx: Ctx) {
     const p = f.playing;
     actions.push({ label: "Dołącz do gry", kind: "green", onClick: () => (close(), ctx.go("play", { worldId: p.worldId, roomId: p.roomId })) });
   }
+  actions.push({ label: "Profil", onClick: () => (close(), ctx.nav({ v: "profile", name: f.username })) });
   actions.push({ label: "Napisz", kind: "primary", onClick: () => (close(), ctx.nav({ v: "chat", with: f.id })) });
   const close = modal(
     f.username,
@@ -525,6 +552,24 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
       toast((e as Error).message, "error");
     }
   };
+  // ulubione
+  const favBtn = h("button", { class: "btn small pv-fav" }, "☆ Ulubione");
+  let fav = { favorite: false, favorites: 0 };
+  const renderFav = () => {
+    favBtn.textContent = `${fav.favorite ? "★" : "☆"} Ulubione · ${fav.favorites}`;
+    favBtn.classList.toggle("on", fav.favorite);
+  };
+  api.favorite(w.id).then((f) => ((fav = f), renderFav()), () => {});
+  favBtn.addEventListener("click", async () => {
+    try {
+      fav = await api.favorite(w.id, !fav.favorite);
+      renderFav();
+      if (fav.favorite) toast("Dodano do ulubionych ⭐", "good");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  });
+  renderFav();
   likeBtn.addEventListener("click", () => vote(1));
   dislikeBtn.addEventListener("click", () => vote(-1));
   renderVotes();
@@ -541,7 +586,12 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
         "div",
         { class: "pv-game-side" },
         h("h1", null, w.name),
-        h("div", { class: "muted" }, "Twórca: ", h("b", null, w.ownerName)),
+        h(
+          "div",
+          { class: "muted" },
+          "Twórca: ",
+          h("a", { href: "#", class: "pv-link", onClick: (e: Event) => (e.preventDefault(), ctx.nav({ v: "profile", name: w.ownerName })) }, w.ownerName),
+        ),
         h(
           "button",
           {
@@ -552,6 +602,7 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
           icon("play", 34),
         ),
         h("div", { class: "pv-votes" }, likeBtn, bar, dislikeBtn),
+        h("div", { class: "pv-game-extra" }, favBtn, mine ? null : h("button", { class: "btn small ghost", onClick: () => reportDialog("world", w.id, w.name) }, "⚑ Zgłoś")),
         mine
           ? h("button", { class: "btn", onClick: () => ctx.go("studio", { worldId: w.id }) }, icon("edit", 18), " Edytuj w Studio")
           : null,
@@ -567,6 +618,7 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
     ),
     h("h2", null, "Opis"),
     h("p", { class: "pv-desc" }, w.description || "Twórca nie dodał jeszcze opisu."),
+    w.published ? privateServersSection(w, ctx) : "",
     ...(w.badges?.length
       ? [h("h2", null, "Odznaki"), h(
           "div",
@@ -596,7 +648,7 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
   );
 }
 
-function timeAgo(at: number) {
+export function timeAgo(at: number) {
   const m = Math.round((Date.now() - at) / 60000);
   if (m < 1) return "teraz";
   if (m < 60) return `${m} min`;
@@ -645,7 +697,7 @@ async function avatarView(el: HTMLElement) {
 // Czat
 // =====================================================================
 
-function timeLabel(at: number) {
+export function timeLabel(at: number) {
   const d = new Date(at);
   const today = new Date().toDateString() === d.toDateString();
   return today ? d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("pl-PL", { day: "numeric", month: "short" });

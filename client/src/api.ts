@@ -1,4 +1,17 @@
-import type { ChatMessage, Conversation, FriendInfo, PublicUser, WorldData, WorldInfo } from "../../shared/types.ts";
+import type {
+  Avatar,
+  ChatMessage,
+  Conversation,
+  FriendInfo,
+  GroupInfo,
+  GroupMessage,
+  PlayerProfile,
+  PrivateServerInfo,
+  PublicUser,
+  TradeInfo,
+  WorldData,
+  WorldInfo,
+} from "../../shared/types.ts";
 import type { CatalogItem } from "../../shared/catalog.ts";
 
 const LS_SERVER = "predator.server";
@@ -109,11 +122,43 @@ export const api = {
   chatWith: (id: number, after = 0) => req<ChatMessage[]>("GET", `/chat/${id}?after=${after}`),
   sendChat: (id: number, text: string) => req<ChatMessage>("POST", `/chat/${id}`, { text }),
   notifications: () =>
-    req<{ friendRequests: number; unreadMessages: number; coins: number; alerts?: { id: number; text: string; at: number }[] }>(
+    req<{ friendRequests: number; unreadMessages: number; coins: number; trades?: number; alerts?: { id: number; text: string; at: number }[] }>(
       "GET",
       "/notifications",
     ),
   readAlerts: () => req("POST", "/notifications/read"),
+  // społeczność
+  report: (kind: "user" | "world" | "group", targetId: number, reason: string, text: string) =>
+    req("POST", "/reports", { kind, targetId, reason, text }),
+  profile: (name: string) => req<PlayerProfile>("GET", `/users/${encodeURIComponent(name)}/profile`),
+  favorite: (id: number, on?: boolean) =>
+    on === undefined
+      ? req<{ favorite: boolean; favorites: number }>("GET", `/worlds/${id}/favorite`)
+      : req<{ favorite: boolean; favorites: number }>("POST", `/worlds/${id}/favorite`, { on }),
+  groups: (q = "") => req<GroupInfo[]>("GET", "/groups?q=" + encodeURIComponent(q)),
+  myGroups: () => req<GroupInfo[]>("GET", "/groups/mine"),
+  createGroup: (g: { name: string; description: string; icon: string; color: string }) =>
+    req<{ group: GroupInfo; coins: number }>("POST", "/groups", g),
+  group: (id: number) =>
+    req<{ group: GroupInfo; members: { id: number; username: string; avatar: Avatar; role: string; online: boolean }[] }>("GET", "/groups/" + id),
+  editGroup: (id: number, g: { description: string; icon: string; color: string }) => req<GroupInfo>("PUT", "/groups/" + id, g),
+  deleteGroup: (id: number) => req("DELETE", "/groups/" + id),
+  joinGroup: (id: number) => req<GroupInfo>("POST", `/groups/${id}/join`),
+  leaveGroup: (id: number) => req<GroupInfo>("POST", `/groups/${id}/leave`),
+  groupMember: (id: number, uid: number, action: "kick" | "admin" | "member") => req("POST", `/groups/${id}/members/${uid}`, { action }),
+  groupChat: (id: number, after = 0) => req<GroupMessage[]>("GET", `/groups/${id}/chat?after=${after}`),
+  sendGroupChat: (id: number, text: string) => req<GroupMessage>("POST", `/groups/${id}/chat`, { text }),
+  deleteGroupChat: (id: number, msg: number) => req("DELETE", `/groups/${id}/chat/${msg}`),
+  trades: () => req<TradeInfo[]>("GET", "/trades"),
+  tradeable: (name: string) => req<string[]>("GET", `/users/${encodeURIComponent(name)}/tradeable`),
+  proposeTrade: (to: string, give: string[], want: string[]) => req<TradeInfo>("POST", "/trades", { to, give, want }),
+  tradeAction: (id: number, action: "accept" | "decline" | "cancel") =>
+    req<{ trade: TradeInfo; user: PublicUser }>("POST", `/trades/${id}/${action}`),
+  servers: (worldId: number) => req<PrivateServerInfo[]>("GET", `/worlds/${worldId}/servers`),
+  createServer: (worldId: number, name: string) => req<PrivateServerInfo>("POST", `/worlds/${worldId}/servers`, { name }),
+  deleteServer: (id: number) => req("DELETE", "/servers/" + id),
+  newServerCode: (id: number) => req<PrivateServerInfo>("POST", `/servers/${id}/code`),
+  serverByCode: (code: string) => req<{ server: PrivateServerInfo; world: WorldInfo }>("GET", "/servers/code/" + encodeURIComponent(code)),
 };
 
 export interface AdminUser {
@@ -125,6 +170,18 @@ export interface AdminUser {
   createdAt: number;
   online: boolean;
   items: number;
+  mutedUntil: number;
+}
+export interface AdminReport {
+  id: number;
+  kind: "user" | "world" | "group";
+  targetId: number;
+  targetName: string;
+  reporterName: string;
+  reason: string;
+  text: string;
+  status: string;
+  at: number;
 }
 export interface AdminWorld {
   id: number;
@@ -138,7 +195,16 @@ export interface AdminWorld {
 
 /** panel admina - serwer sprawdza, czy konto jest adminem */
 export const adminApi = {
-  stats: () => req<{ users: number; worlds: number; online: number; playing: number; rooms: number; items: number }>("GET", "/admin/stats"),
+  stats: () =>
+    req<{ users: number; worlds: number; online: number; playing: number; rooms: number; items: number; groups: number; reports: number }>(
+      "GET",
+      "/admin/stats",
+    ),
+  mute: (id: number, minutes: number) => req<AdminUser>("POST", `/admin/users/${id}/mute`, { minutes }),
+  reports: (closed = false) => req<AdminReport[]>("GET", "/admin/reports" + (closed ? "?status=closed" : "")),
+  closeReport: (id: number) => req("POST", `/admin/reports/${id}/close`),
+  deleteGroup: (id: number) => req("DELETE", "/admin/groups/" + id),
+  log: () => req<{ id: number; admin: string; action: string; target: string; details: string; at: number }[]>("GET", "/admin/log"),
   users: (q = "") => req<AdminUser[]>("GET", "/admin/users?q=" + encodeURIComponent(q)),
   coins: (id: number, amount: number, set = false) => req<AdminUser>("POST", `/admin/users/${id}/coins`, { amount, set }),
   ban: (id: number, banned: boolean) => req<AdminUser>("POST", `/admin/users/${id}/ban`, { banned }),

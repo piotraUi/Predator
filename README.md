@@ -19,6 +19,13 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 | 💬 **Czat** | dymki nad głowami, filtr wulgaryzmów (PL + EN), ochrona przed spamem |
 | 🧍 **Awatar** | ponad 100 przedmiotów: czapki (uszy kotka i króliczka, jednorożec, dinozaur, żabka, czapka ze śmigłem, kask astronauty…), twarze, **koszulki** (z kotkiem, dinozaurem, pizzą, tęczowa, galaktyka, bluzy z kapturem…), **spodnie** (jeansy, szorty, dres, tęczowe, piżama…), rzeczy na plecy (plecak z misiem, skorupa żółwia, peleryny, skrzydła, plecak odrzutowy) i na szyję; rzadkość przedmiotów, podgląd 3D |
 | 🏅 **Odznaki** | twórca ustawia w Studio nagrody dla graczy: za wejście do gry albo ze skryptu (`awardBadge(player, "Nazwa")`), każda z nagrodą w monetach; każda nowa gra ma od razu odznakę „Witaj w grze!”; twórca dostaje premię i powiadomienie za kolejne progi wizyt (1, 10, 50, 100, 500, 1000…) |
+| 👤 **Profil gracza** | awatar, data założenia konta, odznaki, grupy, ulubione gry (⭐ na stronie gry) i gry twórcy; dodawanie do znajomych, wiadomość, wymiana |
+| 👥 **Grupy (klany)** | tworzenie grupy za 100 monet, logo (emotka + kolor), opis, członkowie z rolami (właściciel, zastępca), wyrzucanie, czat grupy |
+| 🔒 **Prywatne serwery** | na stronie gry: własny serwer, na który wchodzą Twoi znajomi albo osoby z **kodem zaproszenia** (np. `TXW74Q`); nowy kod unieważnia stary |
+| 🔁 **Wymiany i limitowane** | wymiana przedmiotów ze znajomymi (propozycja → przyjmij / odrzuć); limitowane przedmioty z licznikiem sztuk (np. „Diamentowe skrzydła” 25 sztuk) - po wyprzedaniu tylko przez wymianę |
+| 💃 **Emotki w sklepie** | salto, bączek, oklaski, taniec robota, floss, ukłon, pajacyki, zombie - kupione są w menu 😀 w grze i pod `/e salto` |
+| 🎤 **Czat głosowy** | w grze, tylko ze znajomymi, którzy też włączyli głos; wyciszanie siebie i innych, podświetlenie, kto mówi. Działa w aplikacji (.exe, APK) i na stronie przez https (przeglądarka nie da mikrofonu na zwykłym http w sieci lokalnej) |
+| ⚑ **Zgłoszenia i kary** | zgłaszanie graczy, gier i grup z powodem; w panelu admina lista zgłoszeń z szybkimi karami: wyciszenie na czas (15 min – 30 dni, blokuje czat w grach, wiadomości i grupy), blokada konta, ukrycie gry, usunięcie grupy; historia działań adminów |
 | 🛡 **Panel admina** | dla kont **piotrek53_3** i **Predator**: statystyki, szukanie graczy, dawanie monet i przedmiotów, zmiana hasła, blokowanie kont (z wyrzuceniem z gry), ukrywanie, usuwanie i przekazywanie gier, ogłoszenia dla wszystkich |
 | 🧑‍🎤 **Postacie** | edytor postaci w Studio (kolory, twarz, czapka, skala, dodatki doczepione do części ciała), import modeli **.glb** (np. z Blendera, Mixamo), eksport/import **.pchar**; postacie jako NPC albo wygląd wszystkich graczy |
 | 🎞 **Animacje** | edytor animacji z osią czasu i klatkami kluczowymi, gotowe szablony (machanie, disco, ukłon, siedzenie…); animacje jako emotki, na NPC albo ze skryptu |
@@ -56,6 +63,10 @@ Przy pierwszym uruchomieniu powstają przykładowe gry:
 - **🏙️ Predator City**: gra społeczna. Prace w Ratuszu (policjant, lekarz, kucharz) z wypłatą co 30 s, kawiarnia z baristą, park ze stawem i trampoliną, klub disco z kolorowym parkietem i DJ-em, domy z otwieranymi drzwiami, cykl dnia i nocy, rozmowy z NPC. Komendy na czacie: `/pomoc`, `/praca`, `/kasa`.
 - **⚔️ Arena**: miecz i pistolet na start, karabin, młot, apteczki i kawa do podniesienia.
 - **🔥 Tor przeszkód**: skoki nad lawą ze skryptami.
+- **🍕 Pizzeria Tycoon**: zajmij działkę, zarabiaj co sekundę i kupuj po kolei ściany, piec, stoły, dach, neon, fontannę i wieżę.
+- **🙈 Chowany**: jeden gracz szuka z piankowym młotkiem (czeka 15 s w klatce), reszta chowa się w domach, szafach i krzakach. Runda 2 minuty.
+- **🏎️ Wyścigi**: wszyscy startują razem; turbo, błoto, skocznia nad wodą, ruchome spychacze, 3 checkpointy i punkty za miejsca.
+- **🗼 Wieża Piekieł**: spiralna wieża z 6 etapami (lawa, wąskie belki, bujające się i znikające płytki), bez checkpointów, runda 6 minut.
 
 Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` tworzy je od nowa).
 

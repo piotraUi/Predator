@@ -16,6 +16,8 @@ type Go = (screen: string, params?: Record<string, unknown>) => void;
 export interface LaunchParams {
   worldId?: number;
   roomId?: string;
+  /** kod prywatnego serwera */
+  privateCode?: string;
   offline?: { name: string; data: WorldData };
   back?: { screen: string; params?: Record<string, unknown> };
 }
@@ -44,7 +46,9 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
         const client = new Client(wsUrl());
         const r = params.roomId
           ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL })
-          : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL });
+          : params.privateCode
+            ? client.joinOrCreate("private", { worldId: params.worldId, privateCode: params.privateCode, token: getToken(), v: GAME_PROTOCOL })
+            : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL });
         return r.then((x) => x as unknown as GameConnection);
       })();
 

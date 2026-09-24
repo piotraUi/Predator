@@ -5,7 +5,7 @@ import { filterChat } from "../chatFilter.ts";
 import { CollisionWorld, rayBox, raycastParts } from "../physics.ts";
 import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
-import { EMOTES, MAX_HP, MAX_INVENTORY } from "../types.ts";
+import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
 
 const ANIMS: Anim[] = ["idle", "walk", "jump", "fall", "dead", ...EMOTES];
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -26,6 +26,8 @@ export interface SimUser {
   username: string;
   avatar: Avatar;
   isOwner: boolean;
+  /** kupione emotki (brak = wszystkie, np. test w Studio) */
+  emotes?: string[];
 }
 
 export interface SimInfo {
@@ -36,6 +38,7 @@ export interface SimInfo {
 
 interface PlayerState extends NetPlayer {
   isOwner: boolean;
+  emotes?: Set<string>;
   score: number;
   lastTouch: Map<string, number>;
   lastChat: number;
@@ -81,6 +84,7 @@ export class GameSim {
       username: user.username,
       avatar: user.avatar,
       isOwner: user.isOwner,
+      emotes: user.emotes ? new Set(user.emotes) : undefined,
       ...spawn,
       ry: 0,
       anim: "idle",
@@ -196,7 +200,9 @@ export class GameSim {
     p.y = y;
     p.z = z;
     p.ry = finite(v.ry, -10, 10) ?? p.ry;
-    const anim = ANIMS.includes(v.a as Anim) ? (v.a as Anim) : "idle";
+    let anim = ANIMS.includes(v.a as Anim) ? (v.a as Anim) : "idle";
+    // emotka ze sklepu tylko dla tych, którzy ją kupili
+    if (p.emotes && SHOP_EMOTES.includes(anim as ShopEmote) && !p.emotes.has(anim)) anim = "idle";
     // "dead" ustawia tylko serwer
     p.anim = p.dead ? "dead" : anim === "dead" ? "idle" : anim;
   }

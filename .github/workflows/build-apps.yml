@@ -69,6 +69,9 @@ jobs:
           npx cap add android
           npx capacitor-assets generate --android --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff'
           npx cap sync android
+          # mikrofon do czatu głosowego
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          grep -q RECORD_AUDIO android/app/src/main/AndroidManifest.xml
       - name: Zbuduj APK
         working-directory: client/android
         run: ./gradlew assembleDebug
@@ -98,6 +101,7 @@ jobs:
           # pozwól na połączenia http do Twojego serwera gry
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" ios/App/App/Info.plist || true
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" ios/App/App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Mikrofon służy do czatu głosowego ze znajomymi w grze.'" ios/App/App/Info.plist || true
           /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'Predator łączy się z serwerem gry w Twojej sieci.'" ios/App/App/Info.plist || true
       - name: Zbuduj aplikację (bez podpisu)
         working-directory: client/ios/App

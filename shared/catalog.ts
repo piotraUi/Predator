@@ -1,7 +1,10 @@
 // Katalog sklepu z awatarem: czapki, twarze, koszulki, spodnie, rzeczy na plecy i na szyję.
 // Kupuje się je za monety zarobione w grach.
 
-export type ItemType = "hat" | "face" | "shirt" | "pants" | "back" | "neck";
+export type ItemType = "hat" | "face" | "shirt" | "pants" | "back" | "neck" | "emote";
+/** rzeczy zakładane na awatara (emotki się nie zakłada - kupuje się je do menu emotek) */
+export type WearType = Exclude<ItemType, "emote">;
+export const WEAR_TYPES: WearType[] = ["hat", "face", "shirt", "pants", "back", "neck"];
 export type Rarity = "common" | "rare" | "epic" | "legendary";
 
 /** Wzór ubrania - rysowany na płótnie (model 3D i miniaturki) */
@@ -34,6 +37,10 @@ export interface CatalogItem {
   cloth?: ClothSpec;
   /** nowość w sklepie */
   isNew?: boolean;
+  /** limitowany: tyle sztuk w ogóle istnieje, potem tylko wymiana między graczami */
+  limited?: number;
+  /** z serwera: ile sztuk zostało w sklepie (limitowane) */
+  stockLeft?: number;
 }
 
 const hat = (id: string, name: string, price: number, icon: string, color: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "hat", price, icon, color, ...extra });
@@ -42,6 +49,7 @@ const shirt = (id: string, name: string, price: number, icon: string, cloth: Clo
 const pants = (id: string, name: string, price: number, icon: string, cloth: ClothSpec, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "pants", price, icon, cloth, color: cloth.color, ...extra });
 const back = (id: string, name: string, price: number, icon: string, color: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "back", price, icon, color, ...extra });
 const neck = (id: string, name: string, price: number, icon: string, color: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "neck", price, icon, color, ...extra });
+const emote = (id: string, name: string, price: number, icon: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "emote", price, icon, isNew: true, ...extra });
 const N = { isNew: true };
 
 export const CATALOG: CatalogItem[] = [
@@ -165,7 +173,27 @@ export const CATALOG: CatalogItem[] = [
   neck("necklace", "Złoty łańcuch", 90, "📿", "#ffc300", { ...N, rarity: "rare" }),
   neck("medal", "Medal mistrza", 120, "🥇", "#ffc300", { ...N, rarity: "epic" }),
   neck("bandana", "Chusta", 25, "🤠", "#c1121f", N),
+
+  // ---------- limitowane (po wyprzedaniu tylko wymiana) ----------
+  hat("ltd-icecrown", "Lodowa korona", 400, "❄️", "#8fe3ff", { ...N, rarity: "legendary", limited: 100 }),
+  hat("ltd-goldhorns", "Złote rogi", 600, "🐂", "#ffc300", { ...N, rarity: "legendary", limited: 50 }),
+  hat("ltd-galaxyhalo", "Galaktyczna aureola", 350, "🪐", "#9d4edd", { ...N, rarity: "epic", limited: 150 }),
+  back("ltd-firewings", "Ogniste skrzydła", 900, "🔥", "#ff6b00", { ...N, rarity: "legendary", limited: 75 }),
+  back("ltd-diamondwings", "Diamentowe skrzydła", 1500, "💎", "#b9f2ff", { ...N, rarity: "legendary", limited: 25 }),
+
+  // ---------- emotki (do menu 😀 w grze) ----------
+  emote("flip", "Salto", 60, "🤸"),
+  emote("spin", "Bączek", 30, "🌀"),
+  emote("clap", "Oklaski", 20, "👏"),
+  emote("robotdance", "Taniec robota", 50, "🤖", { rarity: "rare" }),
+  emote("floss", "Floss", 80, "🕺", { rarity: "rare" }),
+  emote("bow", "Ukłon", 20, "🙇"),
+  emote("jumpjacks", "Pajacyki", 35, "🤾"),
+  emote("zombie", "Zombie", 45, "🧟"),
 ];
+
+/** emotki do kupienia (nazwa animacji = id przedmiotu) */
+export const PAID_EMOTES = CATALOG.filter((i) => i.type === "emote").map((i) => i.id);
 
 export const ITEM_TYPES: { type: ItemType; label: string; icon: string }[] = [
   { type: "hat", label: "Czapki", icon: "🧢" },
@@ -174,6 +202,7 @@ export const ITEM_TYPES: { type: ItemType; label: string; icon: string }[] = [
   { type: "pants", label: "Spodnie", icon: "👖" },
   { type: "back", label: "Plecy", icon: "🪽" },
   { type: "neck", label: "Szyja", icon: "🎀" },
+  { type: "emote", label: "Emotki", icon: "💃" },
 ];
 
 export const RARITY_LABELS: Record<Rarity, string> = { common: "Zwykły", rare: "Rzadki", epic: "Epicki", legendary: "Legendarny" };

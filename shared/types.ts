@@ -234,12 +234,18 @@ export interface FriendInfo {
   status: "accepted" | "incoming" | "outgoing";
   online: boolean;
   /** gdzie gra znajomy (jeśli gra) */
-  playing?: { worldId: number; worldName: string; roomId: string } | null;
+  playing?: { worldId: number; worldName: string; roomId: string; private?: boolean } | null;
 }
 
-export type Emote = "wave" | "dance" | "cheer" | "point" | "sit";
+/** darmowe emotki (każdy je ma) */
+export type FreeEmote = "wave" | "dance" | "cheer" | "point" | "sit";
+/** emotki ze sklepu */
+export type ShopEmote = "flip" | "spin" | "clap" | "robotdance" | "floss" | "bow" | "jumpjacks" | "zombie";
+export type Emote = FreeEmote | ShopEmote;
 export type Anim = "idle" | "walk" | "jump" | "fall" | "dead" | Emote;
-export const EMOTES: Emote[] = ["wave", "dance", "cheer", "point", "sit"];
+export const FREE_EMOTES: FreeEmote[] = ["wave", "dance", "cheer", "point", "sit"];
+export const SHOP_EMOTES: ShopEmote[] = ["flip", "spin", "clap", "robotdance", "floss", "bow", "jumpjacks", "zombie"];
+export const EMOTES: Emote[] = [...FREE_EMOTES, ...SHOP_EMOTES];
 /** Jednorazowe animacje akcji narzędzi */
 export type ActionAnim = "swing" | "shoot" | "use";
 
@@ -278,3 +284,76 @@ export const MAX_PLAYERS_LIMIT = 50;
 export const DEFAULT_MAX_PLAYERS = 30;
 export const MAX_INVENTORY = 9;
 export const MAX_HP = 100;
+
+// ---------- społeczność ----------
+
+export const REPORT_REASONS = ["Brzydkie słowa", "Nękanie / wyzywanie", "Oszukiwanie", "Spam", "Nieodpowiednie treści", "Podszywanie się", "Inne"] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+
+export interface PlayerProfile {
+  id: number;
+  username: string;
+  avatar: Avatar;
+  createdAt: number;
+  admin: boolean;
+  banned: boolean;
+  online: boolean;
+  playing: FriendInfo["playing"];
+  friendStatus: "me" | "none" | "friends" | "incoming" | "outgoing";
+  friends: number;
+  badges: { name: string; icon: string; worldId: number; worldName: string; earnedAt: number }[];
+  favorites: WorldInfo[];
+  creations: WorldInfo[];
+  groups: { id: number; name: string; icon: string; color: string; role: string }[];
+  /** ile ma przedmiotów ze sklepu */
+  items: number;
+}
+
+export const GROUP_PRICE = 100;
+export const GROUP_ICONS = ["⚔️", "🛡️", "👑", "🔥", "⚡", "🐉", "🦁", "🐺", "🦊", "🐱", "🐶", "🦄", "🐸", "🦖", "🚀", "🌟", "💎", "🎮", "⚽", "🏀", "🎵", "🌈", "🍕", "💀", "🤖", "👾", "🏰", "🌊", "🍀", "❤️"];
+export const GROUP_COLORS = ["#e63946", "#f77f00", "#fcbf49", "#2a9d8f", "#06d6a0", "#3a86ff", "#4361ee", "#7209b7", "#f72585", "#1b1b1b", "#6c757d", "#8d5524"];
+
+export interface GroupInfo {
+  id: number;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  ownerName: string;
+  createdAt: number;
+  members: number;
+  myRole: "owner" | "admin" | "member" | null;
+}
+
+export interface GroupMessage {
+  id: number;
+  text: string;
+  at: number;
+  userId: number;
+  username: string;
+  avatar: Avatar;
+}
+
+export interface TradeInfo {
+  id: number;
+  fromName: string;
+  toName: string;
+  /** czy to ja wysłałem propozycję */
+  mine: boolean;
+  /** przedmioty od wysyłającego */
+  give: string[];
+  /** przedmioty, które wysyłający chce dostać */
+  want: string[];
+  status: "pending" | "accepted" | "declined" | "cancelled" | "failed";
+  at: number;
+}
+
+export interface PrivateServerInfo {
+  id: number;
+  worldId: number;
+  name: string;
+  ownerName: string;
+  mine: boolean;
+  code: string;
+  playing: number;
+}

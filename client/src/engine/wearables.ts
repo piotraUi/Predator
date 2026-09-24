@@ -224,6 +224,31 @@ export function buildHat(scene: Scene, hat: string, parent: TransformNode, mat: 
       RAINBOW.forEach((c, i) => k.cyl(1.25 - i * 0.12, 1.25 - i * 0.12, 0.12, c, 0, 0.06 + i * 0.12, 0));
       k.box(1.1, 0.08, 0.7, "#ff4d6d", 0, 0, -0.75);
       break;
+    case "ltd-icecrown":
+      k.cyl(1.1, 1.1, 0.35, "#bdefff", 0, 0.12, 0, true);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        k.cyl(0, 0.22, i % 2 ? 0.5 : 0.8, "#8fe3ff", Math.cos(a) * 0.47, i % 2 ? 0.52 : 0.67, Math.sin(a) * 0.47, true, 4);
+      }
+      k.sphere(0.2, "#ffffff", 0, 0.14, -0.56, true);
+      break;
+    case "ltd-goldhorns":
+      for (const sd of [-1, 1]) {
+        const h1 = k.cyl(0.18, 0.34, 0.6, "#ffc300", sd * 0.5, 0.25, 0, true, 12);
+        h1.rotation.z = -sd * 0.6;
+        const h2 = k.cyl(0.02, 0.18, 0.55, "#ffe066", sd * 0.78, 0.68, 0, true, 12);
+        h2.rotation.z = -sd * 0.15;
+      }
+      break;
+    case "ltd-galaxyhalo": {
+      const t1 = k.torus(1.2, 0.12, "#9d4edd", 0, 0.6, 0, true);
+      spin = t1;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        k.sphere(0.12, i % 2 ? "#ffd6ff" : "#4cc9f0", Math.cos(a) * 0.6, 0.6, Math.sin(a) * 0.6, true).parent = t1;
+      }
+      break;
+    }
     case "predatorcrown":
       k.cyl(1.15, 1.15, 0.35, "#1b1b1b", 0, 0.12, 0);
       for (let i = 0; i < 5; i++) {
@@ -323,6 +348,12 @@ export function buildBack(scene: Scene, id: string, torso: TransformNode, mat: M
       break;
     case "predator-wings":
       wings("#1b1b1b", "#e63946", "dragon");
+      break;
+    case "ltd-firewings":
+      wings("#ff6b00", "#ffd000", "dragon");
+      break;
+    case "ltd-diamondwings":
+      wings("#b9f2ff", "#ffffff", "angel");
       break;
     case "jetpack":
       for (const s of [-1, 1]) {

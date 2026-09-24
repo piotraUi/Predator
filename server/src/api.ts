@@ -18,6 +18,7 @@ import {
 import { config } from "./config.ts";
 import { alerts, badges, friends, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
+import { mutes, stock, trades } from "./social.ts";
 
 export const api = express.Router();
 // gry mogą zawierać modele 3D postaci (.glb), więc limit jest duży
@@ -46,12 +47,12 @@ function worldInfo(w: WorldListRow): WorldInfo {
   };
 }
 
-const infoById = (id: number) => {
+export const infoById = (id: number) => {
   const row = worlds.listRow(id);
   return row ? worldInfo(row) : undefined;
 };
 
-const parseAvatar = (json: string): Avatar => {
+export const parseAvatar = (json: string): Avatar => {
   try {
     return { ...DEFAULT_AVATAR, ...JSON.parse(json) };
   } catch {
@@ -101,7 +102,10 @@ api.get("/me", requireAuth, (req, res) => {
 
 // ---------- Awatar i sklep ----------
 
-api.get("/catalog", (_req, res) => res.json(CATALOG));
+api.get("/catalog", (_req, res) => {
+  const sold = stock.all();
+  res.json(CATALOG.map((i) => (i.limited ? { ...i, stockLeft: Math.max(0, i.limited - (sold[i.id] ?? 0)) } : i)));
+});
 
 api.put("/avatar", requireAuth, (req, res) => {
   const user = toPublicUser((req as AuthedRequest).user);
@@ -134,6 +138,8 @@ api.post("/buy", requireAuth, (req, res) => {
   if (user.inventory.includes(item.id)) return fail(res, 400, "Już to masz");
   if (item.offsale) return fail(res, 400, "Tego nie da się kupić");
   if (user.coins < item.price) return fail(res, 400, "Za mało monet");
+  // limitowane: ostatnie sztuki - rezerwacja przed zapłatą
+  if (item.limited && !stock.take(item.id, item.limited)) return fail(res, 400, "Wyprzedane! Zdobądź go przez wymianę");
   users.addCoins(user.id, -item.price);
   users.setInventory(user.id, [...user.inventory, item.id]);
   res.json({ user: toPublicUser(users.byId(user.id)!) });
@@ -333,6 +339,8 @@ api.post("/chat/:id", requireAuth, (req, res) => {
   const now = Date.now();
   if (now - (lastSent.get(me.id) ?? 0) < 500) return fail(res, 429, "Za szybko - chwilę poczekaj");
   lastSent.set(me.id, now);
+  const muted = mutes.message(me.id);
+  if (muted) return fail(res, 403, muted);
   const text = filterChat(String(req.body?.text ?? ""));
   if (!text) return fail(res, 400, "Pusta wiadomość");
   const id = messages.send(me.id, other, text);
@@ -348,6 +356,7 @@ api.get("/notifications", requireAuth, (req, res) => {
     friendRequests: requests,
     unreadMessages: messages.unreadCount(me.id),
     coins: users.byId(me.id)?.coins ?? 0,
+    trades: trades.incoming(me.id),
     alerts: alerts.unread(me.id).map((a) => ({ id: a.id, text: a.text, at: a.created_at })),
   });
 });

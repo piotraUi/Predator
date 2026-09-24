@@ -155,6 +155,36 @@ function drawHat(ctx: CanvasRenderingContext2D, hat: string) {
         ctx.fill();
       }
       break;
+    case "ltd-icecrown":
+    case "ltd-goldhorns":
+    case "ltd-galaxyhalo": {
+      const c = findItem(hat)?.color ?? "#888";
+      ctx.fillStyle = c;
+      ctx.strokeStyle = c;
+      if (hat === "ltd-icecrown") {
+        ctx.beginPath();
+        ctx.moveTo(32, 42);
+        for (let i = 0; i <= 8; i++) ctx.lineTo(32 + i * 8, i % 2 ? 26 : 8);
+        ctx.lineTo(96, 42);
+        ctx.fill();
+      } else if (hat === "ltd-goldhorns") {
+        for (const sd of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(64 + sd * 20, 34);
+          ctx.quadraticCurveTo(64 + sd * 44, 26, 64 + sd * 40, 2);
+          ctx.quadraticCurveTo(64 + sd * 34, 22, 64 + sd * 28, 36);
+          ctx.fill();
+        }
+      } else {
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.ellipse(64, 12, 28, 8, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "#4cc9f0";
+        for (const x of [40, 64, 88]) ctx.fillRect(x - 2, 10, 4, 4);
+      }
+      break;
+    }
     case "chef":
       ctx.fillStyle = "#fff";
       ctx.strokeStyle = "#b8bcc4";

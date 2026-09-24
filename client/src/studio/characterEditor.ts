@@ -1,7 +1,7 @@
 // Edytor postaci: kolory, twarz, czapka, skala, dodatki doczepione do części ciała i zaimportowany model 3D.
 import { ArcRotateCamera, Color4, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
 import { JOINT_LABELS } from "../../../shared/anim.ts";
-import { CATALOG, DEFAULT_AVATAR, type ItemType } from "../../../shared/catalog.ts";
+import { CATALOG, DEFAULT_AVATAR, type WearType } from "../../../shared/catalog.ts";
 import { CHAR_EXT, fileNameFor, makeCharacterFile } from "../../../shared/gamefile.ts";
 import type { Accessory, AnimDef, CharacterDef, Joint, PartShape } from "../../../shared/types.ts";
 import { JOINTS } from "../../../shared/types.ts";
@@ -55,7 +55,7 @@ export function openCharacterEditor(
     });
     return h("label", { class: "prop" }, h("span", null, label), inp);
   };
-  const itemSelect = (type: ItemType) => {
+  const itemSelect = (type: WearType) => {
     const sel = h(
       "select",
       null,

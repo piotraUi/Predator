@@ -3,6 +3,7 @@ import { GAME_EXT, parseGameFile, type GameMeta } from "../../../shared/gamefile
 import type { WorldData } from "../../../shared/types.ts";
 import { demoArena, demoObby, emptyWorld } from "../../../shared/world.ts";
 import { demoCity } from "../../../shared/demos/city.ts";
+import { demoHideSeek, demoRace, demoTower, demoTycoon } from "../../../shared/demos/minigames.ts";
 import { emptyWorld2D } from "../../../shared/world2d.ts";
 import { pickFile } from "../files.ts";
 import { session } from "../state.ts";
@@ -16,6 +17,10 @@ const TEMPLATES: { icon: string; name: string; description: string; make: () => 
   { icon: "🏙️", name: "Predator City", description: "Miasto do spotkań z ludźmi, prace, kawiarnia, disco", make: demoCity },
   { icon: "⚔️", name: "Arena", description: "Walka na miecze i pistolety", make: demoArena },
   { icon: "🔥", name: "Tor przeszkód", description: "Skoki nad lawą ze skryptami", make: demoObby },
+  { icon: "🍕", name: "Pizzeria Tycoon", description: "Zarabiaj i rozbudowuj pizzerię", make: demoTycoon },
+  { icon: "🙈", name: "Chowany", description: "Jeden szuka, reszta się chowa", make: demoHideSeek },
+  { icon: "🏎️", name: "Wyścigi", description: "Tor z turbo, skocznią i metą", make: demoRace },
+  { icon: "🗼", name: "Wieża Piekieł", description: "Wespnij się na szczyt, zanim minie czas", make: demoTower },
 ];
 
 export function offlineScreen(root: HTMLElement, _p: unknown, go: Go) {

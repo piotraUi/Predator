@@ -2,7 +2,7 @@
 
 interface Presence {
   lastSeen: number;
-  playing: { worldId: number; worldName: string; roomId: string } | null;
+  playing: { worldId: number; worldName: string; roomId: string; private?: boolean } | null;
 }
 
 const map = new Map<number, Presence>();
@@ -10,6 +10,8 @@ const ONLINE_MS = 60_000;
 
 /** Ile osób gra w danym świecie */
 const worldCounts = new Map<number, number>();
+/** Ile osób gra na prywatnym serwerze (po kodzie) */
+const privateCounts = new Map<string, number>();
 
 export const presence = {
   touch(userId: number) {
@@ -34,6 +36,12 @@ export const presence = {
     else worldCounts.set(worldId, n);
   },
   worldCount: (worldId: number) => worldCounts.get(worldId) ?? 0,
+  setPrivateCount(code: string, delta: number) {
+    const n = (privateCounts.get(code) ?? 0) + delta;
+    if (n <= 0) privateCounts.delete(code);
+    else privateCounts.set(code, n);
+  },
+  privateCount: (code: string) => privateCounts.get(code) ?? 0,
   /** ile osób jest teraz online i ile gra */
   stats() {
     let online = 0, playing = 0;

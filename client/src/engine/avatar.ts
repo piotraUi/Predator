@@ -461,6 +461,10 @@ export class AvatarModel {
     const body = this.body;
     let bodyY = 0;
     let bodyRot = 0;
+    /** pochylenie / salto (oś X) i obrót bez wygładzania (bączek) */
+    let bodyTilt = 0;
+    let bodyTiltDirect: number | null = null;
+    let bodyRotDirect: number | null = null;
     const t = this.t;
     switch (this.anim) {
       case "wave":
@@ -497,9 +501,91 @@ export class AvatarModel {
         lerp(ra, 0.5, 10);
         bodyY = -1.6;
         break;
+      // ---- emotki ze sklepu ----
+      case "flip": {
+        const p = (t % 1.3) / 1.3;
+        const up = Math.sin(Math.min(1, p / 0.85) * Math.PI);
+        bodyY = up * 3.2;
+        bodyTiltDirect = p < 0.85 ? -(p / 0.85) * Math.PI * 2 : 0;
+        lerp(la, Math.PI * 0.9, 16);
+        lerp(ra, Math.PI * 0.9, 16);
+        lerp(ll, up * 1.2, 16);
+        lerp(rl, up * 1.2, 16);
+        break;
+      }
+      case "spin":
+        bodyRotDirect = (t * 9) % (Math.PI * 2);
+        lerpZ(la, 1.4, 12);
+        lerpZ(ra, -1.4, 12);
+        bodyY = 0.2;
+        break;
+      case "clap": {
+        const c = Math.abs(Math.sin(t * 7));
+        lerp(la, HOLD * 0.9, 14);
+        lerp(ra, HOLD * 0.9, 14);
+        lerpZ(la, -0.15 - c * 0.45, 20);
+        lerpZ(ra, 0.15 + c * 0.45, 20);
+        break;
+      }
+      case "robotdance": {
+        const step = Math.floor(t * 3) % 4;
+        lerp(la, step === 0 || step === 3 ? HOLD : 0, 30);
+        lerp(ra, step === 1 || step === 2 ? HOLD : 0, 30);
+        lerpZ(la, step === 2 ? 0.8 : 0, 30);
+        lerpZ(ra, step === 0 ? -0.8 : 0, 30);
+        bodyRot = step % 2 ? 0.35 : -0.35;
+        break;
+      }
+      case "floss": {
+        const f = Math.sin(t * 9);
+        lerp(la, f * 0.45, 20);
+        lerp(ra, -f * 0.45, 20);
+        lerpZ(la, f * 0.7 - 0.1, 20);
+        lerpZ(ra, f * 0.7 + 0.1, 20);
+        bodyRot = -f * 0.25;
+        bodyY = Math.abs(f) * 0.15;
+        break;
+      }
+      case "bow":
+        bodyTilt = 0.75;
+        lerp(la, -0.2, 10);
+        lerp(ra, 0.9, 10);
+        lerpZ(ra, 0.5, 10);
+        break;
+      case "jumpjacks": {
+        const j = Math.abs(Math.sin(t * 5));
+        lerpZ(la, j * 2.7, 24);
+        lerpZ(ra, -j * 2.7, 24);
+        lerpZ(ll, j * 0.35, 24);
+        lerpZ(rl, -j * 0.35, 24);
+        bodyY = j * 0.8;
+        break;
+      }
+      case "zombie": {
+        const w = Math.sin(t * 3);
+        lerp(la, HOLD + w * 0.1, 10);
+        lerp(ra, HOLD - w * 0.1, 10);
+        lerp(ll, w * 0.3, 10);
+        lerp(rl, -w * 0.3, 10);
+        bodyRot = Math.sin(t * 1.5) * 0.25;
+        bodyTilt = 0.15;
+        break;
+      }
     }
     body.position.y += (bodyY - body.position.y) * Math.min(1, dt * 14);
-    body.rotation.y += (bodyRot - body.rotation.y) * Math.min(1, dt * 10);
+    if (bodyRotDirect !== null) body.rotation.y = bodyRotDirect;
+    else {
+      // po bączku wracamy najkrótszą drogą
+      if (Math.abs(body.rotation.y) > Math.PI) body.rotation.y -= Math.sign(body.rotation.y) * Math.PI * 2;
+      body.rotation.y += (bodyRot - body.rotation.y) * Math.min(1, dt * 10);
+    }
+    if (bodyTiltDirect !== null) body.rotation.x = bodyTiltDirect;
+    else body.rotation.x += (bodyTilt - body.rotation.x) * Math.min(1, dt * 10);
+    // nogi wracają z rozkroku (pajacyki)
+    if (this.anim !== "jumpjacks") {
+      lerpZ(ll, 0, 12);
+      lerpZ(rl, 0, 12);
+    }
 
     // ---- animacje z edytora animacji ----
     if (this.previewPose) this.applyPose(this.previewPose);

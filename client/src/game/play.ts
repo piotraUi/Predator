@@ -15,9 +15,10 @@ import { Client } from "colyseus.js";
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { LocalRoom, type GameConnection } from "./connection.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, Emote, NetPlayer, Part, ToolDef, WorldData } from "../../../shared/types.ts";
-import { EMOTES } from "../../../shared/types.ts";
+import { EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
+import { VoiceChat } from "./voice.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
 import { CollisionWorld, PLAYER_RADIUS, raycastParts, stepBody, type Body } from "../../../shared/physics.ts";
@@ -54,6 +55,14 @@ const EMOTE_LABELS: Record<Emote, string> = {
   cheer: "🙌 Wiwatuj",
   point: "👉 Wskaż",
   sit: "🪑 Usiądź",
+  flip: "🤸 Salto",
+  spin: "🌀 Bączek",
+  clap: "👏 Oklaski",
+  robotdance: "🤖 Robot",
+  floss: "🕺 Floss",
+  bow: "🙇 Ukłon",
+  jumpjacks: "🤾 Pajacyki",
+  zombie: "🧟 Zombie",
 };
 /** komendy czatu: /e taniec, /e dance ... */
 const EMOTE_ALIASES: Record<string, Emote> = {
@@ -62,6 +71,8 @@ const EMOTE_ALIASES: Record<string, Emote> = {
   cheer: "cheer", wiwat: "cheer", wiwatuj: "cheer",
   point: "point", wskaz: "point", "wskaż": "point",
   sit: "sit", siad: "sit", usiadz: "sit", "usiądź": "sit",
+  flip: "flip", salto: "flip", spin: "spin", baczek: "spin", "bączek": "spin", clap: "clap", oklaski: "clap",
+  robot: "robotdance", floss: "floss", bow: "bow", uklon: "bow", "ukłon": "bow", pajacyki: "jumpjacks", zombie: "zombie",
 };
 
 const WALK_SPEED = 16;
@@ -99,6 +110,8 @@ export function playScreen(
   const back = () => go(params.back?.screen ?? "home", params.back?.params);
   // w trybie offline gramy bez konta - domyślny wygląd
   const me = session.user ?? { id: 0, username: "Gracz", coins: 0, avatar: DEFAULT_AVATAR, inventory: [] };
+  // emotki ze sklepu - tylko kupione (w teście offline wszystkie)
+  const hasEmote = (e: Emote) => (FREE_EMOTES as Emote[]).includes(e) || !!params.offline || me.inventory.includes(e);
 
   const join: Promise<GameConnection> = params.conn
     ? Promise.resolve(params.conn)
@@ -388,9 +401,10 @@ export function playScreen(
     const emoteMenu = h(
       "div",
       { class: "emote-menu hidden" },
-      EMOTES.map((e) =>
+      EMOTES.filter(hasEmote).map((e) =>
         h("button", { class: "btn small", onClick: () => (startEmote(e), emoteMenu.classList.add("hidden")) }, EMOTE_LABELS[e]),
       ),
+      SHOP_EMOTES.some((e) => !hasEmote(e)) ? h("div", { class: "emote-more" }, "Więcej emotek: Awatar → 💃 Emotki") : null,
       // animacje zrobione w edytorze animacji i oznaczone jako emotki
       init.world.animations
         .filter((a) => a.emote)
@@ -443,6 +457,13 @@ export function playScreen(
     hotbar.set(toolDefs(init.inventory));
 
     wrap.append(topbar, chatBox, board, consoleBox, menu, hpBox, hurt, emoteMenu, actionBtn);
+    // czat głosowy ze znajomymi (tylko w grze na serwerze)
+    if (!params.offline) {
+      const voice = new VoiceChat(r, init.you);
+      topbar.insertBefore(voice.button, topbar.querySelector(".hud-title"));
+      wrap.append(voice.panel);
+      cleanups.push(() => voice.dispose());
+    }
 
     const addChat = (m: ChatMsg) => {
       const line = m.system
@@ -464,7 +485,8 @@ export function playScreen(
         const em = /^\/e(?:mote)?\s+(\S+)/i.exec(t);
         if (em) {
           const e = EMOTE_ALIASES[em[1].toLowerCase()];
-          if (e) startEmote(e);
+          if (e && hasEmote(e)) startEmote(e);
+          else if (e) toast("Tę emotkę kupisz w sklepie: Awatar → 💃 Emotki", "info");
           else toast("Emotki: /e wave, dance, cheer, point, sit", "info");
         } else if (t) r.send("chat", t);
         chatInput.value = "";

@@ -10,8 +10,10 @@ import path from "node:path";
 import type { WorldData } from "../../shared/types.ts";
 import { demoArena, demoObby, welcomeBadge } from "../../shared/world.ts";
 import { demoCity } from "../../shared/demos/city.ts";
+import { MINIGAMES } from "../../shared/demos/minigames.ts";
 import { api } from "./api.ts";
 import { admin } from "./admin.ts";
+import { social } from "./socialApi.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
 import { config } from "./config.ts";
 import { users, worlds } from "./db.ts";
@@ -26,6 +28,7 @@ app.use(compression());
 app.use(cors());
 app.use("/api/admin", admin);
 app.use("/api", api);
+app.use("/api", social);
 app.get("/health", (_req, res) => res.json({ ok: true, name: "Predator" }));
 
 // gra w przeglądarce - serwujemy zbudowanego klienta
@@ -56,6 +59,8 @@ if (fs.existsSync(config.clientDist)) {
 const server = http.createServer(app);
 const gameServer = new Server({ greet: false, transport: new WebSocketTransport({ server }) });
 gameServer.define("world", WorldRoom).filterBy(["worldId"]);
+// prywatne serwery - osobna nazwa, żeby zwykłe "Graj" nigdy do nich nie trafiło
+gameServer.define("private", WorldRoom).filterBy(["worldId", "privateCode"]);
 
 // przykładowe gry - tworzone, jeśli ich jeszcze nie ma
 /** gra z pliku .pgame w folderze games/ (np. przeniesiona z GDevelopa) */
@@ -72,6 +77,7 @@ if (fs.existsSync(path.join(config.gamesDir, "Ludzik 4.pgame")))
     fromFile("Ludzik 4.pgame"),
     "ludzik",
   ]);
+for (const m of MINIGAMES) demos.push([m.name, m.description, m.make, m.thumb]);
 // konto Predator: zawsze jest, ma swój wygląd, wszystkie przedmioty i jest adminem
 const owner = setupPredatorAccount();
 for (const [name, description, make, thumb] of demos) {
