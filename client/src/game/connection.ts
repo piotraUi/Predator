@@ -1,6 +1,7 @@
 // Połączenie z grą: prawdziwy serwer (Colyseus) albo lokalny pokój w przeglądarce (testy offline).
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
+import { Sim2D } from "../../../shared/sim/sim2d.ts";
 import type { Avatar, WorldData } from "../../../shared/types.ts";
 
 export interface GameConnection {
@@ -17,15 +18,17 @@ export interface GameConnection {
  */
 export class LocalRoom implements GameConnection {
   private handlers = new Map<string, (msg: never) => void>();
+  private any: ((type: string, msg: unknown) => void) | null = null;
   private queue = new Map<string, unknown[]>();
-  private sim: GameSim;
+  private sim: GameSim | Sim2D;
   private timer: number;
   private readonly sid = "local";
 
   constructor(data: WorldData, name: string, user: { username: string; avatar?: Avatar }) {
     // kopia, żeby skrypty w teście nie zmieniały edytowanego świata
     const copy = structuredClone(data);
-    this.sim = new GameSim(
+    const Sim = copy.mode === "2d" ? Sim2D : GameSim;
+    this.sim = new Sim(
       copy,
       {
         send: (_sid, type, msg) => this.deliver(type, msg),
@@ -43,6 +46,7 @@ export class LocalRoom implements GameConnection {
     // kopia jak przy wysyłce przez sieć - gra nie może zmieniać obiektów symulacji
     const m = msg === undefined ? undefined : structuredClone(msg);
     queueMicrotask(() => {
+      if (this.any) return this.any(type, m);
       const h = this.handlers.get(type);
       if (h) h(m as never);
       else {
@@ -60,6 +64,13 @@ export class LocalRoom implements GameConnection {
       this.queue.delete(type);
       for (const m of q) cb(m as never);
     }
+  }
+
+  /** wszystkie wiadomości do jednej funkcji (używa tego BufferedConnection) */
+  onAny(cb: (type: string, msg: unknown) => void) {
+    this.any = cb;
+    for (const [type, list] of this.queue) for (const m of list) cb(type, m);
+    this.queue.clear();
   }
 
   send(type: string, msg?: unknown) {

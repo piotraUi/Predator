@@ -2,6 +2,7 @@
 // Tu zostaje tylko to, co wymaga serwera: logowanie, monety, wizyty i status znajomych.
 import { Room, type Client } from "colyseus";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
+import { Sim2D } from "../../../shared/sim/sim2d.ts";
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
@@ -9,11 +10,11 @@ import { toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.
 import { presence } from "../presence.ts";
 
 const TICK_MS = 50; // 20 razy na sekundę
-const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned"];
+const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto"];
 
 export class WorldRoom extends Room {
   private world!: WorldRow;
-  private sim!: GameSim;
+  private sim!: GameSim | Sim2D;
   private joinedAt = new Map<string, { userId: number; at: number }>();
 
   onCreate(options: { worldId?: number }) {
@@ -24,9 +25,11 @@ export class WorldRoom extends Room {
     this.autoDispose = true;
     this.setMetadata({ worldId: world.id, name: world.name });
 
-    this.sim = new GameSim(
-      // sanitizeWorld uzupełnia też brakujące pola w starszych zapisach
-      sanitizeWorld(JSON.parse(world.data)),
+    // sanitizeWorld uzupełnia też brakujące pola w starszych zapisach
+    const data = sanitizeWorld(JSON.parse(world.data));
+    const Sim = data.mode === "2d" ? Sim2D : GameSim;
+    this.sim = new Sim(
+      data,
       {
         send: (sid, type, msg) => this.clients.find((c) => c.sessionId === sid)?.send(type, msg),
         broadcast: (type, msg, exceptSid) => {

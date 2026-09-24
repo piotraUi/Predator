@@ -12,6 +12,8 @@ export const config = {
   clientDist: path.join(root, "client", "dist"),
   /** Pliki dołączone do serwera (np. miniaturki przykładowych gier) */
   assetsDir: path.join(root, "server", "assets"),
+  /** gry .pgame dołączone do serwera */
+  gamesDir: path.join(root, "games"),
   /** Monety za każdą minutę grania */
   coinsPerMinute: 2,
   /** Maksymalnie monet z grania na dzień */

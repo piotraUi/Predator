@@ -38,7 +38,7 @@ interface Remote {
   tx: number; ty: number; tz: number; tr: number;
 }
 
-interface InitMsg {
+export interface InitMsg {
   you: string;
   world: Omit<WorldData, "scripts">;
   info: { id: number; name: string; ownerName: string; isOwner: boolean };
@@ -77,6 +77,9 @@ export function playScreen(
     offline?: { name: string; data: WorldData };
     /** dokąd wrócić po wyjściu z gry */
     back?: { screen: string; params?: Record<string, unknown> };
+    /** połączenie już nawiązane przez ekran startu gry (launch.ts) */
+    conn?: GameConnection;
+    init?: InitMsg;
   },
   go: (screen: string, params?: Record<string, unknown>) => void,
 ): () => void {
@@ -96,7 +99,9 @@ export function playScreen(
   // w trybie offline gramy bez konta - domyślny wygląd
   const me = session.user ?? { id: 0, username: "Gracz", coins: 0, avatar: DEFAULT_AVATAR, inventory: [] };
 
-  const join: Promise<GameConnection> = params.offline
+  const join: Promise<GameConnection> = params.conn
+    ? Promise.resolve(params.conn)
+    : params.offline
     ? Promise.resolve(new LocalRoom(params.offline.data, params.offline.name, me))
     : (() => {
         const client = new Client(wsUrl());
@@ -123,7 +128,8 @@ export function playScreen(
         return;
       }
       room = r;
-      r.onMessage("init", (m: InitMsg) => start(r, m));
+      if (params.init) start(r, params.init);
+      else r.onMessage("init", (m: InitMsg) => start(r, m));
       r.onLeave((code) => {
         if (!leaving && !disposed) {
           toast(code === 4000 ? "Wyrzucono z gry" : "Rozłączono z serwerem", "error");

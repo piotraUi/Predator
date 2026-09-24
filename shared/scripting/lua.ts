@@ -40,12 +40,16 @@ export interface ScriptHost {
   setSky(color: string): void;
 }
 
+/** Wartość przekazywana między Lua a JS w dodatkowych funkcjach */
+export type LuaValue = string | number | boolean | null | undefined | LuaValue[];
+export type LuaFn = (...args: LuaValue[]) => LuaValue | void;
+
 /** 1000 instrukcji * 300 = 300 tys. instrukcji na jedno wywołanie */
 const HOOK_EVERY = 1000;
 const MAX_HOOKS = 300;
 
 const PRELUDE = `
-local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {} }
+local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {} }
 local tasks = {}
 local now = 0
 
@@ -78,6 +82,8 @@ function onRespawn(fn) table.insert(handlers.respawn, fn) end
 function onDied(fn) table.insert(handlers.died, fn) end
 -- onToolUse(function(player, toolName) ... end)
 function onToolUse(fn) table.insert(handlers.tool, fn) end
+-- gry 2D: onLevelEnter(function(player, levelName) ... end)
+function onLevelEnter(fn) table.insert(handlers.level, fn) end
 function onTouch(partName, fn)
   local list = handlers.touch[partName]
   if not list then
@@ -369,6 +375,58 @@ export class LuaEngine {
       h.setHealth(this.str(L, 1), lauxlib.luaL_checknumber(L, 2));
       return 0;
     });
+  }
+
+  /**
+   * Dodatkowe funkcje dla skryptów (np. gry 2D). Argumenty: liczby, teksty, true/false, nil.
+   * Tablica jako wynik = tablica Lua (lista).
+   */
+  defineFunctions(fns: Record<string, LuaFn>) {
+    const L = this.L;
+    for (const [name, fn] of Object.entries(fns)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      lua.lua_pushjsfunction(L, (L: any) => {
+        const n = lua.lua_gettop(L);
+        const args: LuaValue[] = [];
+        for (let i = 1; i <= n; i++) {
+          const t = lua.lua_type(L, i);
+          if (t === lua.LUA_TNUMBER) args.push(lua.lua_tonumber(L, i));
+          else if (t === lua.LUA_TSTRING) args.push(to_jsstring(lua.lua_tostring(L, i)));
+          else if (t === lua.LUA_TBOOLEAN) args.push(lua.lua_toboolean(L, i));
+          else args.push(null);
+        }
+        let res: LuaValue | void;
+        try {
+          res = fn(...args);
+        } catch (e) {
+          return lauxlib.luaL_error(L, to_luastring(name + ": " + ((e as Error).message ?? e)));
+        }
+        const push = (v: LuaValue | void) => {
+          if (typeof v === "number") lua.lua_pushnumber(L, v);
+          else if (typeof v === "string") lua.lua_pushstring(L, to_luastring(v));
+          else if (typeof v === "boolean") lua.lua_pushboolean(L, v);
+          else lua.lua_pushnil(L);
+        };
+        if (Array.isArray(res)) {
+          // lista jako tablica Lua
+          lua.lua_createtable(L, res.length, 0);
+          res.forEach((v, i) => {
+            push(v as LuaValue);
+            lua.lua_rawseti(L, -2, i + 1);
+          });
+          return 1;
+        }
+        if (res === undefined) return 0;
+        push(res);
+        return 1;
+      });
+      lua.lua_setglobal(L, to_luastring(name));
+    }
+  }
+
+  /** Wywołuje zdarzenie ze skryptów (np. "level" dla onLevelEnter) */
+  fire(kind: string, a: string | number, b: string | number = "") {
+    this.call("__fire", kind, a, b);
   }
 
   /** Wywołuje globalną funkcję Lua z argumentami (tekst lub liczba) z limitem instrukcji. */

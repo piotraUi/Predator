@@ -796,3 +796,13 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
   .pv-logo .logo-img { height: 30px; }
   .offline-box .logo-img { height: 40px; }
 }
+
+/* gra 2D */
+.play2d .game-canvas { image-rendering: pixelated; }
+.char-pick { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.char-list { display: flex; flex-wrap: wrap; gap: 6px; }
+/* w grach 2D napisy gry są w lewym rogu - przyciski i czat idą na prawo */
+.play2d .hud-top { justify-content: flex-end; }
+.play2d .hud-title { display: none; }
+.play2d .chat { left: auto; right: 10px; }
+.play2d .leaderboard { top: auto; bottom: calc(10px + var(--safe-bottom)); }

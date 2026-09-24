@@ -1,4 +1,5 @@
 // Typy wspólne dla serwera i klienta.
+import type { World2D } from "./types2d.ts";
 
 export type PartShape = "box" | "sphere" | "cylinder" | "wedge";
 /** normal = zwykły klocek, spawn = miejsce pojawienia się, kill = zabija (lawa), bounce = trampolina,
@@ -144,6 +145,9 @@ export interface WorldData {
   animations: AnimDef[];
   /** jeśli ustawione - wszyscy gracze wyglądają jak ta postać */
   playerCharacter?: string;
+  /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste */
+  mode?: "3d" | "2d";
+  world2d?: World2D;
 }
 
 export interface WorldInfo {

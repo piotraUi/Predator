@@ -11,6 +11,7 @@ import type { WorldData } from "../../shared/types.ts";
 import { demoArena, demoObby } from "../../shared/world.ts";
 import { demoCity } from "../../shared/demos/city.ts";
 import { api } from "./api.ts";
+import { parseGameFile } from "../../shared/gamefile.ts";
 import { hashPassword } from "./auth.ts";
 import { config } from "./config.ts";
 import { users, worlds } from "./db.ts";
@@ -54,11 +55,20 @@ const gameServer = new Server({ greet: false, transport: new WebSocketTransport(
 gameServer.define("world", WorldRoom).filterBy(["worldId"]);
 
 // przykładowe gry - tworzone, jeśli ich jeszcze nie ma
+/** gra z pliku .pgame w folderze games/ (np. przeniesiona z GDevelopa) */
+const fromFile = (file: string) => () => parseGameFile(fs.readFileSync(path.join(config.gamesDir, file), "utf8")).data;
 const demos: [string, string, () => WorldData, string][] = [
   ["Tor przeszkód", "Przykładowy tor przeszkód. Uważaj na lawę!", demoObby, "obby"],
   ["Arena", "Walka na miecze i pistolety! Zbieraj bronie z złotych pól.", demoArena, "arena"],
   ["Predator City", "Miasto do spotkań: prace, kawiarnia, park, klub disco i domy. Zarabiaj, tańcz i poznawaj ludzi!", demoCity, "city"],
 ];
+if (fs.existsSync(path.join(config.gamesDir, "Ludzik 4.pgame")))
+  demos.push([
+    "Ludzik 4",
+    "Platformówka 2D: zbieraj monety, uważaj na ogień i potwora, wspinaj się po drabinach i graj z psem. Mapa multiplayer dla drużyny!",
+    fromFile("Ludzik 4.pgame"),
+    "ludzik",
+  ]);
 let owner = users.byName("Predator");
 if (!owner) {
   const { hash, salt } = hashPassword(crypto.randomUUID());

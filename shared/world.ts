@@ -1,4 +1,5 @@
 // Szablony światów i walidacja danych świata.
+import { sanitizeWorld2D } from "./world2d.ts";
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
 import { DEFAULT_AVATAR } from "./catalog.ts";
 import type {
@@ -280,6 +281,7 @@ export function sanitizeWorld(input: unknown): WorldData {
     pvp: w.pvp !== false,
     skyColor: typeof w.skyColor === "string" && COLOR_RE.test(w.skyColor) ? w.skyColor : "#8ec8ff",
     gravity: num(w.gravity, 10, 500, 196.2),
+    ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),
   };
 }
 
