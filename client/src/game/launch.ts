@@ -4,6 +4,7 @@ import { Client } from "colyseus.js";
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import type { WorldData } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
+import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { session } from "../state.ts";
 import { h, toast } from "../ui/dom.ts";
 import { BufferedConnection } from "./buffered.ts";
@@ -41,8 +42,8 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
     : (() => {
         const client = new Client(wsUrl());
         const r = params.roomId
-          ? client.joinById(params.roomId, { token: getToken() })
-          : client.joinOrCreate("world", { worldId: params.worldId, token: getToken() });
+          ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL })
+          : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL });
         return r.then((x) => x as unknown as GameConnection);
       })();
 

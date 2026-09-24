@@ -17,6 +17,7 @@ import { LocalRoom, type GameConnection } from "./connection.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, Emote, NetPlayer, Part, ToolDef, WorldData } from "../../../shared/types.ts";
 import { EMOTES } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
+import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
 import { CollisionWorld, PLAYER_RADIUS, raycastParts, stepBody, type Body } from "../../../shared/physics.ts";
@@ -106,8 +107,8 @@ export function playScreen(
     : (() => {
         const client = new Client(wsUrl());
         const joining = params.roomId
-          ? client.joinById(params.roomId, { token: getToken() })
-          : client.joinOrCreate("world", { worldId: params.worldId, token: getToken() });
+          ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL })
+          : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL });
         return joining.then((r) => r as unknown as GameConnection);
       })();
 

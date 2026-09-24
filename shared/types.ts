@@ -243,6 +243,12 @@ export interface ChatMsg {
   system?: boolean;
 }
 
+/**
+ * Wersja protokołu gry. 2 = aplikacja zna gry 2D.
+ * Starsza aplikacja (.exe / APK) dostaje przy grze 2D prośbę o aktualizację zamiast wiecznego ładowania.
+ */
+export const GAME_PROTOCOL = 2;
+
 export const MAX_PLAYERS_LIMIT = 50;
 export const DEFAULT_MAX_PLAYERS = 30;
 export const MAX_INVENTORY = 9;

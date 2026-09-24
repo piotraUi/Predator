@@ -3,6 +3,7 @@
 import { Room, type Client } from "colyseus";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
 import { Sim2D } from "../../../shared/sim/sim2d.ts";
+import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
@@ -45,9 +46,12 @@ export class WorldRoom extends Room {
     this.clock.setInterval(() => this.payCoins(), 60_000);
   }
 
-  onAuth(_client: Client, options: { token?: string }) {
+  onAuth(_client: Client, options: { token?: string; v?: number }) {
     const user = userFromToken(options.token);
     if (!user) throw new Error("Zaloguj się ponownie");
+    // stara aplikacja nie umie gier 2D - czekałaby w nieskończoność na start gry
+    if (this.sim instanceof Sim2D && (Number(options.v) || 1) < GAME_PROTOCOL)
+      throw new Error("To gra 2D - zaktualizuj aplikację Predator (nowy .exe / APK), żeby w nią zagrać");
     if (!this.world.published && user.id !== this.world.owner_id) throw new Error("Ta gra nie jest opublikowana");
     return user;
   }
