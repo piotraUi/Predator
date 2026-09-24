@@ -67,6 +67,7 @@ jobs:
         run: |
           npm run build:app
           npx cap add android
+          npx capacitor-assets generate --android --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff'
           npx cap sync android
       - name: Zbuduj APK
         working-directory: client/android
@@ -92,6 +93,7 @@ jobs:
         run: |
           npm run build:app
           npx cap add ios
+          npx capacitor-assets generate --ios --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff'
           npx cap sync ios
           # pozwól na połączenia http do Twojego serwera gry
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" ios/App/App/Info.plist || true
