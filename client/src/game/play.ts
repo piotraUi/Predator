@@ -19,7 +19,7 @@ import { EMOTES } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
-import { CollisionWorld, raycastParts, stepBody, type Body } from "../../../shared/physics.ts";
+import { CollisionWorld, PLAYER_RADIUS, raycastParts, stepBody, type Body } from "../../../shared/physics.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
 import { session } from "../state.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
@@ -181,6 +181,8 @@ export function playScreen(
     let jumpPower = JUMP_POWER;
     let sendTimer = 0;
     let touching = new Set<string>();
+    /** klocek pod stopami - gdy skrypt go przesunie, gracz jedzie razem z nim */
+    let groundPartId: string | null = null;
     let emote: Emote | null = null;
     let boostUntil = 0;
     let boostMult = 1;
@@ -491,6 +493,12 @@ export function playScreen(
       for (const c of changes) {
         const p = parts.get(c.id);
         if (!p) continue;
+        if (c.id === groundPartId && body.onGround) {
+          // ruchoma platforma - przesuwamy gracza o tyle samo
+          body.x += (c.x ?? p.x) - p.x;
+          body.y += (c.y ?? p.y) - p.y + ((c.sy ?? p.sy) - p.sy) / 2;
+          body.z += (c.z ?? p.z) - p.z;
+        }
         Object.assign(p, c);
         const mesh = world.meshes.get(p.id);
         mesh?.unfreezeWorldMatrix();
@@ -674,6 +682,25 @@ export function playScreen(
           if (p.kind === "kill" && !dead) die();
         }
         if (res.landedOn?.kind === "bounce" && !dead) body.vy = BOUNCE_POWER;
+        groundPartId = res.landedOn?.id ?? null;
+      }
+      // gracze nie przenikają przez siebie - lekko się odpychamy (jak w Robloxie)
+      if (!dead) {
+        const minDist = PLAYER_RADIUS * 2 * 0.9;
+        for (const rm of remotes.values()) {
+          if (rm.model.anim === "dead") continue;
+          const o = rm.model.root.position;
+          if (Math.abs(o.y - body.y) > 4.5) continue;
+          const dx = body.x - o.x;
+          const dz = body.z - o.z;
+          const d = Math.hypot(dx, dz);
+          if (d >= minDist) continue;
+          const push = minDist - d;
+          const nx = d > 1e-3 ? dx / d : 1;
+          const nz = d > 1e-3 ? dz / d : 0;
+          body.x += nx * push;
+          body.z += nz * push;
+        }
       }
       for (const id of newTouch) if (!touching.has(id)) r.send("touch", id);
       touching = newTouch;

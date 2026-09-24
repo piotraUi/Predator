@@ -16,7 +16,8 @@ import { friends, sessions, toPublicUser, users, worlds, type WorldRow } from ".
 import { presence } from "./presence.ts";
 
 export const api = express.Router();
-api.use(express.json({ limit: "5mb" }));
+// gry mogą zawierać modele 3D postaci (.glb), więc limit jest duży
+api.use(express.json({ limit: "60mb" }));
 
 const fail = (res: Response, status: number, error: string) => res.status(status).json({ error });
 

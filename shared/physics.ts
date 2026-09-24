@@ -1,43 +1,121 @@
-// Fizyka postaci: grawitacja, skoki i zderzenia z klockami (AABB).
+// Fizyka postaci i promienie (strzały, kamera).
+//
+// Każdy kształt klocka opisujemy funkcją odległości (SDF): ile jednostek dzieli punkt od powierzchni
+// (wartość ujemna = punkt w środku). Dzięki temu kule są naprawdę okrągłe, walce okrągłe, kliny
+// mają prawdziwy skos, a klocki mogą być obrócone pod dowolnym kątem.
+//
+// Gracz to pionowa kapsuła złożona z trzech kul. Kolizje rozwiązujemy wypychaniem kul
+// z kształtów wzdłuż normalnej powierzchni - postać ślizga się po ścianach i nigdy nie zostaje
+// "w środku" klocka. Do tego: wchodzenie na stopnie, trzymanie się ziemi przy schodzeniu z ramp
+// i dzielenie szybkiego ruchu na małe kroki (brak przelatywania przez cienkie klocki).
 import type { Part } from "./types.ts";
 
-export const PLAYER_HALF = 0.9; // połowa szerokości postaci
+export const PLAYER_RADIUS = 0.9;
 export const PLAYER_HEIGHT = 5.2;
+/** @deprecated używaj PLAYER_RADIUS */
+export const PLAYER_HALF = PLAYER_RADIUS;
+/** wysokości środków kul kapsuły nad stopami */
+const SPHERES = [PLAYER_RADIUS, PLAYER_HEIGHT / 2, PLAYER_HEIGHT - PLAYER_RADIUS];
 const STEP_HEIGHT = 1.1;
+/** powierzchnia jest "podłogą", gdy jej normalna jest bardziej pionowa niż ~53° */
+const GROUND_NY = 0.6;
+/** maks. przesunięcie w jednym kroku fizyki - mniejsze niż promień, żeby nie przelatywać przez klocki */
+const MAX_SUBSTEP = 0.4;
+const SNAP_DOWN = 0.6;
 const CELL = 16;
+const EPS = 0.01;
 
-interface Box {
+export interface Box {
   part: Part;
   minX: number; maxX: number;
   minY: number; maxY: number;
   minZ: number; maxZ: number;
+  hx: number; hy: number; hz: number;
+  cos: number; sin: number;
 }
 
 function partBox(p: Part): Box {
-  const rotated = p.ry === 90 || p.ry === 270;
-  const hx = (rotated ? p.sz : p.sx) / 2;
-  const hz = (rotated ? p.sx : p.sz) / 2;
+  const a = (p.ry * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const hx = p.sx / 2;
+  const hy = p.sy / 2;
+  const hz = p.sz / 2;
+  // obwiednia obróconego klocka
+  const ex = Math.abs(cos) * hx + Math.abs(sin) * hz;
+  const ez = Math.abs(sin) * hx + Math.abs(cos) * hz;
   return {
     part: p,
-    minX: p.x - hx, maxX: p.x + hx,
-    minY: p.y - p.sy / 2, maxY: p.y + p.sy / 2,
-    minZ: p.z - hz, maxZ: p.z + hz,
+    minX: p.x - ex, maxX: p.x + ex,
+    minY: p.y - hy, maxY: p.y + hy,
+    minZ: p.z - ez, maxZ: p.z + ez,
+    hx, hy, hz, cos, sin,
   };
 }
 
-/** Wysokość powierzchni klina w punkcie (x,z) - klin wznosi się w lokalnym +z */
-function wedgeTop(b: Box, x: number, z: number): number {
-  const p = b.part;
-  const a = (p.ry * Math.PI) / 180;
-  // lokalne z w układzie klocka (obrót odwrotny)
-  const dx = x - p.x;
-  const dz = z - p.z;
-  const lz = dx * Math.sin(a) + dz * Math.cos(a);
-  const t = Math.min(1, Math.max(0, lz / p.sz + 0.5));
-  return b.minY + p.sy * t;
+// ---------- funkcje odległości ----------
+
+const len3 = (x: number, y: number, z: number) => Math.sqrt(x * x + y * y + z * z);
+
+/** Odległość punktu (w układzie klocka) od powierzchni kształtu */
+function sdfLocal(b: Box, x: number, y: number, z: number): number {
+  const { hx, hy, hz } = b;
+  switch (b.part.shape) {
+    case "sphere": {
+      if (hx === hy && hy === hz) return len3(x, y, z) - hx;
+      // elipsoida (przybliżenie Inigo Quileza)
+      const k0 = len3(x / hx, y / hy, z / hz);
+      const k1 = len3(x / (hx * hx), y / (hy * hy), z / (hz * hz));
+      return k1 < 1e-9 ? -Math.min(hx, hy, hz) : (k0 * (k0 - 1)) / k1;
+    }
+    case "cylinder": {
+      const k = Math.hypot(x / hx, z / hz);
+      const dxz = (k - 1) * Math.min(hx, hz);
+      const dy = Math.abs(y) - hy;
+      return Math.min(Math.max(dxz, dy), 0) + Math.hypot(Math.max(dxz, 0), Math.max(dy, 0));
+    }
+    case "wedge": {
+      // klin = pudełko przycięte skosem, który wznosi się w stronę +z
+      const box = boxSdf(x, y, z, hx, hy, hz);
+      const slope = (y * hz - z * hy) / Math.hypot(hz, hy);
+      return Math.max(box, slope);
+    }
+    default:
+      return boxSdf(x, y, z, hx, hy, hz);
+  }
 }
 
-/** Siatka przestrzenna do szybkiego wyszukiwania klocków w pobliżu gracza. */
+function boxSdf(x: number, y: number, z: number, hx: number, hy: number, hz: number) {
+  const qx = Math.abs(x) - hx;
+  const qy = Math.abs(y) - hy;
+  const qz = Math.abs(z) - hz;
+  const outside = len3(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0));
+  return outside + Math.min(Math.max(qx, qy, qz), 0);
+}
+
+/** Odległość punktu w świecie od klocka */
+export function sdf(b: Box, x: number, y: number, z: number): number {
+  const dx = x - b.part.x;
+  const dz = z - b.part.z;
+  // obrót odwrotny do obrotu klocka (Babylon: obrót wokół Y)
+  const lx = dx * b.cos - dz * b.sin;
+  const lz = dx * b.sin + dz * b.cos;
+  return sdfLocal(b, lx, y - b.part.y, lz);
+}
+
+/** Kierunek "na zewnątrz" powierzchni w danym punkcie */
+function normal(b: Box, x: number, y: number, z: number): [number, number, number] {
+  const e = 0.02;
+  const nx = sdf(b, x + e, y, z) - sdf(b, x - e, y, z);
+  const ny = sdf(b, x, y + e, z) - sdf(b, x, y - e, z);
+  const nz = sdf(b, x, y, z + e) - sdf(b, x, y, z - e);
+  const l = len3(nx, ny, nz);
+  return l < 1e-9 ? [0, 1, 0] : [nx / l, ny / l, nz / l];
+}
+
+// ---------- świat kolizji ----------
+
+/** Siatka przestrzenna do szybkiego wyszukiwania klocków w pobliżu. */
 export class CollisionWorld {
   private boxes = new Map<string, Box>();
   private grid = new Map<string, Set<Box>>();
@@ -75,6 +153,10 @@ export class CollisionWorld {
     this.cells(b, (k) => this.grid.get(k)?.delete(b));
   }
 
+  get(id: string) {
+    return this.boxes.get(id);
+  }
+
   query(minX: number, maxX: number, minZ: number, maxZ: number): Set<Box> {
     const out = new Set<Box>(this.big);
     for (let cx = Math.floor(minX / CELL); cx <= Math.floor(maxX / CELL); cx++)
@@ -86,6 +168,8 @@ export class CollisionWorld {
   }
 }
 
+// ---------- postać ----------
+
 export interface Body {
   x: number; y: number; z: number;
   vx: number; vy: number; vz: number;
@@ -93,112 +177,183 @@ export interface Body {
 }
 
 export interface StepResult {
+  /** klocki, których dotyka gracz (także bez kolizji - strefy, lawa, pola z narzędziami) */
   touched: Part[];
+  /** klocek, na którym gracz stoi */
   landedOn: Part | null;
 }
 
-function overlaps(b: Box, x: number, y: number, z: number, px: number, pz: number) {
-  const minX = x - PLAYER_HALF, maxX = x + PLAYER_HALF;
-  const minZ = z - PLAYER_HALF, maxZ = z + PLAYER_HALF;
-  if (maxX <= b.minX || minX >= b.maxX || maxZ <= b.minZ || minZ >= b.maxZ) return false;
-  const top = b.part.shape === "wedge" ? wedgeTop(b, px, pz) : b.maxY;
-  return y + PLAYER_HEIGHT > b.minY && y < top;
+interface Contacts {
+  ground: Part | null;
+  wall: boolean;
+  ceiling: boolean;
 }
 
-function topOf(b: Box, x: number, z: number) {
-  return b.part.shape === "wedge" ? wedgeTop(b, x, z) : b.maxY;
+/** Wypycha kapsułę z klocków. Podłogi wypychają pionowo (brak zsuwania się z krawędzi). */
+function resolve(solids: Box[], body: Body, c: Contacts) {
+  for (let iter = 0; iter < 4; iter++) {
+    let moved = false;
+    for (const h of SPHERES) {
+      for (const b of solids) {
+        const cx = body.x;
+        const cy = body.y + h;
+        const cz = body.z;
+        // szybkie odrzucenie po obwiedni
+        if (cx < b.minX - PLAYER_RADIUS || cx > b.maxX + PLAYER_RADIUS) continue;
+        if (cy < b.minY - PLAYER_RADIUS || cy > b.maxY + PLAYER_RADIUS) continue;
+        if (cz < b.minZ - PLAYER_RADIUS || cz > b.maxZ + PLAYER_RADIUS) continue;
+        const d = sdf(b, cx, cy, cz);
+        if (d >= PLAYER_RADIUS - 1e-4) continue;
+        const pen = Math.min(PLAYER_RADIUS - d, PLAYER_RADIUS * 2);
+        const [nx, ny, nz] = normal(b, cx, cy, cz);
+        if (ny > GROUND_NY && h === SPHERES[0]) {
+          // podłoga pod stopami - tylko w górę
+          body.y += pen / ny;
+          c.ground = b.part;
+        } else {
+          body.x += nx * pen;
+          body.y += ny * pen;
+          body.z += nz * pen;
+          if (ny < -0.5) c.ceiling = true;
+          else if (ny > GROUND_NY) c.ground = b.part;
+          else c.wall = true;
+        }
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
 }
 
-/** Przesuwa ciało o jeden krok czasu z kolizjami. */
-export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity: number): StepResult {
-  const near = world.query(
-    body.x - PLAYER_HALF - 4 + Math.min(0, body.vx * dt),
-    body.x + PLAYER_HALF + 4 + Math.max(0, body.vx * dt),
-    body.z - PLAYER_HALF - 4 + Math.min(0, body.vz * dt),
-    body.z + PLAYER_HALF + 4 + Math.max(0, body.vz * dt),
-  );
-  // klocki, w których gracz już utknął, ignorujemy - żeby mógł z nich wyjść
-  const solids = [...near].filter((b) => b.part.collide && !overlaps(b, body.x, body.y, body.z, body.x, body.z));
-  const hit = (x: number, y: number, z: number) => solids.find((b) => overlaps(b, x, y, z, x, z));
-
-  body.vy -= gravity * dt;
-  body.vy = Math.max(body.vy, -300);
-
-  // ruch poziomy (osobno X i Z, ze wchodzeniem na niskie stopnie)
-  for (const axis of ["x", "z"] as const) {
-    const d = (axis === "x" ? body.vx : body.vz) * dt;
-    if (d === 0) continue;
-    const nx = axis === "x" ? body.x + d : body.x;
-    const nz = axis === "z" ? body.z + d : body.z;
-    const b = hit(nx, body.y, nz);
-    if (!b) {
-      body.x = nx;
-      body.z = nz;
-      continue;
+function penetrates(solids: Box[], x: number, y: number, z: number): boolean {
+  for (const h of SPHERES)
+    for (const b of solids) {
+      const cy = y + h;
+      if (x < b.minX - PLAYER_RADIUS || x > b.maxX + PLAYER_RADIUS) continue;
+      if (cy < b.minY - PLAYER_RADIUS || cy > b.maxY + PLAYER_RADIUS) continue;
+      if (z < b.minZ - PLAYER_RADIUS || z > b.maxZ + PLAYER_RADIUS) continue;
+      if (sdf(b, x, cy, z) < PLAYER_RADIUS - EPS) return true;
     }
-    // próbujemy wejść na stopień
-    const top = topOf(b, nx, nz);
-    const rise = top - body.y;
-    if (rise > 0 && rise <= STEP_HEIGHT && (body.onGround || body.vy <= 0) && !hit(nx, top + 0.001, nz)) {
-      body.x = nx;
-      body.z = nz;
-      body.y = top + 0.001;
-      continue;
-    }
-    // zbliżamy się do ściany
-    if (axis === "x") {
-      body.x = d > 0 ? Math.min(nx, b.minX - PLAYER_HALF - 0.001) : Math.max(nx, b.maxX + PLAYER_HALF + 0.001);
-      if (hit(body.x, body.y, body.z)) body.x -= d;
-      body.vx = 0;
-    } else {
-      body.z = d > 0 ? Math.min(nz, b.minZ - PLAYER_HALF - 0.001) : Math.max(nz, b.maxZ + PLAYER_HALF + 0.001);
-      if (hit(body.x, body.y, body.z)) body.z -= d;
-      body.vz = 0;
+  return false;
+}
+
+/** Największe opuszczenie w dół (do maxDrop), przy którym gracz nie wchodzi w klocki */
+function freeDrop(solids: Box[], body: Body, maxDrop: number): number {
+  if (!penetrates(solids, body.x, body.y - maxDrop, body.z)) return maxDrop;
+  let lo = 0;
+  let hi = maxDrop;
+  for (let i = 0; i < 8; i++) {
+    const mid = (lo + hi) / 2;
+    if (penetrates(solids, body.x, body.y - mid, body.z)) hi = mid;
+    else lo = mid;
+  }
+  return lo;
+}
+
+/** Klocek pod stopami (do ruchomych platform i trampolin) */
+function groundUnder(solids: Box[], body: Body): Part | null {
+  let best: Part | null = null;
+  let bestD = 0.15;
+  for (const b of solids) {
+    const d = sdf(b, body.x, body.y + PLAYER_RADIUS, body.z) - PLAYER_RADIUS;
+    if (d < bestD) {
+      bestD = d;
+      best = b.part;
     }
   }
+  return best;
+}
 
-  // ruch pionowy
-  let landedOn: Part | null = null;
-  const dy = body.vy * dt;
-  const ny = body.y + dy;
-  const b = hit(body.x, ny, body.z);
+/** Przesuwa postać o jeden krok czasu z kolizjami. */
+export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity: number): StepResult {
+  body.vy -= gravity * dt;
+  body.vy = Math.max(body.vy, -300);
+  const tx = body.vx * dt;
+  const ty = body.vy * dt;
+  const tz = body.vz * dt;
+
+  const pad = PLAYER_RADIUS + STEP_HEIGHT + 1;
+  const near = world.query(
+    body.x - pad + Math.min(0, tx), body.x + pad + Math.max(0, tx),
+    body.z - pad + Math.min(0, tz), body.z + pad + Math.max(0, tz),
+  );
+  const solids = [...near].filter((b) => b.part.collide);
+
+  const wasGrounded = body.onGround;
   body.onGround = false;
-  if (b) {
-    if (dy < 0) {
-      body.y = topOf(b, body.x, body.z) + 0.001;
+  const c: Contacts = { ground: null, wall: false, ceiling: false };
+  const n = Math.max(1, Math.ceil(len3(tx, ty, tz) / MAX_SUBSTEP));
+  for (let i = 0; i < n; i++) {
+    const px = body.x;
+    const pz = body.z;
+    const wx = tx / n;
+    const wz = tz / n;
+    body.x += wx;
+    body.y += ty / n;
+    body.z += wz;
+    const sc: Contacts = { ground: null, wall: false, ceiling: false };
+    resolve(solids, body, sc);
+    if (sc.ground) {
+      c.ground = sc.ground;
       body.onGround = true;
-      landedOn = b.part;
-    } else {
-      body.y = b.minY - PLAYER_HEIGHT - 0.001;
+      if (body.vy < 0) body.vy = 0;
     }
-    body.vy = 0;
-  } else {
-    body.y = ny;
-    // przyklejenie do podłoża przy schodzeniu po rampie
-    if (body.vy <= 0) {
-      const below = hit(body.x, body.y - 0.3, body.z);
-      if (below && body.vy > -30) {
-        body.y = topOf(below, body.x, body.z) + 0.001;
-        body.onGround = true;
-        body.vy = 0;
-        landedOn = below.part;
+    if (sc.ceiling && body.vy > 0) body.vy = 0;
+    // wejście na stopień: ściana zablokowała ruch, a stoimy na ziemi
+    const want = Math.hypot(wx, wz);
+    if (sc.wall && want > 1e-4 && (wasGrounded || body.onGround) && body.vy <= 0) {
+      const got = Math.hypot(body.x - px, body.z - pz);
+      if (got < want * 0.6) {
+        const sx = px + wx;
+        const sz = pz + wz;
+        const up = body.y + STEP_HEIGHT;
+        if (!penetrates(solids, sx, up, sz)) {
+          const saved = { x: body.x, y: body.y, z: body.z };
+          body.x = sx;
+          body.z = sz;
+          body.y = up;
+          const drop = freeDrop(solids, body, STEP_HEIGHT + 0.05);
+          if (drop <= STEP_HEIGHT) {
+            body.y -= drop;
+            body.onGround = true;
+            if (body.vy < 0) body.vy = 0;
+          } else Object.assign(body, saved);
+        }
       }
     }
   }
 
-  // czego dotyka gracz (także klocki bez kolizji - np. niewidzialne strefy)
+  // schodzenie z ramp i schodów - trzymamy się ziemi zamiast "odlatywać"
+  if (!body.onGround && wasGrounded && body.vy <= 0) {
+    const drop = freeDrop(solids, body, SNAP_DOWN);
+    if (drop < SNAP_DOWN) {
+      body.y -= drop;
+      body.onGround = true;
+      body.vy = 0;
+    }
+  }
+
+  const landedOn = body.onGround ? (c.ground ?? groundUnder(solids, body)) : null;
+
+  // czego dotyka gracz (także klocki bez kolizji - strefy, lawa, pola z narzędziami)
   const touched: Part[] = [];
-  for (const box of near) {
-    const e = 0.15;
-    if (
-      body.x + PLAYER_HALF + e > box.minX && body.x - PLAYER_HALF - e < box.maxX &&
-      body.z + PLAYER_HALF + e > box.minZ && body.z - PLAYER_HALF - e < box.maxZ &&
-      body.y + PLAYER_HEIGHT + e > box.minY && body.y - e < topOf(box, body.x, body.z)
-    )
-      touched.push(box.part);
+  const reach = PLAYER_RADIUS + 0.15;
+  for (const b of near) {
+    for (const h of SPHERES) {
+      const cy = body.y + h;
+      if (body.x < b.minX - reach || body.x > b.maxX + reach) break;
+      if (body.z < b.minZ - reach || body.z > b.maxZ + reach) break;
+      if (cy < b.minY - reach || cy > b.maxY + reach) continue;
+      if (sdf(b, body.x, cy, body.z) < reach) {
+        touched.push(b.part);
+        break;
+      }
+    }
   }
   return { touched, landedOn };
 }
+
+// ---------- promienie ----------
 
 /** Przecięcie promienia z prostopadłościanem (metoda slabów). Zwraca odległość albo null. */
 export function rayBox(
@@ -229,6 +384,33 @@ export function rayBox(
   return tmin;
 }
 
+function rayBoxExit(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, b: Box): number {
+  let tmax = Infinity;
+  for (const [o, d, lo, hi] of [
+    [ox, dx, b.minX, b.maxX],
+    [oy, dy, b.minY, b.maxY],
+    [oz, dz, b.minZ, b.maxZ],
+  ] as const) {
+    if (Math.abs(d) < 1e-9) continue;
+    tmax = Math.min(tmax, Math.max((lo - o) / d, (hi - o) / d));
+  }
+  return tmax;
+}
+
+/** Dokładne trafienie promieniem w kształt (po trafieniu w obwiednię) */
+function rayShape(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, b: Box, t0: number): number | null {
+  // zwykły, nieobrócony klocek - obwiednia to dokładnie jego kształt
+  if (b.part.shape === "box" && Math.abs(b.sin) < 1e-6) return t0;
+  const t1 = rayBoxExit(ox, oy, oz, dx, dy, dz, b);
+  let t = t0;
+  for (let i = 0; i < 64 && t <= t1; i++) {
+    const d = sdf(b, ox + dx * t, oy + dy * t, oz + dz * t);
+    if (d < 0.01) return t;
+    t += Math.max(d, 0.02);
+  }
+  return null;
+}
+
 /** Pierwszy klocek z kolizją na drodze promienia (kierunek musi być znormalizowany). */
 export function raycastParts(
   world: CollisionWorld,
@@ -243,8 +425,10 @@ export function raycastParts(
   for (const b of candidates) {
     if (!b.part.collide || b.part.transparency >= 0.999) continue;
     // klocek, w którym promień się zaczyna, pomijamy (np. kamera w środku NPC)
-    if (ox > b.minX && ox < b.maxX && oy > b.minY && oy < b.maxY && oz > b.minZ && oz < b.maxZ) continue;
-    const t = rayBox(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ);
+    if (sdf(b, ox, oy, oz) < 0) continue;
+    const t0 = rayBox(ox, oy, oz, dx, dy, dz, b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ);
+    if (t0 === null || t0 > maxDist || (best && t0 >= best.dist)) continue;
+    const t = rayShape(ox, oy, oz, dx, dy, dz, b, t0);
     if (t !== null && t <= maxDist && (!best || t < best.dist)) best = { dist: t, part: b.part };
   }
   return best;

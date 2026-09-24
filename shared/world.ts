@@ -29,6 +29,7 @@ export const MAX_KEYFRAMES = 120;
 export const MAX_ACCESSORIES = 40;
 /** maks. rozmiar modelu .glb zapisanego w grze (jako tekst base64) */
 export const MAX_MODEL_CHARS = 8_000_000;
+export const MAX_TOTAL_MODEL_CHARS = 30_000_000;
 export const WORLD_LIMIT = 2000;
 
 let counter = 0;
@@ -259,6 +260,13 @@ export function sanitizeWorld(input: unknown): WorldData {
     };
   });
   const characters = (Array.isArray(w.characters) ? w.characters.slice(0, MAX_CHARACTERS) : []).map(sanitizeCharacter);
+  // łączny rozmiar modeli 3D w jednej grze jest ograniczony
+  let modelChars = 0;
+  for (const c of characters) {
+    if (!c.model) continue;
+    modelChars += c.model.data.length;
+    if (modelChars > MAX_TOTAL_MODEL_CHARS) delete c.model;
+  }
   const animations = (Array.isArray(w.animations) ? w.animations.slice(0, MAX_ANIMATIONS) : []).map(sanitizeAnimation);
   const playerCharacter =
     typeof w.playerCharacter === "string" && characters.some((c) => c.id === w.playerCharacter) ? w.playerCharacter : undefined;
