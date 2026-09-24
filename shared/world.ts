@@ -230,6 +230,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       ...(p.kind === "pickup" && typeof p.toolId === "string" ? { toolId: p.toolId.slice(0, 40) } : {}),
       ...(p.kind === "npc" && typeof p.characterId === "string" ? { characterId: p.characterId.slice(0, 40) } : {}),
       ...(typeof p.animId === "string" && p.animId ? { animId: p.animId.slice(0, 40) } : {}),
+      ...(typeof p.group === "string" && p.group ? { group: p.group.slice(0, 40) } : {}),
     };
   });
   const rawScripts = Array.isArray(w.scripts) ? w.scripts.slice(0, MAX_SCRIPTS) : [];

@@ -29,6 +29,8 @@ export interface Part {
   characterId?: string;
   /** Animacja odtwarzana w pętli przez NPC */
   animId?: string;
+  /** model ze Studia - części z tym samym id przesuwają się razem */
+  group?: string;
 }
 
 // ---------- Postacie ----------

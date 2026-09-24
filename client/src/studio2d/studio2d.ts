@@ -17,6 +17,7 @@ import { LUA_HELP_2D, openScriptEditor } from "../studio/scriptEditor.ts";
 import type { StudioFile } from "../studio/studio.ts";
 import { ask, h, logo, modal, toast } from "../ui/dom.ts";
 import { badgeEditor } from "../studio/badgeEditor.ts";
+import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 
@@ -340,8 +341,9 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       h("button", { class: "tb-btn", onClick: doUndo, title: "Cofnij (Ctrl+Z)" }, "↶"),
       h("button", { class: "tb-btn", onClick: doRedo, title: "Ponów (Ctrl+Y)" }, "↷"),
       h("div", { class: "tb-sep" }),
-      h("button", { class: "tb-btn", onClick: () => openGameSettings() }, "⚙", h("span", null, "Ustawienia gry")),
+      h("button", { class: "tb-btn", onClick: () => openGameSettings(), title: "Nazwa, fizyka, dźwięki, odznaki, publikacja" }, "⚙", h("span", null, "Gra")),
       h("button", { class: "tb-btn", onClick: () => openSettings() }, "🎚", h("span", null, "Ustawienia")),
+      h("button", { class: "tb-btn", onClick: () => openGuide("2d"), title: "Jak zrobić grę - przewodnik" }, "❓", h("span", null, "Pomoc")),
     );
 
     // ---------- panele ----------
@@ -1464,6 +1466,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
 
     renderAll();
     if (startDirty) changed();
+    if (shouldShowGuide("2d")) setTimeout(() => openGuide("2d"), 600);
     assets.ready.then(() => {
       if (disposed) return;
       centerOnLevel();

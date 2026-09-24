@@ -30,19 +30,28 @@ import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
 import { badgeEditor } from "./badgeEditor.ts";
+import {
+  behaviorIdOf,
+  behaviorsOf,
+  behaviorScript,
+  BEHAVIORS,
+  MODEL_BEHAVIOR,
+  openGuide,
+  renameInBehaviors,
+  shouldShowGuide,
+  TOOLBOX,
+  TOOLBOX_CATS,
+  type Behavior,
+  type ToolboxModel,
+} from "./toolbox.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Tool = "select" | "move" | "scale";
 
-const PRESETS: { label: string; icon: string; part: Partial<Part> }[] = [
-  { label: "Klocek", icon: "⬛", part: { name: "Klocek", shape: "box", sx: 4, sy: 1, sz: 2 } },
-  { label: "Kula", icon: "⚪", part: { name: "Kula", shape: "sphere", sx: 3, sy: 3, sz: 3 } },
-  { label: "Walec", icon: "🛢", part: { name: "Walec", shape: "cylinder", sx: 2, sy: 4, sz: 2 } },
-  { label: "Klin", icon: "📐", part: { name: "Klin", shape: "wedge", sx: 4, sy: 2, sz: 4 } },
-  { label: "Spawn", icon: "🏁", part: { name: "Spawn", kind: "spawn", sx: 6, sy: 1, sz: 6, color: "#6e6e78" } },
-  { label: "Lawa", icon: "🔥", part: { name: "Lawa", kind: "kill", sx: 8, sy: 1, sz: 8, color: "#ff4d00", material: "neon" } },
-  { label: "Trampolina", icon: "🟣", part: { name: "Trampolina", kind: "bounce", sx: 6, sy: 1, sz: 6, color: "#ff66cc" } },
-  { label: "Postać (NPC)", icon: "🧍", part: { name: "NPC", kind: "npc", sx: 2, sy: 5.2, sz: 1, color: "#7fb8ff" } },
+/** szybkie kolory w panelu Właściwości */
+const QUICK_COLORS = [
+  "#f5f5f5", "#a3a2a5", "#1b1b1b", "#e53935", "#ff7043", "#ffb300", "#fdd835", "#7cb342",
+  "#2e7d32", "#29b6f6", "#1e88e5", "#3949ab", "#8e24aa", "#ff66cc", "#8d6e63", "#5d4037",
 ];
 
 const SHAPE_ICONS: Record<PartShape, string> = { box: "⬛", sphere: "⚪", cylinder: "🛢", wedge: "📐" };
@@ -212,11 +221,42 @@ export function studioScreen(
     gizmos.positionGizmoEnabled = false;
     gizmos.scaleGizmoEnabled = false;
 
+    // model: pozostałe części jadą razem z przeciąganą
+    let dragStart: { x: number; y: number; z: number } | null = null;
+    pg.onDragStartObservable.add(() => {
+      dragStart = selected ? { x: selected.x, y: selected.y, z: selected.z } : null;
+    });
+    pg.onDragObservable.add(() => {
+      if (!selected || !dragStart || !selected.group) return;
+      const mesh = view.meshes.get(selected.id);
+      if (!mesh) return;
+      const dx = mesh.position.x - dragStart.x;
+      const dy = mesh.position.y - dragStart.y;
+      const dz = mesh.position.z - dragStart.z;
+      for (const o of groupOf(selected)) {
+        if (o === selected) continue;
+        const m = view.meshes.get(o.id);
+        if (m) m.position.set(o.x + dx, o.y + dy, o.z + dz);
+      }
+    });
     const onGizmoEnd = () => {
       if (!selected) return;
       const mesh = view.meshes.get(selected.id);
       if (!mesh) return;
       pushUndo();
+      if (dragStart && selected.group) {
+        const dx = round(mesh.position.x - dragStart.x);
+        const dy = round(mesh.position.y - dragStart.y);
+        const dz = round(mesh.position.z - dragStart.z);
+        for (const o of groupOf(selected)) {
+          if (o === selected) continue;
+          o.x = round(o.x + dx);
+          o.y = round(o.y + dy);
+          o.z = round(o.z + dz);
+          view.apply(o);
+        }
+      }
+      dragStart = null;
       selected.x = round(mesh.position.x);
       selected.y = round(mesh.position.y);
       selected.z = round(mesh.position.z);
@@ -238,15 +278,41 @@ export function studioScreen(
       select(id ? (data.parts.find((p) => p.id === id) ?? null) : null);
     });
 
+    /** części modelu (albo sam klocek) */
+    function groupOf(p: Part) {
+      return p.group ? data.parts.filter((x) => x.group === p.group) : [p];
+    }
+
     function select(p: Part | null) {
       selected = p;
       const mesh = p ? view.meshes.get(p.id) : null;
       for (const m of view.meshes.values()) m.showBoundingBox = false;
-      if (mesh) mesh.showBoundingBox = true;
+      if (p) for (const o of groupOf(p)) {
+        const m = view.meshes.get(o.id);
+        if (m) m.showBoundingBox = true;
+      }
       gizmos.attachToMesh(mesh ?? null);
       setTool(tool);
       renderProps();
       renderExplorer();
+    }
+
+    /** podpowiedź na dole widoku - co teraz można zrobić */
+    function updateHint() {
+      const k = (key: string, text: string) => [h("kbd", null, key), " " + text];
+      const parts: (string | Node)[][] = !selected
+        ? [
+            ["👆 Kliknij klocek, żeby go wybrać, albo ", h("b", null, "＋ Dodaj"), " gotowy model"],
+            k("Prawy przycisk", "rozglądanie"),
+            k("WASD", "lot"),
+            k("Kółko", "zoom"),
+          ]
+        : tool === "move"
+          ? [[selected.group ? "📦 Model - ciągnij strzałki, przesuwa się cały" : "✥ Ciągnij kolorowe strzałki, żeby przesunąć"], k("R", "obróć"), k("Ctrl+D", "kopia"), k("F", "pokaż"), k("Del", "usuń")]
+          : tool === "scale"
+            ? [["⤡ Ciągnij kwadraciki, żeby zmienić rozmiar"], k("2", "przesuwanie"), k("Ctrl+Z", "cofnij")]
+            : [["👆 Wybrano: ", h("b", null, selected.name)], k("2", "przesuń"), k("3", "skaluj"), k("R", "obróć")];
+      hintBar.replaceChildren(...parts.map((x) => h("span", null, ...x)));
     }
 
     function setTool(t: Tool) {
@@ -256,6 +322,7 @@ export function studioScreen(
       if (selected) gizmos.attachToMesh(view.meshes.get(selected.id) ?? null);
       applySnap();
       for (const b of toolbar.querySelectorAll<HTMLElement>("[data-tool]")) b.classList.toggle("active", b.dataset.tool === t);
+      updateHint();
     }
 
     // ---------- zmiany i cofanie ----------
@@ -310,22 +377,152 @@ export function studioScreen(
       select(p);
     }
 
+    /** wolna nazwa: "Samochód", "Samochód 2", ... - zachowania działają po nazwie, więc każdy wstawiony model ma własną */
+    function uniqueName(base: string) {
+      const root = base.replace(/ \d+$/, "");
+      if (!data.parts.some((p) => p.name === root)) return root;
+      let n = 2;
+      while (data.parts.some((p) => p.name === `${root} ${n}`)) n++;
+      return `${root} ${n}`;
+    }
+
+    /** miejsce na model: przed kamerą, ale nie na innych rzeczach (np. na spawnie) */
+    function freeSpot(defs: Partial<Part>[], cx: number, cz: number) {
+      const ext = (d: Partial<Part>) => {
+        const sx = d.sx ?? 4;
+        const sz = d.sz ?? 2;
+        const [hx, hz] = (d.ry ?? 0) % 180 ? [sz / 2, sx / 2] : [sx / 2, sz / 2];
+        return { x0: (d.x ?? 0) - hx, x1: (d.x ?? 0) + hx, z0: (d.z ?? 0) - hz, z1: (d.z ?? 0) + hz };
+      };
+      const box = defs.map(ext).reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), z0: Math.min(a.z0, b.z0), z1: Math.max(a.z1, b.z1) }));
+      // podłogi i duże płaskie klocki nie przeszkadzają - na nich się stawia
+      const blockers = data.parts.filter((p) => p.kind === "spawn" || !(p.sy <= 1.2 && p.sx * p.sz > 150));
+      const hits = (x: number, z: number) =>
+        blockers.some((p) => {
+          const e = ext(p);
+          // ext() liczy już od środka klocka (p.x, p.z)
+          return x + box.x0 < e.x1 + 1 && x + box.x1 > e.x0 - 1 && z + box.z0 < e.z1 + 1 && z + box.z1 > e.z0 - 1;
+        });
+      const step = Math.max(4, Math.ceil(Math.max(box.x1 - box.x0, box.z1 - box.z0)) + 2);
+      for (let ring = 0; ring <= 8; ring++)
+        for (let a = 0; a < (ring ? 8 : 1); a++) {
+          const x = snap(cx + Math.round(Math.cos((a * Math.PI) / 4)) * ring * step, 1);
+          const z = snap(cz + Math.round(Math.sin((a * Math.PI) / 4)) * ring * step, 1);
+          if (!hits(x, z)) return { x, z };
+        }
+      return { x: snap(cx, 1), z: snap(cz, 1) };
+    }
+
+    /** gotowy model z Zestawu (kilka klocków naraz) przed kamerą, postawiony na tym, co jest pod spodem */
+    function addModel(m: ToolboxModel) {
+      const defs = m.parts();
+      if (data.parts.length + defs.length > MAX_PARTS) return toast(`Maksymalnie ${MAX_PARTS} klocków`, "error");
+      pushUndo();
+      const { x: ox, z: oz } = freeSpot(defs, camera.target.x, camera.target.z);
+      const hit = scene.pickWithRay(new Ray(new Vector3(ox, 1000, oz), new Vector3(0, -1, 0), 2000), (mm: AbstractMesh) => !!mm.metadata?.partId);
+      const base = hit?.pickedPoint ? hit.pickedPoint.y : 0;
+      // wszystkie części modelu mają jedną nazwę - zachowanie (np. jazda) działa na cały model
+      const name = uniqueName(defs.length > 1 ? m.name : (defs[0].name ?? m.name));
+      const group = defs.length > 1 ? newId() : undefined;
+      const made = defs.map((d) => {
+        const sy = d.sy ?? 1;
+        const p = makePart({ ...d, name, ...(group ? { group } : {}), x: round(ox + (d.x ?? 0)), y: round(base + (d.y ?? sy / 2)), z: round(oz + (d.z ?? 0)) });
+        data.parts.push(p);
+        view.add(p);
+        return p;
+      });
+      changed();
+      select(made[0]);
+      const behaviorId = MODEL_BEHAVIOR[m.id];
+      const b = behaviorId ? BEHAVIORS.find((x) => x.id === behaviorId) : undefined;
+      if (b) applyBehavior(b, made[0], false);
+      toast(`Wstawiono: ${m.icon} ${name}` + (b ? ` (${b.icon} ${b.label})` : ""), "good");
+    }
+
+    function renderToolbox() {
+      toolboxBody.replaceChildren(
+        ...TOOLBOX_CATS.flatMap((cat) => [
+          h("div", { class: "tbx-cat" }, cat),
+          h(
+            "div",
+            { class: "tbx-grid" },
+            TOOLBOX.filter((m) => m.cat === cat).map((m) =>
+              h("button", { class: "tbx-item", title: m.name, onClick: () => addModel(m) }, h("span", { class: "tbx-ic" }, m.icon), h("span", { class: "tbx-name" }, m.name)),
+            ),
+            cat === "Podstawowe"
+              ? h("button", { class: "tbx-item", title: "Złote pole z bronią albo narzędziem", onClick: () => addPickup() }, h("span", { class: "tbx-ic" }, "🗡️"), h("span", { class: "tbx-name" }, "Broń do podniesienia"))
+              : "",
+          ),
+        ]),
+      );
+    }
+
+    /** zachowanie: zmiana typu klocka albo gotowy skrypt Lua */
+    function applyBehavior(b: Behavior, p: Part, announce = true) {
+      if (b.kind) {
+        pushUndo();
+        p.kind = b.kind;
+        view.apply(p);
+        changed();
+        renderProps();
+        renderExplorer();
+        if (announce) toast(`${b.icon} ${p.name}: ${b.label}`, "good");
+        return;
+      }
+      if (behaviorsOf(data.scripts, p.name).some((s) => behaviorIdOf(s) === b.id)) return toast("Ten klocek już to ma", "info");
+      let target: string | undefined;
+      if (b.id === "teleport") {
+        // cel teleportu - nowy klocek obok
+        target = p.name + " cel";
+        if (!data.parts.some((x) => x.name === target)) {
+          const tp = makePart({ name: target, shape: p.shape, x: round(p.x + 20), y: p.y, z: p.z, sx: p.sx, sy: p.sy, sz: p.sz, color: "#b388ff", material: "neon" });
+          data.parts.push(tp);
+          view.add(tp);
+        }
+      }
+      data.scripts.push(behaviorScript(b, p.name, target));
+      changed();
+      renderScripts();
+      renderProps();
+      renderExplorer();
+      if (announce) toast(`${b.icon} ${b.label} - gotowe! Sprawdź przyciskiem Testuj`, "good");
+    }
+
     function duplicate() {
       if (!selected) return;
       pushUndo();
-      const p: Part = { ...selected, id: newId(), y: round(selected.y + selected.sy) };
-      data.parts.push(p);
-      view.add(p);
+      const old = selected;
+      const members = groupOf(old);
+      const name = uniqueName(old.name);
+      // model kopiujemy obok, pojedynczy klocek - nad oryginałem
+      const width = Math.max(...members.map((m) => m.x + m.sx / 2)) - Math.min(...members.map((m) => m.x - m.sx / 2));
+      const group = old.group ? newId() : undefined;
+      const copies = members.map((m) => ({
+        ...m,
+        id: newId(),
+        name,
+        ...(group ? { group, x: round(m.x + width + 2) } : { y: round(m.y + m.sy) }),
+      }));
+      for (const c of copies) {
+        data.parts.push(c);
+        view.add(c);
+      }
+      // kopia dostaje te same zachowania (własne skrypty)
+      for (const sc of behaviorsOf(data.scripts, old.name)) {
+        const b = BEHAVIORS.find((x) => x.id === behaviorIdOf(sc));
+        if (b?.lua) data.scripts.push(behaviorScript(b, name, b.id === "teleport" ? old.name + " cel" : undefined));
+      }
+      renderScripts();
       changed();
-      select(p);
+      select(copies[members.indexOf(old)] ?? copies[0]);
     }
 
     function remove() {
       if (!selected) return;
       pushUndo();
-      const id = selected.id;
-      data.parts = data.parts.filter((p) => p.id !== id);
-      view.remove(id);
+      const ids = new Set(groupOf(selected).map((p) => p.id));
+      data.parts = data.parts.filter((p) => !ids.has(p.id));
+      for (const id of ids) view.remove(id);
       changed();
       select(null);
     }
@@ -333,10 +530,32 @@ export function studioScreen(
     function rotate() {
       if (!selected) return;
       pushUndo();
-      selected.ry = (selected.ry + 90) % 360;
-      view.apply(selected);
+      const members = groupOf(selected);
+      // model obraca się wokół swojego środka (tak jak obraca się klocek: x' = z, z' = -x)
+      const cx = members.reduce((a, m) => a + m.x, 0) / members.length;
+      const cz = members.reduce((a, m) => a + m.z, 0) / members.length;
+      for (const m of members) {
+        if (members.length > 1) {
+          const dx = m.x - cx;
+          const dz = m.z - cz;
+          m.x = round(cx + dz);
+          m.z = round(cz - dx);
+        }
+        m.ry = (m.ry + 90) % 360;
+        view.apply(m);
+      }
+      select(selected);
       changed();
       renderProps();
+    }
+
+    /** rozdziela model na osobne klocki */
+    function ungroup(p: Part) {
+      pushUndo();
+      for (const m of groupOf(p)) delete m.group;
+      changed();
+      select(p);
+      toast("Model rozdzielony - każdy klocek przesuwasz osobno", "good");
     }
 
     function focus() {
@@ -401,6 +620,7 @@ export function studioScreen(
       h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), exportFile()) }, "💾 Zapisz jako plik .pgame"),
       h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), openFile()) }, "📂 Otwórz plik .pgame"),
       h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), testOffline()) }, "🎮 Testuj bez serwera"),
+      h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), openSettings()) }, "🎚 Ustawienia (kamera, czułość)"),
       !src.online
         ? h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), upload()) }, "☁ Wyślij na serwer")
         : null,
@@ -450,14 +670,6 @@ export function studioScreen(
       menu.style.top = r.bottom + 4 + "px";
     }
     const saveBtn = h("button", { class: "tb-btn", onClick: () => save(), title: "Zapisz (Ctrl+S)" }, "💾", h("span", null, "Zapisz"));
-    const addMenu = h(
-      "div",
-      { class: "dropdown hidden" },
-      PRESETS.map((pr) =>
-        h("button", { class: "dd-item", onClick: () => (addMenu.classList.add("hidden"), addPart(pr.part)) }, pr.icon + " " + pr.label),
-      ),
-      h("button", { class: "dd-item", onClick: () => (addMenu.classList.add("hidden"), addPickup()) }, "🗡️ Narzędzie do podniesienia"),
-    );
     const gridSel = h(
       "select",
       { class: "tb-select", title: "Krok siatki", onChange: (e: Event) => ((gridStep = Number((e.target as HTMLSelectElement).value)), applySnap()) },
@@ -509,20 +721,20 @@ export function studioScreen(
           "button",
           {
             class: "tb-btn accent",
-            onClick: (e: Event) => toggleMenu(addMenu, e),
+            title: "Gotowe modele i klocki",
+            onClick: () => showLeftTab("toolbox"),
           },
           "＋",
           h("span", null, "Dodaj"),
         ),
-        addMenu,
       ),
       h("button", { class: "tb-btn", onClick: duplicate, title: "Duplikuj (Ctrl+D)" }, "⧉", h("span", null, "Duplikuj")),
       h("button", { class: "tb-btn", onClick: remove, title: "Usuń (Delete)" }, "🗑", h("span", null, "Usuń")),
       h("button", { class: "tb-btn", onClick: doUndo, title: "Cofnij (Ctrl+Z)" }, "↶"),
       h("button", { class: "tb-btn", onClick: doRedo, title: "Ponów (Ctrl+Y)" }, "↷"),
       h("div", { class: "tb-sep" }),
-      h("button", { class: "tb-btn", onClick: () => openGameSettings() }, "⚙", h("span", null, "Ustawienia gry")),
-      h("button", { class: "tb-btn", onClick: () => openSettings(), title: "Czułość kamery i inne" }, "🎚", h("span", null, "Ustawienia")),
+      h("button", { class: "tb-btn", onClick: () => openGameSettings(), title: "Nazwa, opis, niebo, odznaki, publikacja" }, "⚙", h("span", null, "Gra")),
+      h("button", { class: "tb-btn", onClick: () => openGuide("3d"), title: "Jak zrobić grę - przewodnik i skróty" }, "❓", h("span", null, "Pomoc")),
     );
 
     // ---------- panele ----------
@@ -532,57 +744,84 @@ export function studioScreen(
     const toolsList = h("div", { class: "panel-body" });
     const charsList = h("div", { class: "panel-body" });
     const animsList = h("div", { class: "panel-body" });
-    const leftPanel = h(
-      "aside",
-      { class: "studio-panel left" },
-      h("div", { class: "panel-title" }, "Obiekty"),
-      explorer,
-      h(
-        "div",
-        { class: "panel-title" },
-        "Skrypty",
-        h(
-          "span",
-          { class: "panel-actions" },
-          h("button", { class: "btn small", onClick: () => addScript("lua") }, "+ Lua"),
-          h("button", { class: "btn small", onClick: () => addScript("blocks") }, "+ Bloczki"),
+    const toolboxBody = h("div", { class: "panel-body toolbox" });
+    const explorerSearch = h("input", { type: "search", class: "explorer-search", placeholder: "🔍 Szukaj obiektu…" });
+    explorerSearch.addEventListener("input", () => renderExplorer());
+    const panelSection = (title: string, actions: Node | null, body: HTMLElement, hint?: string) =>
+      h("div", { class: "ltab-page" }, h("div", { class: "panel-title" }, title, actions ?? ""), hint ? h("p", { class: "panel-hint" }, hint) : "", body);
+    const LEFT_TABS: { id: string; icon: string; label: string; page: HTMLElement }[] = [
+      { id: "toolbox", icon: "🧱", label: "Zestaw", page: panelSection("Zestaw - kliknij, żeby wstawić", null, toolboxBody) },
+      { id: "objects", icon: "📋", label: "Obiekty", page: h("div", { class: "ltab-page" }, h("div", { class: "panel-title" }, "Obiekty w grze"), explorerSearch, explorer) },
+      {
+        id: "scripts",
+        icon: "📜",
+        label: "Skrypty",
+        page: panelSection(
+          "Skrypty",
+          h(
+            "span",
+            { class: "panel-actions" },
+            h("button", { class: "btn small", onClick: () => addScript("lua") }, "+ Lua"),
+            h("button", { class: "btn small", onClick: () => addScript("blocks") }, "+ Bloczki"),
+          ),
+          scriptsList,
+          "Najłatwiej: wybierz klocek i kliknij Zachowanie po prawej. Bloczki są jak w Scratchu.",
         ),
-      ),
-      scriptsList,
-      h(
-        "div",
-        { class: "panel-title" },
-        "Narzędzia i bronie",
-        h("span", { class: "panel-actions" }, h("button", { class: "btn small", onClick: () => editTool(null) }, "+ Nowe")),
-      ),
-      toolsList,
-      h(
-        "div",
-        { class: "panel-title" },
-        "Postacie",
-        h(
-          "span",
-          { class: "panel-actions" },
-          h("button", { class: "btn small", onClick: () => importCharacter(), title: "Plik .pchar albo model .glb" }, "📥"),
-          h("button", { class: "btn small", onClick: () => newCharacter() }, "+ Nowa"),
+      },
+      {
+        id: "tools",
+        icon: "🗡️",
+        label: "Bronie",
+        page: panelSection("Narzędzia i bronie", h("span", { class: "panel-actions" }, h("button", { class: "btn small", onClick: () => editTool(null) }, "+ Nowe")), toolsList),
+      },
+      {
+        id: "chars",
+        icon: "🧍",
+        label: "Postacie",
+        page: h(
+          "div",
+          { class: "ltab-page" },
+          h(
+            "div",
+            { class: "panel-title" },
+            "Postacie",
+            h(
+              "span",
+              { class: "panel-actions" },
+              h("button", { class: "btn small", onClick: () => importCharacter(), title: "Plik .pchar albo model .glb" }, "📥"),
+              h("button", { class: "btn small", onClick: () => newCharacter() }, "+ Nowa"),
+            ),
+          ),
+          charsList,
+          h("div", { class: "panel-title" }, "Animacje", h("span", { class: "panel-actions" }, h("button", { class: "btn small", onClick: () => newAnimation() }, "+ Nowa"))),
+          animsList,
         ),
-      ),
-      charsList,
-      h(
-        "div",
-        { class: "panel-title" },
-        "Animacje",
-        h("span", { class: "panel-actions" }, h("button", { class: "btn small", onClick: () => newAnimation() }, "+ Nowa")),
-      ),
-      animsList,
+      },
+    ];
+    const leftTabs = h(
+      "div",
+      { class: "ltabs" },
+      LEFT_TABS.map((t) => h("button", { class: "ltab", "data-ltab": t.id, title: t.label, onClick: () => showLeftTab(t.id) }, h("span", { class: "ltab-ic" }, t.icon), h("span", null, t.label))),
     );
+    const leftPages = h("div", { class: "ltab-pages" });
+    const leftPanel = h("aside", { class: "studio-panel left" }, leftTabs, leftPages);
+    function showLeftTab(id: string) {
+      const t = LEFT_TABS.find((x) => x.id === id) ?? LEFT_TABS[0];
+      leftPages.replaceChildren(t.page);
+      for (const b of leftTabs.querySelectorAll<HTMLElement>(".ltab")) b.classList.toggle("active", b.dataset.ltab === t.id);
+      // na telefonie panel jest wysuwany
+      if (matchMedia("(max-width: 760px)").matches) {
+        rightPanel.classList.remove("open");
+        leftPanel.classList.add("open");
+      }
+    }
     const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości"), props);
 
     // przełącznik paneli na telefonie
     const mobileTabs = h(
       "div",
       { class: "studio-mtabs" },
-      h("button", { onClick: () => togglePanel(leftPanel) }, "📋 Obiekty i skrypty"),
+      h("button", { onClick: () => togglePanel(leftPanel) }, "🧱 Zestaw i obiekty"),
       h("button", { onClick: () => togglePanel(rightPanel) }, "🔧 Właściwości"),
     );
     function togglePanel(p: HTMLElement) {
@@ -592,23 +831,29 @@ export function studioScreen(
       if (open) p.classList.add("open");
     }
 
+    const hintBar = h("div", { class: "studio-hint" });
+    viewport.append(hintBar);
     el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
     engine.resize();
 
     function renderExplorer() {
+      const q = explorerSearch.value.trim().toLowerCase();
+      const list = q ? data.parts.filter((p) => p.name.toLowerCase().includes(q)) : data.parts;
       explorer.replaceChildren(
-        ...data.parts.map((p) =>
+        h("div", { class: "explorer-count" }, `${list.length} z ${data.parts.length} obiektów`),
+        ...list.filter((p) => !p.group || list.find((x) => x.group === p.group) === p).map((p) =>
           h(
             "button",
             {
-              class: "tree-item " + (selected?.id === p.id ? "active" : ""),
+              class: "tree-item " + (selected && (selected.id === p.id || (p.group && selected.group === p.group)) ? "active" : ""),
               onClick: () => {
                 select(p);
                 focus();
               },
             },
-            h("span", { class: "tree-icon", style: `color:${p.color}` }, SHAPE_ICONS[p.shape]),
+            h("span", { class: "tree-icon", style: `color:${p.color}` }, p.group ? "📦" : SHAPE_ICONS[p.shape]),
             p.name,
+            p.group ? h("span", { class: "tree-count" }, `(${groupOf(p).length})`) : "",
             p.kind !== "normal" ? h("span", { class: "tree-kind" }, KIND_LABELS[p.kind]) : null,
           ),
         ),
@@ -649,14 +894,34 @@ export function studioScreen(
           { onChange: (e: Event) => onPick((e.target as HTMLSelectElement).value as T) },
           options.map(([v, l]) => h("option", { value: v, selected: v === value }, l)),
         );
+      const members = groupOf(p);
       props.replaceChildren(
+        members.length > 1
+          ? h(
+              "div",
+              { class: "model-banner" },
+              h("b", null, `📦 Model: ${p.name}`),
+              h("span", null, `${members.length} części - przesuwają się, obracają i kopiują razem`),
+              h("button", { class: "btn small", onClick: () => ungroup(p) }, "Rozdziel na klocki"),
+            )
+          : "",
         field(
-          "Nazwa",
+          members.length > 1 ? "Nazwa modelu" : "Nazwa",
           h("input", {
             value: p.name,
             maxLength: 40,
-            onChange: (e: Event) => upd(() => (p.name = (e.target as HTMLInputElement).value.trim() || "Klocek")),
-            onBlur: () => renderExplorer(),
+            onChange: (e: Event) =>
+              upd(() => {
+                const old = p.name;
+                p.name = (e.target as HTMLInputElement).value.trim() || "Klocek";
+                for (const m of groupOf(p)) m.name = p.name;
+                // zachowania idą za nową nazwą (jeśli nie ma już innych klocków o starej nazwie)
+                if (old !== p.name && !data.parts.some((x) => x.name === old)) {
+                  renameInBehaviors(data.scripts, old, p.name);
+                  renderScripts();
+                }
+              }),
+            onBlur: () => (renderExplorer(), renderProps()),
           }),
         ),
         h("p", { class: "hint" }, "Skrypty wskazują klocki po nazwie."),
@@ -664,6 +929,19 @@ export function studioScreen(
           "Kolor",
           h("input", { type: "color", value: p.color, onInput: (e: Event) => ((p.color = (e.target as HTMLInputElement).value), view.apply(p), changed()) }),
         ),
+        h(
+          "div",
+          { class: "quick-colors" },
+          QUICK_COLORS.map((c) =>
+            h("button", {
+              class: "qc" + (p.color.toLowerCase() === c ? " on" : ""),
+              style: `background:${c}`,
+              title: c,
+              onClick: () => (upd(() => (p.color = c)), renderProps()),
+            }),
+          ),
+        ),
+        behaviorsBox(p, upd),
         field("Kształt", select_(p.shape, [["box", "Klocek"], ["sphere", "Kula"], ["cylinder", "Walec"], ["wedge", "Klin"]], (v) => {
           pushUndo();
           p.shape = v;
@@ -740,6 +1018,53 @@ export function studioScreen(
           { class: "prop check" },
           h("input", { type: "checkbox", checked: p.collide, onChange: (e: Event) => upd(() => (p.collide = (e.target as HTMLInputElement).checked)) }),
           h("span", null, "Kolizja (nie można przez niego przejść)"),
+        ),
+      );
+    }
+
+    /** "Zachowania" - gotowe skrypty jednym kliknięciem */
+    function behaviorsBox(p: Part, upd: (fn: () => void) => void) {
+      const active = behaviorsOf(data.scripts, p.name);
+      const activeIds = new Set(active.map(behaviorIdOf));
+      const kindB = BEHAVIORS.find((b) => b.kind && b.kind === p.kind);
+      return h(
+        "div",
+        { class: "behaviors" },
+        h("div", { class: "prop-group" }, "⚡ Zachowania"),
+        active.length || kindB
+          ? h(
+              "div",
+              { class: "beh-active" },
+              kindB ? h("span", { class: "beh-chip" }, kindB.icon + " " + kindB.label, h("button", { title: "Zwykły klocek", onClick: () => (upd(() => (p.kind = "normal")), renderProps(), renderExplorer()) }, "✕")) : "",
+              active.map((sc) => {
+                const b = BEHAVIORS.find((x) => x.id === behaviorIdOf(sc));
+                return h(
+                  "span",
+                  { class: "beh-chip" },
+                  h("button", { class: "beh-open", title: "Zobacz / zmień kod", onClick: () => editScript(sc) }, (b?.icon ?? "📜") + " " + (b?.label ?? sc.name)),
+                  h(
+                    "button",
+                    {
+                      title: "Usuń zachowanie",
+                      onClick: () => {
+                        data.scripts = data.scripts.filter((x) => x !== sc);
+                        changed();
+                        renderScripts();
+                        renderProps();
+                      },
+                    },
+                    "✕",
+                  ),
+                );
+              }),
+            )
+          : h("p", { class: "hint" }, "Kliknij, co ma robić ten klocek:"),
+        h(
+          "div",
+          { class: "beh-grid" },
+          BEHAVIORS.filter((b) => !activeIds.has(b.id) && b.kind !== p.kind).map((b) =>
+            h("button", { class: "beh-btn", title: b.desc, onClick: () => applyBehavior(b, p) }, h("span", null, b.icon), b.label),
+          ),
         ),
       );
     }
@@ -1089,6 +1414,9 @@ export function studioScreen(
       camera.target.addInPlace(move.scale(speed));
     });
 
+    renderToolbox();
+    showLeftTab(data.parts.length > 3 ? "objects" : "toolbox");
+    leftPanel.classList.remove("open");
     renderExplorer();
     renderProps();
     renderScripts();
@@ -1097,6 +1425,7 @@ export function studioScreen(
     renderAnimations();
     setTool("move");
     if (startDirty) changed();
+    if (shouldShowGuide("3d")) setTimeout(() => !disposed && openGuide("3d"), 600);
   }
 
   engine.runRenderLoop(() => scene.activeCamera && scene.render());
