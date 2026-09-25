@@ -1067,7 +1067,9 @@ async function createView(el: HTMLElement, ctx: Ctx) {
                 h(
                   "div",
                   { class: "g-actions" },
-                  h("span", { class: "pv-pill " + (w.published ? "on" : "") }, w.published ? "Publiczna" : "Prywatna"),
+                  w.coEditor
+                    ? h("span", { class: "pv-pill co", title: `Twórca: ${w.ownerName}` }, "👥 Współtworzysz")
+                    : h("span", { class: "pv-pill " + (w.published ? "on" : "") }, w.published ? "Publiczna" : "Prywatna"),
                   h(
                     "button",
                     { class: "pv-icon-btn", title: "Strona gry", onClick: (e: Event) => (e.stopPropagation(), ctx.nav({ v: "game", id: w.id })) },

@@ -276,6 +276,8 @@ export interface WorldInfo {
   dislikes: number;
   /** kategoria gry (id z GENRES) */
   genre?: string;
+  /** gra, którą współtworzę (nie jestem właścicielem) */
+  coEditor?: boolean;
   /** głos zalogowanego gracza: 1, -1 albo 0 */
   myVote?: number;
   /** odznaki gry (na stronie gry) */

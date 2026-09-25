@@ -99,6 +99,14 @@ CREATE TABLE IF NOT EXISTS game_data (
   PRIMARY KEY (world_id, user_id)
 );
 
+-- współtwórcy gier (mogą edytować w Studiu razem z właścicielem)
+CREATE TABLE IF NOT EXISTS world_editors (
+  world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (world_id, user_id)
+);
+
 -- biblioteka modeli udostępnionych przez twórców (Studio: Biblioteka)
 CREATE TABLE IF NOT EXISTS models (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -528,3 +536,22 @@ export const models = {
   countByOwner: (ownerId: number) => (db.prepare("SELECT COUNT(*) AS c FROM models WHERE owner_id = ?").get(ownerId) as { c: number }).c,
   remove: (id: number) => db.prepare("DELETE FROM models WHERE id = ?").run(id),
 };
+
+export const editors = {
+  list: (worldId: number) =>
+    db
+      .prepare("SELECT u.id, u.username FROM world_editors e JOIN users u ON u.id = e.user_id WHERE e.world_id = ? ORDER BY e.added_at")
+      .all(worldId) as unknown as { id: number; username: string }[],
+  add: (worldId: number, userId: number) =>
+    db.prepare("INSERT OR IGNORE INTO world_editors (world_id, user_id, added_at) VALUES (?, ?, ?)").run(worldId, userId, Date.now()),
+  remove: (worldId: number, userId: number) => db.prepare("DELETE FROM world_editors WHERE world_id = ? AND user_id = ?").run(worldId, userId),
+  is: (worldId: number, userId: number) => !!db.prepare("SELECT 1 FROM world_editors WHERE world_id = ? AND user_id = ?").get(worldId, userId),
+  /** gry, które ktoś współtworzy (nie jest właścicielem) */
+  worldsOf: (userId: number) =>
+    db
+      .prepare(`SELECT ${LIST_COLS} FROM world_editors e JOIN worlds w ON w.id = e.world_id JOIN users u ON u.id = w.owner_id WHERE e.user_id = ? ORDER BY w.updated_at DESC`)
+      .all(userId) as unknown as WorldListRow[],
+};
+
+/** czy gracz może edytować grę w Studiu (właściciel albo współtwórca) */
+export const canEdit = (w: { id: number; owner_id: number }, userId: number) => w.owner_id === userId || editors.is(w.id, userId);

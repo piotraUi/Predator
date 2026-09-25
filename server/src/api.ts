@@ -17,7 +17,7 @@ import {
 } from "./auth.ts";
 import { config } from "./config.ts";
 import { live } from "./live.ts";
-import { alerts, badges, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
+import { alerts, badges, canEdit, editors, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { mutes, stock, trades } from "./social.ts";
 
@@ -271,7 +271,41 @@ api.delete("/models/:id", requireAuth, (req, res) => {
 });
 
 api.get("/worlds/mine", requireAuth, (req, res) => {
-  res.json(worlds.byOwner((req as AuthedRequest).user.id).map(worldInfo));
+  const me = (req as AuthedRequest).user.id;
+  // własne gry i gry, które współtworzę
+  res.json([...worlds.byOwner(me).map(worldInfo), ...editors.worldsOf(me).map((w) => ({ ...worldInfo(w), coEditor: true }))]);
+});
+
+// ---------- współtwórcy (Studio razem) ----------
+api.get("/worlds/:id/editors", requireAuth, (req, res) => {
+  const w = worlds.byId(Number(req.params.id));
+  if (!w || !canEdit(w, (req as AuthedRequest).user.id)) return fail(res, 404, "Nie ma takiej gry");
+  res.json({ owner: users.byId(w.owner_id)?.username ?? "?", editors: editors.list(w.id) });
+});
+
+api.post("/worlds/:id/editors", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const w = worlds.byId(Number(req.params.id));
+  if (!w) return fail(res, 404, "Nie ma takiej gry");
+  if (w.owner_id !== me.id) return fail(res, 403, "Tylko twórca gry może dodawać współtwórców");
+  const u = users.byName(String(req.body?.username ?? "").trim());
+  if (!u || u.id === me.id) return fail(res, 404, "Nie ma takiego gracza");
+  if (friends.get(me.id, u.id)?.status !== "accepted") return fail(res, 400, "Współtwórcą może być tylko znajomy");
+  if (editors.list(w.id).length >= 10) return fail(res, 400, "Najwyżej 10 współtwórców");
+  editors.add(w.id, u.id);
+  alerts.add(u.id, `🛠️ ${me.username} dodał(a) cię jako współtwórcę gry „${w.name}”. Znajdziesz ją w zakładce Twórz.`);
+  res.json({ ok: true, editors: editors.list(w.id) });
+});
+
+api.delete("/worlds/:id/editors/:userId", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const w = worlds.byId(Number(req.params.id));
+  if (!w) return fail(res, 404, "Nie ma takiej gry");
+  const uid = Number(req.params.userId);
+  // twórca usuwa każdego, współtwórca może zrezygnować sam
+  if (w.owner_id !== me.id && uid !== me.id) return fail(res, 403, "Tylko twórca gry może usuwać współtwórców");
+  editors.remove(w.id, uid);
+  res.json({ ok: true, editors: editors.list(w.id) });
 });
 
 api.post("/worlds", requireAuth, (req, res) => {
@@ -286,19 +320,22 @@ api.post("/worlds", requireAuth, (req, res) => {
   res.json(infoById(w.id));
 });
 
-/** Pełne dane świata do edytora (tylko właściciel) */
+/** Pełne dane świata do edytora (właściciel i współtwórcy) */
 api.get("/worlds/:id", requireAuth, (req, res) => {
   const w = worlds.byId(Number(req.params.id));
   if (!w) return fail(res, 404, "Nie ma takiej gry");
-  if (w.owner_id !== (req as AuthedRequest).user.id) return fail(res, 403, "To nie twoja gra");
+  if (!canEdit(w, (req as AuthedRequest).user.id)) return fail(res, 403, "To nie twoja gra");
   res.json({ info: infoById(w.id), data: sanitizeWorld(JSON.parse(w.data)) });
 });
 
 api.put("/worlds/:id", requireAuth, (req, res) => {
   const w = worlds.byId(Number(req.params.id));
   if (!w) return fail(res, 404, "Nie ma takiej gry");
-  if (w.owner_id !== (req as AuthedRequest).user.id) return fail(res, 403, "To nie twoja gra");
+  const meId = (req as AuthedRequest).user.id;
+  if (!canEdit(w, meId)) return fail(res, 403, "To nie twoja gra");
   const b = req.body ?? {};
+  // publikować / ukrywać może tylko twórca
+  if (w.owner_id !== meId) b.published = undefined;
   const maxPlayers = Math.round(Number(b.maxPlayers) || DEFAULT_MAX_PLAYERS);
   worlds.update(w.id, {
     name: String(b.name ?? w.name).trim().slice(0, 40) || w.name,

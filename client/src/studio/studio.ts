@@ -32,6 +32,7 @@ import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../en
 import { openSettings, settings } from "../settings.ts";
 import { badgeEditor } from "./badgeEditor.ts";
 import { terrainTool } from "./terrainTool.ts";
+import { Collab, type Editor, type RemoteChange } from "./collab.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
 import { genreSelect, productEditor } from "./productEditor.ts";
 import { soundsLightEditor } from "./soundsEditor.ts";
@@ -89,6 +90,10 @@ export interface StudioFile {
 /** Skąd pochodzi gra i gdzie ją zapisać */
 interface Source {
   online: boolean;
+  /** gra na serwerze - wspólna edycja z innymi twórcami */
+  worldId?: number;
+  /** jestem twórcą gry (nie współtwórcą) */
+  owner?: boolean;
   published: boolean;
   save(meta: GameMeta, data: WorldData, published: boolean, thumbnail?: string): Promise<void>;
 }
@@ -134,6 +139,8 @@ export function studioScreen(
         if (disposed) return;
         const src: Source = {
           online: true,
+          worldId,
+          owner: info.ownerId === session.user?.id,
           published: info.published,
           async save(meta, d, published, thumbnail) {
             const res = await api.saveWorld(worldId, { ...meta, published, data: d, thumbnail });
@@ -477,7 +484,9 @@ export function studioScreen(
       undo.push(snapshot());
       restore(s);
     };
+    let collab: Collab | null = null;
     function changed() {
+      collab?.changed();
       dirty = true;
       desktop?.setDirty(true);
       saveBtn.classList.add("unsaved");
@@ -1032,6 +1041,77 @@ export function studioScreen(
         [90, "Obrót 90°"],
       ].map(([v, l]) => h("option", { value: String(v), selected: v === 15 }, String(l))),
     );
+    /** kto jeszcze edytuje + zarządzanie współtwórcami */
+    const editorsBtn = h("button", { class: "tb-btn editors-btn", title: "Współpraca - kto edytuje i kto może edytować", onClick: () => openEditors() });
+    async function openEditors() {
+      if (!src.worldId) return;
+      const body = h("div", { class: "form" }, h("div", { class: "muted" }, "Ładowanie…"));
+      const close = modal("👥 Współpraca w Studiu", body);
+      const draw = async () => {
+        try {
+          const r = await api.worldEditors(src.worldId!);
+          const input = h("input", { placeholder: "Nick znajomego" });
+          body.replaceChildren(
+            h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Współtwórcy edytują grę razem z tobą na żywo - widzisz ich jako kolorowe kulki. Zmiany zapisują się same co kilka sekund."),
+            h("div", null, h("b", null, "Twórca: "), r.owner),
+            h(
+              "div",
+              { class: "ed-list" },
+              r.editors.length
+                ? r.editors.map((e) =>
+                    h(
+                      "div",
+                      { class: "ed-row" },
+                      h("span", null, "🛠️ " + e.username),
+                      src.owner || e.id === session.user?.id
+                        ? h(
+                            "button",
+                            {
+                              class: "btn small danger",
+                              onClick: async () => {
+                                await api.removeWorldEditor(src.worldId!, e.id).catch((x: Error) => toast(x.message, "error"));
+                                if (e.id === session.user?.id) (close(), exitScreen());
+                                else draw();
+                              },
+                            },
+                            e.id === session.user?.id ? "Zrezygnuj" : "Usuń",
+                          )
+                        : "",
+                    ),
+                  )
+                : h("div", { class: "muted" }, "Nikt jeszcze nie może edytować tej gry oprócz twórcy."),
+            ),
+            src.owner
+              ? h(
+                  "div",
+                  { class: "row" },
+                  input,
+                  h(
+                    "button",
+                    {
+                      class: "btn primary small",
+                      onClick: async () => {
+                        try {
+                          await api.addWorldEditor(src.worldId!, input.value.trim());
+                          toast("Dodano współtwórcę", "good");
+                          draw();
+                        } catch (x) {
+                          toast((x as Error).message, "error");
+                        }
+                      },
+                    },
+                    "Dodaj",
+                  ),
+                )
+              : "",
+            src.owner ? h("p", { class: "hint" }, "Dodać można tylko znajomego. Publikować grę może tylko twórca.") : "",
+          );
+        } catch (x) {
+          body.replaceChildren(h("div", { class: "form-error" }, (x as Error).message));
+        }
+      };
+      draw();
+    }
     const toolbar = h(
       "div",
       { class: "studio-toolbar" },
@@ -1051,6 +1131,7 @@ export function studioScreen(
         h("span", null, "Wyjdź"),
       ),
       saveBtn,
+      src.online ? editorsBtn : "",
       h(
         "button",
         { class: "tb-btn play", onClick: () => test(), title: src.online ? "Zapisz i zagraj na serwerze" : "Zagraj bez serwera" },
@@ -1925,6 +2006,70 @@ export function studioScreen(
     setTool("move");
     if (startDirty) changed();
     if (shouldShowGuide("3d")) setTimeout(() => !disposed && openGuide("3d"), 600);
+
+    // ---------- współpraca: inni twórcy tej gry na żywo ----------
+    /** zmiany od innych twórców - widok i panele */
+    function applyRemote(c: RemoteChange) {
+      for (const p of c.parts) {
+        if (view.meshes.has(p.id)) view.apply(p);
+        else view.add(p);
+      }
+      for (const id of c.del) view.remove(id);
+      const f = new Set(c.fields);
+      if (f.has("tools")) view.setTools(data.tools), renderTools();
+      if (f.has("characters") || f.has("animations")) view.setCharacters(data.characters, data.animations), renderCharacters(), renderAnimations();
+      if (f.has("scripts")) renderScripts();
+      if (f.has("skybox") || f.has("skyColor")) data.skybox ? view.setSkybox(data.skybox) : view.setSky(data.skyColor);
+      if (f.has("terrain")) terrainPanel.reload();
+      if (selected && c.del.includes(selected.id)) select(null);
+      else if (selected && c.parts.includes(selected)) {
+        gizmos.attachToMesh(view.meshes.get(selected.id) ?? null);
+        // nie odświeżamy pól, w których ktoś właśnie pisze
+        if (!props.contains(document.activeElement)) renderProps();
+      }
+      renderExplorer();
+      collab?.refreshFrames();
+    }
+    if (src.online && src.worldId && session.user) {
+      collab = new Collab({
+        worldId: src.worldId,
+        data,
+        scene,
+        camera,
+        selectedId: () => selected?.id ?? null,
+        onRemote: applyRemote,
+        onEditors: (list) => renderEditors(list),
+        onState: (srv) => {
+          // ktoś edytował wcześniej - stan z serwera jest aktualny
+          const keep = new Set(srv.parts.map((p) => p.id));
+          const del = data.parts.filter((p) => !keep.has(p.id)).map((p) => p.id);
+          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "genre", "terrain"] as const).filter(
+            (k) => JSON.stringify(srv[k] ?? null) !== JSON.stringify(data[k] ?? null),
+          );
+          for (const k of fields) {
+            if (srv[k] === undefined) delete data[k];
+            else (data as unknown as Record<string, unknown>)[k] = srv[k];
+          }
+          const byId = new Map(data.parts.map((p) => [p.id, p]));
+          const parts = srv.parts.map((p) => {
+            const cur = byId.get(p.id);
+            if (!cur) return p;
+            for (const k of Object.keys(cur)) if (!(k in p)) delete (cur as unknown as Record<string, unknown>)[k];
+            return Object.assign(cur, p);
+          });
+          data.parts = parts;
+          applyRemote({ parts, del, fields });
+        },
+      });
+      cleanups.push(() => collab?.dispose());
+    }
+    function renderEditors(list: Editor[]) {
+      editorsBtn.replaceChildren(
+        ...list.slice(0, 5).map((e) => h("span", { class: "ed-dot", style: `background:${e.color}`, title: e.username }, e.username.slice(0, 1).toUpperCase())),
+        h("span", null, list.length ? `${list.length + 1} w Studiu` : "Współpraca"),
+      );
+    }
+    renderEditors([]);
   }
 
   engine.runRenderLoop(() => scene.activeCamera && scene.render());

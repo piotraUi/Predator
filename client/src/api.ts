@@ -160,6 +160,10 @@ export const api = {
   model: (id: number) => req<{ name: string; parts: Part[]; tools: ToolDef[]; characters: CharacterDef[]; animations: AnimDef[]; behaviors: string[] }>("GET", `/models/${id}`),
   shareModel: (name: string, icon: string, model: unknown) => req<{ id: number }>("POST", "/models", { name, icon, model }),
   deleteModel: (id: number) => req("DELETE", `/models/${id}`),
+  // współtwórcy gry
+  worldEditors: (id: number) => req<{ owner: string; editors: { id: number; username: string }[] }>("GET", `/worlds/${id}/editors`),
+  addWorldEditor: (id: number, username: string) => req("POST", `/worlds/${id}/editors`, { username }),
+  removeWorldEditor: (id: number, userId: number) => req("DELETE", `/worlds/${id}/editors/${userId}`),
   invite: (friendId: number, privateCode?: string) => req<{ ok: true; online: boolean }>("POST", "/invite", { friendId, privateCode }),
   // społeczność
   report: (kind: "user" | "world" | "group", targetId: number, reason: string, text: string) =>

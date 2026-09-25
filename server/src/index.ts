@@ -20,6 +20,7 @@ import { parseGameFile } from "../../shared/gamefile.ts";
 import { config } from "./config.ts";
 import { sourceHash } from "../../shared/sourceHash.ts";
 import { users, worlds } from "./db.ts";
+import { StudioRoom } from "./rooms/StudioRoom.ts";
 import { WorldRoom } from "./rooms/WorldRoom.ts";
 import { GAME_CREATORS, giveGamesToCreator } from "./creators.ts";
 import { setupPredatorAccount } from "./predatorAccount.ts";
@@ -69,6 +70,8 @@ const gameServer = new Server({ greet: false, transport: new WebSocketTransport(
 gameServer.define("world", WorldRoom).filterBy(["worldId"]);
 // prywatne serwery - osobna nazwa, żeby zwykłe "Graj" nigdy do nich nie trafiło
 gameServer.define("private", WorldRoom).filterBy(["worldId", "privateCode"]);
+// wspólna edycja w Studiu - jeden pokój na grę
+gameServer.define("studio", StudioRoom).filterBy(["worldId"]);
 
 // przykładowe gry - tworzone, jeśli ich jeszcze nie ma
 /** gra z pliku .pgame w folderze games/ (np. przeniesiona z GDevelopa) */
