@@ -11,6 +11,8 @@ export const LUA_HELP: [string, string][] = [
   ['ownsProduct(player, "VIP")', "czy gracz ma kupiony produkt (kupowany raz, na zawsze)"],
   ["openShop(player)", "otwórz graczowi cały sklep gry"],
   ["onPlayerJoin(function(player) ... end)", "gdy gracz dołączy"],
+  ['onSit(function(player, seat) ... end)', "gracz usiadł na siedzeniu / wsiadł do pojazdu (typ klocka: Siedzenie / pojazd)"],
+  ['onUnsit(function(player, seat) ... end)', "gracz wstał / wysiadł"],
   ["onPlayerLeave(function(player) ... end)", "gdy gracz wyjdzie"],
   ['onTouch("Nazwa", function(player) ... end)', "gdy gracz dotknie klocka o tej nazwie"],
   ["onChat(function(player, message) ... end)", "gdy gracz coś napisze"],

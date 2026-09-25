@@ -1284,3 +1284,11 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
 /* ---------- pod wodą ---------- */
 .underwater-tint { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s; background: radial-gradient(ellipse at center, rgba(30,120,190,.28) 0%, rgba(10,60,120,.62) 100%); }
 .play-screen.underwater .underwater-tint { opacity: 1; }
+
+/* ---------- siedzenia i pojazdy ---------- */
+.exit-seat {
+  position: absolute; left: 50%; bottom: calc(122px + var(--safe-bottom)); transform: translateX(-50%); z-index: 11;
+  border: 2px solid #ffffff60; border-radius: 999px; background: #000000b0; color: #fff; font-weight: 800; font-size: 15px; padding: 10px 20px;
+  cursor: pointer; touch-action: manipulation;
+}
+.exit-seat.hidden { display: none; }

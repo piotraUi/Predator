@@ -22,7 +22,7 @@ import type {
   WorldLight,
   WorldSound,
 } from "./types.ts";
-import { findGenre, JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
+import { findGenre, VEHICLE_TYPES, type VehicleType, JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
 
 export const MAX_PARTS = 5000;
 export const MAX_SCRIPTS = 50;
@@ -195,7 +195,7 @@ end)
 }
 
 const SHAPES: PartShape[] = ["box", "sphere", "cylinder", "wedge"];
-const KINDS: PartKind[] = ["normal", "spawn", "kill", "bounce", "pickup", "npc", "water"];
+const KINDS: PartKind[] = ["normal", "spawn", "kill", "bounce", "pickup", "npc", "water", "seat"];
 const TOOL_TYPES: ToolType[] = ["melee", "ranged", "heal", "boost", "custom"];
 const MATERIALS = ["plastic", "neon", "glass", "metal"] as const;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -236,6 +236,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       ...(typeof p.animId === "string" && p.animId ? { animId: p.animId.slice(0, 40) } : {}),
       ...(typeof p.group === "string" && p.group ? { group: p.group.slice(0, 40) } : {}),
       ...(p.spin === true ? { spin: true } : {}),
+      ...(p.kind === "seat" && VEHICLE_TYPES.includes(p.vehicle as VehicleType) ? { vehicle: p.vehicle as VehicleType } : {}),
     };
   });
   const rawScripts = Array.isArray(w.scripts) ? w.scripts.slice(0, MAX_SCRIPTS) : [];

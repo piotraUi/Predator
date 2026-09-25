@@ -4,7 +4,10 @@ import type { World2D } from "./types2d.ts";
 export type PartShape = "box" | "sphere" | "cylinder" | "wedge";
 /** normal = zwykły klocek, spawn = miejsce pojawienia się, kill = zabija (lawa), bounce = trampolina,
  *  pickup = leży na nim narzędzie, które gracz podnosi dotykając, water = woda (można w niej pływać) */
-export type PartKind = "normal" | "spawn" | "kill" | "bounce" | "pickup" | "npc" | "water";
+export type PartKind = "normal" | "spawn" | "kill" | "bounce" | "pickup" | "npc" | "water" | "seat";
+/** siedzenie kierowcy: cały model (klocki z tym samym "group") jedzie razem z graczem */
+export type VehicleType = "car" | "boat" | "skate";
+export const VEHICLE_TYPES: VehicleType[] = ["car", "boat", "skate"];
 
 export interface Part {
   id: string;
@@ -33,6 +36,8 @@ export interface Part {
   group?: string;
   /** kręci się w kółko (tylko wygląd - np. moneta, taco) */
   spin?: boolean;
+  /** kind = "seat": siedzenie pojazdu (brak = zwykłe krzesło / ławka) */
+  vehicle?: VehicleType;
 }
 
 // ---------- Postacie ----------
@@ -316,7 +321,7 @@ export type FreeEmote = "wave" | "dance" | "cheer" | "point" | "sit";
 /** emotki ze sklepu */
 export type ShopEmote = "flip" | "spin" | "clap" | "robotdance" | "floss" | "bow" | "jumpjacks" | "zombie";
 export type Emote = FreeEmote | ShopEmote;
-export type Anim = "idle" | "walk" | "jump" | "fall" | "dead" | "swim" | "tread" | Emote;
+export type Anim = "idle" | "walk" | "jump" | "fall" | "dead" | "swim" | "tread" | "seated" | "drive" | "skate" | Emote;
 export const FREE_EMOTES: FreeEmote[] = ["wave", "dance", "cheer", "point", "sit"];
 export const SHOP_EMOTES: ShopEmote[] = ["flip", "spin", "clap", "robotdance", "floss", "bow", "jumpjacks", "zombie"];
 export const EMOTES: Emote[] = [...FREE_EMOTES, ...SHOP_EMOTES];
@@ -340,6 +345,8 @@ export interface NetPlayer {
   animation: string | null;
   hp: number;
   maxHp: number;
+  /** siedzenie / pojazd, na którym siedzi gracz */
+  seat?: string | null;
 }
 
 export interface ChatMsg {

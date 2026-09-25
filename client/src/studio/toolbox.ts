@@ -23,7 +23,10 @@ const WOOD = "#8d6e63";
 const LEAF = "#43a047";
 const STONE = "#9e9e9e";
 
-export const TOOLBOX_CATS = ["Podstawowe", "Tor przeszkód", "Natura", "Budynki", "Miasto", "Zabawa"];
+export const TOOLBOX_CATS = ["Podstawowe", "Tor przeszkód", "Natura", "Budynki", "Miasto", "Pojazdy", "Zabawa"];
+
+/** koło pojazdu: spłaszczona kula (oś wzdłuż x) */
+const wheel = (x: number, y: number, z: number, r = 1.1): ModelPart => ({ name: "Koło", shape: "sphere", sx: 0.8, sy: r * 2, sz: r * 2, x, y, z, color: "#212121" });
 
 export const TOOLBOX: ToolboxModel[] = [
   // ---------- podstawowe ----------
@@ -35,6 +38,73 @@ export const TOOLBOX: ToolboxModel[] = [
   { id: "wall", name: "Ściana", icon: "🧱", cat: "Podstawowe", parts: () => [{ name: "Ściana", sx: 12, sy: 8, sz: 1, color: "#d7ccc8" }] },
   { id: "spawn", name: "Spawn (start)", icon: "🏁", cat: "Podstawowe", parts: () => [{ name: "Spawn", kind: "spawn", sx: 6, sy: 1, sz: 6, color: "#6e6e78" }] },
   { id: "npc", name: "Postać (NPC)", icon: "🧍", cat: "Podstawowe", parts: () => [{ name: "NPC", kind: "npc", sx: 2, sy: 5.2, sz: 1, color: "#7fb8ff" }] },
+
+  // ---------- pojazdy i siedzenia (przód = -z) ----------
+  {
+    id: "car",
+    name: "Samochód",
+    icon: "🚗",
+    cat: "Pojazdy",
+    parts: () => [
+      { name: "Nadwozie", sx: 6, sy: 1.6, sz: 10, y: 2, color: "#e53935", material: "metal" },
+      { name: "Maska", sx: 5.6, sy: 0.6, sz: 3, y: 3.1, z: -3.4, color: "#c62828", material: "metal" },
+      { name: "Szyba", sx: 5.4, sy: 1.4, sz: 0.3, y: 3.5, z: -1.8, color: "#90caf9", material: "glass", transparency: 0.3 },
+      { name: "Fotel", kind: "seat", vehicle: "car", sx: 2.2, sy: 0.6, sz: 2.2, y: 3.1, z: 0.6, color: "#263238" },
+      { name: "Oparcie", sx: 2.2, sy: 1.8, sz: 0.4, y: 3.9, z: 1.9, color: "#263238" },
+      { name: "Bagażnik", sx: 5.6, sy: 0.8, sz: 2.4, y: 3.2, z: 3.6, color: "#c62828", material: "metal" },
+      { name: "Światło", sx: 1.2, sy: 0.5, sz: 0.2, x: -2.1, y: 2.2, z: -5.05, color: "#fff59d", material: "neon" },
+      { name: "Światło", sx: 1.2, sy: 0.5, sz: 0.2, x: 2.1, y: 2.2, z: -5.05, color: "#fff59d", material: "neon" },
+      wheel(-3.1, 1.1, -3.2), wheel(3.1, 1.1, -3.2), wheel(-3.1, 1.1, 3.2), wheel(3.1, 1.1, 3.2),
+    ],
+  },
+  {
+    id: "boat",
+    name: "Motorówka",
+    icon: "🚤",
+    cat: "Pojazdy",
+    parts: () => [
+      { name: "Kadłub", sx: 5, sy: 1.4, sz: 9, y: 0.7, color: "#f5f5f5" },
+      { name: "Dziób", shape: "wedge", ry: 180, sx: 5, sy: 1.4, sz: 2.4, y: 0.7, z: -5.7, color: "#f5f5f5" },
+      { name: "Burta", sx: 0.4, sy: 1, sz: 9, x: -2.3, y: 1.9, color: "#1e88e5" },
+      { name: "Burta", sx: 0.4, sy: 1, sz: 9, x: 2.3, y: 1.9, color: "#1e88e5" },
+      { name: "Fotel", kind: "seat", vehicle: "boat", sx: 2, sy: 0.6, sz: 2, y: 1.7, z: 1, color: "#37474f" },
+      { name: "Szyba", sx: 3.6, sy: 1.2, sz: 0.25, y: 2.4, z: -1.4, color: "#90caf9", material: "glass", transparency: 0.3 },
+      { name: "Silnik", sx: 1.2, sy: 1.6, sz: 1, y: 1.4, z: 5, color: "#424242", material: "metal" },
+    ],
+  },
+  {
+    id: "skate",
+    name: "Deskorolka",
+    icon: "🛹",
+    cat: "Pojazdy",
+    parts: () => [
+      { name: "Deska", kind: "seat", vehicle: "skate", sx: 1.4, sy: 0.25, sz: 4, y: 0.62, color: "#ff7043" },
+      wheel(-0.55, 0.3, -1.3, 0.3), wheel(0.55, 0.3, -1.3, 0.3), wheel(-0.55, 0.3, 1.3, 0.3), wheel(0.55, 0.3, 1.3, 0.3),
+    ],
+  },
+  {
+    id: "chair",
+    name: "Krzesło",
+    icon: "🪑",
+    cat: "Pojazdy",
+    parts: () => [
+      { name: "Siedzisko", kind: "seat", sx: 2.2, sy: 0.4, sz: 2.2, y: 1.8, color: WOOD },
+      { name: "Oparcie", sx: 2.2, sy: 2.6, sz: 0.3, y: 3.2, z: 0.95, color: WOOD },
+      ...[[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]].map(([x, z]) => ({ name: "Noga", shape: "cylinder" as const, sx: 0.3, sy: 1.6, sz: 0.3, x, y: 0.8, z, color: "#5d4037" })),
+    ],
+  },
+  {
+    id: "bench",
+    name: "Ławka",
+    icon: "🛋️",
+    cat: "Pojazdy",
+    parts: () => [
+      { name: "Siedzisko", kind: "seat", sx: 7, sy: 0.4, sz: 2.2, y: 1.8, color: WOOD },
+      { name: "Oparcie", sx: 7, sy: 1.6, sz: 0.3, y: 3, z: 0.95, color: WOOD },
+      { name: "Noga", sx: 0.4, sy: 1.6, sz: 2, x: -3, y: 0.8, color: "#424242", material: "metal" },
+      { name: "Noga", sx: 0.4, sy: 1.6, sz: 2, x: 3, y: 0.8, color: "#424242", material: "metal" },
+    ],
+  },
 
   // ---------- tor przeszkód ----------
   { id: "lava", name: "Lawa", icon: "🔥", cat: "Tor przeszkód", parts: () => [{ name: "Lawa", kind: "kill", sx: 8, sy: 1, sz: 8, color: "#ff4d00", material: "neon" }] },

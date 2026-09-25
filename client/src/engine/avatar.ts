@@ -598,6 +598,30 @@ export class AvatarModel {
         bodyY = j * 0.8;
         break;
       }
+      case "seated":
+      case "drive":
+        // siedzenie na krześle / w pojeździe (stopy = wierzch siedzenia)
+        lerp(ll, HOLD, 14);
+        lerp(rl, HOLD, 14);
+        lerp(la, this.anim === "drive" ? HOLD * 0.8 : 0.5, 10);
+        lerp(ra, this.anim === "drive" ? HOLD * 0.8 : 0.5, 10);
+        lerpZ(la, this.anim === "drive" ? -0.12 : 0, 10);
+        lerpZ(ra, this.anim === "drive" ? 0.12 : 0, 10);
+        bodyY = -1.6;
+        break;
+      case "skate":
+        // bokiem na desce, ugięte kolana, ręce na boki do równowagi
+        bodyRot = Math.PI / 2;
+        bodyY = -0.35;
+        lerpZ(ll, 0.22, 12);
+        lerpZ(rl, -0.22, 12);
+        lerp(ll, 0.15, 12);
+        lerp(rl, -0.15, 12);
+        lerpZ(la, 1.0 + Math.sin(t * 2) * 0.1, 10);
+        lerpZ(ra, -1.0 - Math.sin(t * 2) * 0.1, 10);
+        lerp(la, 0, 10);
+        lerp(ra, 0, 10);
+        break;
       case "swim":
         // ciało poziomo, lekko się kołysze
         bodyTilt = -1.35;
@@ -628,7 +652,7 @@ export class AvatarModel {
     if (bodyTiltDirect !== null) body.rotation.x = bodyTiltDirect;
     else body.rotation.x += (bodyTilt - body.rotation.x) * Math.min(1, dt * 10);
     // nogi wracają z rozkroku (pajacyki)
-    if (this.anim !== "jumpjacks") {
+    if (this.anim !== "jumpjacks" && this.anim !== "skate") {
       lerpZ(ll, 0, 12);
       lerpZ(rl, 0, 12);
     }

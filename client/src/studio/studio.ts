@@ -67,6 +67,7 @@ const KIND_LABELS: Record<PartKind, string> = {
   pickup: "Narzędzie do podniesienia",
   npc: "Postać (NPC)",
   water: "Woda (pływanie)",
+  seat: "Siedzenie / pojazd",
 };
 
 const snap = (v: number, step: number) => Math.round(v / step) * step;
@@ -1080,6 +1081,14 @@ export function studioScreen(
                 ),
               )
             : h("p", { class: "hint" }, "Najpierw zrób narzędzie w panelu „Narzędzia i bronie”.")
+          : "",
+        p.kind === "seat"
+          ? field(
+              "Pojazd (cały model jedzie z graczem)",
+              select_(p.vehicle ?? "", [["", "— zwykłe siedzenie —"], ["car", "🚗 Samochód"], ["boat", "🚤 Łódka (tylko po wodzie)"], ["skate", "🛹 Deskorolka"]] as [string, string][], (v) =>
+                upd(() => (p.vehicle = (v || undefined) as Part["vehicle"])),
+              ),
+            )
           : "",
         p.kind === "npc"
           ? h(

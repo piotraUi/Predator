@@ -298,7 +298,8 @@ function groundUnder(solids: Box[], body: Body): Part | null {
  * Pływanie: woda wypycha do powierzchni (głowa nad wodą), mocno hamuje i pozwala płynąć w górę i w dół.
  * Zwraca true, gdy gracz jest w wodzie (wtedy zwykła grawitacja nie działa).
  */
-function swimPhysics(world: CollisionWorld, body: Body, dt: number, gravity: number, swim: SwimInput | undefined): boolean {
+function swimPhysics(world: CollisionWorld, body: Body, dt: number, gravity: number, swim: SwimInput | undefined | null): boolean {
+  if (swim === null) return false;
   const chest = body.y + SWIM_CHEST;
   const surface = waterAt(world, body.x, chest, body.z);
   if (surface === null) return false;
@@ -318,7 +319,8 @@ function swimPhysics(world: CollisionWorld, body: Body, dt: number, gravity: num
 }
 
 /** Przesuwa postać o jeden krok czasu z kolizjami. */
-export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity: number, swim?: SwimInput): StepResult {
+/** swim = null: bez pływania (np. pojazdy) */
+export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity: number, swim?: SwimInput | null): StepResult {
   const swimming = swimPhysics(world, body, dt, gravity, swim);
   if (!swimming) body.vy -= gravity * dt;
   body.vy = Math.max(body.vy, -300);

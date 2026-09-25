@@ -10,7 +10,7 @@ import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
 import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
 
-const ANIMS: Anim[] = ["idle", "walk", "jump", "fall", "dead", "swim", "tread", ...EMOTES];
+const ANIMS: Anim[] = ["idle", "walk", "jump", "fall", "dead", "swim", "tread", "seated", "drive", "skate", ...EMOTES];
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const LIMIT = 2000;
 const SPAWN_PROTECTION_MS = 2000;
@@ -53,6 +53,8 @@ interface PlayerState extends NetPlayer {
   protectedUntil: number;
   tools: string[];
   lastUse: Map<string, number>;
+  /** siedzenie, na którym siedzi (id klocka) */
+  seat: string | null;
 }
 
 const finite = (v: unknown, min: number, max: number): number | undefined =>
@@ -116,6 +118,7 @@ export class GameSim {
       protectedUntil: Date.now() + SPAWN_PROTECTION_MS,
       tools: this.starterTools(),
       lastUse: new Map(),
+      seat: null,
     };
     this.players.set(sid, p);
 
@@ -140,6 +143,7 @@ export class GameSim {
   leave(sid: string) {
     const p = this.players.get(sid);
     if (!p) return;
+    this.standUp(p);
     this.lua?.playerLeft(sid);
     this.dataStore.detach(sid);
     this.shop.detach(sid);
@@ -169,6 +173,7 @@ export class GameSim {
     animation: p.animation,
     hp: p.hp,
     maxHp: p.maxHp,
+    seat: p.seat,
   });
 
   private starterTools() {
@@ -211,6 +216,13 @@ export class GameSim {
       }
       case "respawned":
         return this.onRespawned(sid);
+      case "sit":
+        return this.onSit(sid, msg);
+      case "unsit": {
+        const p = this.players.get(sid);
+        if (p) this.standUp(p);
+        return;
+      }
       case "answer": {
         // odpowiedź z okienka prompt() skryptu
         const v = (msg ?? {}) as Record<string, unknown>;
@@ -348,7 +360,70 @@ export class GameSim {
     this.broadcastHp(p);
   }
 
+  // ---------- siedzenia i pojazdy ----------
+
+  /** kto siedzi na którym siedzeniu (id klocka -> gracz) */
+  private seated = new Map<string, string>();
+  /** pojazd w chwili wsiadania: siedzenie i części modelu (żeby po wyjściu przestawić cały model) */
+  private rides = new Map<string, { seat: { x: number; y: number; z: number; ry: number }; parts: Map<string, { x: number; y: number; z: number; ry: number }> }>();
+
+  /** klocki jednego modelu (albo sam klocek) */
+  private groupParts(part: Part): Part[] {
+    if (!part.group) return [part];
+    return [...this.partsById.values()].filter((o) => o.group === part.group);
+  }
+
+  private onSit(sid: string, msg: unknown) {
+    const p = this.players.get(sid);
+    const id = typeof msg === "string" ? msg : String((msg as { id?: unknown })?.id ?? "");
+    const part = this.partsById.get(id);
+    if (!p || !part || part.kind !== "seat" || p.dead || p.seat) return;
+    if (this.seated.has(part.id)) return;
+    // gracz musi być przy siedzeniu (ochrona przed oszustwami)
+    const margin = 10;
+    if (Math.abs(p.x - part.x) > part.sx / 2 + margin || Math.abs(p.y - part.y) > part.sy / 2 + margin || Math.abs(p.z - part.z) > part.sz / 2 + margin) return;
+    this.seated.set(part.id, sid);
+    p.seat = part.id;
+    if (part.vehicle) {
+      const parts = new Map(this.groupParts(part).map((o) => [o.id, { x: o.x, y: o.y, z: o.z, ry: o.ry }]));
+      this.rides.set(sid, { seat: { x: part.x, y: part.y, z: part.z, ry: part.ry }, parts });
+    }
+    this.t.broadcast("seat", { sid, id: part.id });
+    this.lua?.fire("sit", sid, part.name);
+  }
+
+  /** gracz wstaje (skok, śmierć, wyjście z gry) - pojazd zostaje tam, gdzie dojechał */
+  private standUp(p: PlayerState) {
+    if (!p.seat) return;
+    const part = this.partsById.get(p.seat);
+    this.seated.delete(p.seat);
+    p.seat = null;
+    const ride = this.rides.get(p.sid);
+    this.rides.delete(p.sid);
+    if (part && ride) {
+      // siedzenie jest pod stopami kierowcy, a model obraca się razem z nim
+      const turn = ((p.ry * 180) / Math.PI - ride.seat.ry) * (Math.PI / 180);
+      const cos = Math.cos(turn), sin = Math.sin(turn);
+      const nx = p.x, nz = p.z;
+      const ny = p.y - part.sy / 2;
+      for (const [id, o] of ride.parts) {
+        const q = this.partsById.get(id);
+        if (!q) continue;
+        const dx = o.x - ride.seat.x, dz = o.z - ride.seat.z;
+        q.x = Math.min(LIMIT, Math.max(-LIMIT, nx + dx * cos + dz * sin));
+        q.z = Math.min(LIMIT, Math.max(-LIMIT, nz - dx * sin + dz * cos));
+        q.y = Math.min(LIMIT, Math.max(-500, ny + (o.y - ride.seat.y)));
+        q.ry = (((o.ry + (turn * 180) / Math.PI) % 360) + 360) % 360;
+        this.collisions.set(q);
+        this.dirtyParts.set(q.id, { ...this.dirtyParts.get(q.id), x: q.x, y: q.y, z: q.z, ry: q.ry });
+      }
+    }
+    this.t.broadcast("seat", { sid: p.sid, id: null });
+    if (part) this.lua?.fire("unsit", p.sid, part.name);
+  }
+
   private markDead(p: PlayerState, killer: PlayerState | null) {
+    this.standUp(p);
     p.dead = true;
     p.anim = "dead";
     if (p.hp !== 0) {

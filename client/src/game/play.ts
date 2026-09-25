@@ -21,6 +21,7 @@ import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { gameShop } from "./gameShop.ts";
+import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride } from "./vehicles.ts";
 import { openInviteFriends } from "./inviteFriends.ts";
 import { VoiceChat } from "./voice.ts";
 import { GameAudio } from "./audio3d.ts";
@@ -271,6 +272,18 @@ export function playScreen(
     let boostUntil = 0;
     let boostMult = 1;
     const lastUse = new Map<string, number>();
+    /** siedzenie / pojazd gracza */
+    let myRide: Ride | null = null;
+    let drv: DriveState | null = null;
+    /** po wstaniu chwilę nie siadamy z powrotem na to samo */
+    let sitBlockedUntil = 0;
+    /** siedzenie, z którego właśnie wstaliśmy - nie siadamy na nie, dopóki go dotykamy */
+    let leftSeatId: string | null = null;
+    let sitPendingUntil = 0;
+    let jumpWasDown = false;
+    /** kamera za pojazdem: ostatni ustawiony kąt i pauza, gdy gracz sam kręci kamerą */
+    let autoAlpha: number | null = null;
+    let camHoldUntil = 0;
 
     const spawnPoint = () => {
       const spawns = [...parts.values()].filter((p) => p.kind === "spawn");
@@ -283,6 +296,7 @@ export function playScreen(
     /** fromServer = serwer już wie (np. zabity bronią) */
     const die = (fromServer = false) => {
       if (dead) return;
+      leaveSeat(false);
       dead = true;
       anim = "dead";
       emote = null;
@@ -363,6 +377,94 @@ export function playScreen(
       remotes.delete(sid);
     };
     init.players.forEach(addRemote);
+
+    // ---------- siedzenia i pojazdy ----------
+    const rides = new Rides(world, collisions, parts);
+    const myPose = (): Pose => ({ x: body.x, y: body.y, z: body.z, ry });
+    const exitBtn = h("button", { class: "exit-seat hidden", onClick: () => leaveSeat(true) }, "⬆ Wysiądź");
+    /** siedzenie w pobliżu - przycisk "Wsiądź" (albo klawisz E) */
+    let nearSeat: Part | null = null;
+    const enterBtn = h("button", { class: "exit-seat enter hidden", onClick: () => trySit() }, "");
+    function trySit() {
+      const now = performance.now();
+      if (!nearSeat || myRide || dead || now < sitPendingUntil) return;
+      r.send("sit", nearSeat.id);
+      sitPendingUntil = now + 1000;
+    }
+    const onSeatKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyE" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) trySit();
+    };
+    window.addEventListener("keydown", onSeatKey);
+    cleanups.push(() => window.removeEventListener("keydown", onSeatKey));
+    let seatScan = 0;
+    const scanSeats = () => {
+      let best: Part | null = null;
+      let bestD = Infinity;
+      if (!myRide && !dead)
+        for (const p of parts.values()) {
+          if (p.kind !== "seat" || p.transparency >= 0.999 || rides.taken(p.id)) continue;
+          // do pojazdu podchodzi się z boku - zasięg liczymy od całego modelu
+          const reach = Math.max(p.sx, p.sz) / 2 + (p.vehicle && p.vehicle !== "skate" ? 8 : 4);
+          const d = Math.hypot(p.x - body.x, p.z - body.z);
+          if (d < reach && Math.abs(p.y - body.y) < 8 && d < bestD) (best = p), (bestD = d);
+        }
+      if (best !== nearSeat) {
+        nearSeat = best;
+        enterBtn.classList.toggle("hidden", !best);
+        if (best) enterBtn.textContent = best.vehicle === "car" ? "🚗 Wsiądź (E)" : best.vehicle === "boat" ? "🚤 Wsiądź (E)" : best.vehicle === "skate" ? "🛹 Wskocz na deskę (E)" : "🪑 Usiądź (E)";
+      }
+    };
+    /** wstawanie: send = my wstajemy (skok / przycisk); false = serwer już wie (śmierć) */
+    function leaveSeat(send: boolean) {
+      if (!myRide) return;
+      const ride = myRide;
+      if (send) r.send("unsit");
+      rides.end(init.you, myPose());
+      myRide = null;
+      drv = null;
+      exitBtn.classList.add("hidden");
+      sitBlockedUntil = performance.now() + 1500;
+      // wysiadamy obok pojazdu (z lewej strony), a z krzesła lekko podskakujemy
+      leftSeatId = ride.seat.id;
+      const [fx, fz] = forward(ry);
+      if (ride.type && ride.type !== "skate") {
+        body.x += -fz * 3.5;
+        body.z += fx * 3.5;
+        body.y += 1;
+      } else if (!ride.type) {
+        // z krzesła wstajemy do przodu
+        body.x += fx * (ride.seat.sz / 2 + 1.2);
+        body.z += fz * (ride.seat.sz / 2 + 1.2);
+      }
+      body.vx = body.vz = 0;
+      body.vy = jumpPower * 0.5;
+      body.onGround = false;
+    }
+    r.onMessage("seat", (m: { sid: string; id: string | null }) => {
+      if (m.sid === init.you) {
+        if (!m.id) return leaveSeat(false);
+        sitPendingUntil = 0;
+        const ride = rides.start(init.you, m.id);
+        if (!ride || dead) return;
+        myRide = ride;
+        drv = ride.type ? startDrive(ride) : null;
+        ry = ride.seat.ry * (Math.PI / 180);
+        emote = null;
+        stopAnimEmote();
+        exitBtn.classList.remove("hidden");
+        exitBtn.textContent = ride.type === "skate" ? "⬆ Zejdź z deski" : ride.type ? "⬆ Wysiądź" : "⬆ Wstań";
+        if (ride.type) toast(ride.type === "skate" ? "🛹 Jedziesz! Skok = ollie" : ride.type === "boat" ? "🚤 W/S - gaz, A/D - skręt" : "🚗 W/S - gaz i hamulec, A/D - skręt, spacja - wysiądź", "info");
+        return;
+      }
+      if (m.id) rides.start(m.sid, m.id);
+      else {
+        const rm = remotes.get(m.sid);
+        rides.end(m.sid, rm ? { x: rm.tx, y: rm.ty, z: rm.tz, ry: rm.tr } : null);
+      }
+    });
+    for (const p of init.players) if (p.seat && p.sid !== init.you) rides.start(p.sid, p.seat);
+    if (localStorage.getItem("predator.debug"))
+      (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, get ry() { return ry; } };
 
     /** Dymek z wiadomością nad głową gracza (znika po 6 s) */
     const showBubble = (username: string, text: string) => {
@@ -583,7 +685,7 @@ export function playScreen(
     });
     hotbar.set(toolDefs(init.inventory));
 
-    wrap.append(topbar, chatBox, board, consoleBox, menu, hpBox, hurt, emoteMenu, actionBtn);
+    wrap.append(topbar, chatBox, board, consoleBox, menu, hpBox, hurt, emoteMenu, actionBtn, exitBtn, enterBtn);
     // czat głosowy ze znajomymi (tylko w grze na serwerze)
     if (!params.offline) {
       const voice = new VoiceChat(r, init.you);
@@ -674,8 +776,14 @@ export function playScreen(
         Object.assign(p, c);
         const mesh = world.meshes.get(p.id);
         mesh?.unfreezeWorldMatrix();
+        // przesunięty klocek - obwiednia też (inaczej znika z widoku w nowym miejscu)
+        if (mesh) mesh.doNotSyncBoundingInfo = false;
         world.apply(p);
-        if (!p.spin) mesh?.freezeWorldMatrix();
+        const fresh = world.meshes.get(p.id);
+        if (!p.spin && fresh) {
+          fresh.freezeWorldMatrix();
+          fresh.doNotSyncBoundingInfo = true;
+        }
         collisions.set(p);
       }
     });
@@ -845,7 +953,7 @@ export function playScreen(
         mx = rightX * input.moveX + fwdX * input.moveY;
         mz = rightZ * input.moveX + fwdZ * input.moveY;
       }
-      const moving = Math.hypot(mx, mz) > 0.05;
+      const moving = Math.hypot(mx, mz) > 0.05 && !myRide;
       // w wodzie płynie się wolniej niż biega
       const speed = walkSpeed * (performance.now() < boostUntil ? boostMult : 1) * (swimming ? SWIM_SLOW : 1);
       body.vx = mx * speed;
@@ -866,7 +974,42 @@ export function playScreen(
       // fizyka w małych krokach
       const steps = Math.ceil(dt / (1 / 60));
       const newTouch = new Set<string>();
-      for (let i = 0; i < steps; i++) {
+      const jumpPressed = input.jump && !jumpWasDown;
+      jumpWasDown = input.jump;
+      if (myRide && !dead) {
+        // skok = wysiadanie (na deskorolce skok to ollie - schodzi się przyciskiem)
+        if (jumpPressed && myRide.type !== "skate") leaveSeat(true);
+      }
+      if (myRide && !dead) {
+        const ride = myRide;
+        body.vx = body.vy = body.vz = 0;
+        if (!drv) {
+          // krzesło / ławka: siedzimy na wierzchu (także gdy skrypt je przesuwa)
+          const seat = parts.get(ride.seat.id) ?? ride.seat;
+          body.x = seat.x;
+          body.y = seat.y + seat.sy / 2;
+          body.z = seat.z;
+          ry = seat.ry * (Math.PI / 180);
+          body.onGround = true;
+        } else {
+          const d = drv;
+          for (let i = 0; i < steps; i++) {
+            const res = drive(ride, d, { moveX: input.moveX, moveY: input.moveY, jump: input.jump, camFwd: [fwdX, fwdZ] }, dt / steps, gravity, collisions, jumpPower);
+            for (const p of res.touched) {
+              newTouch.add(p.id);
+              if (p.kind === "kill" && !dead) die();
+            }
+            if (res.landedOn?.kind === "bounce" && !dead) d.vb.vy = BOUNCE_POWER;
+          }
+          body.x = d.vb.x;
+          body.y = d.vb.y + ride.lift;
+          body.z = d.vb.z;
+          body.onGround = d.vb.onGround;
+          ry = d.heading;
+          if (d.vb.y < -150 && !dead) die();
+        }
+      }
+      for (let i = 0; i < (myRide ? 0 : steps); i++) {
         const res = stepBody(collisions, body, dt / steps, gravity, swimIn);
         swimming = res.swimming;
         for (const p of res.touched) {
@@ -875,6 +1018,16 @@ export function playScreen(
         }
         if (res.landedOn?.kind === "bounce" && !dead) body.vy = BOUNCE_POWER;
         groundPartId = res.landedOn?.id ?? null;
+        // siadanie: wystarczy dotknąć siedzenia
+        const now = performance.now();
+        if (leftSeatId && !res.touched.some((p) => p.id === leftSeatId)) leftSeatId = null;
+        if (!dead && now > sitBlockedUntil && now > sitPendingUntil)
+          for (const p of res.touched)
+            if (p.kind === "seat" && p.id !== leftSeatId && !rides.taken(p.id)) {
+              r.send("sit", p.id);
+              sitPendingUntil = now + 1000;
+              break;
+            }
       }
       // gracze nie przenikają przez siebie - lekko się odpychamy (jak w Robloxie)
       if (!dead) {
@@ -904,7 +1057,9 @@ export function playScreen(
       else if (Math.abs(camera.radius - setRadius) > 0.001) wantRadius = camera.radius;
       const firstPerson = wantRadius <= FP_ENTER && !dead;
       if (firstPerson !== fp) setFirstPersonMode(firstPerson);
-      if (firstPerson) ry = Math.atan2(-fwdX, -fwdZ);
+      if (myRide) {
+        /* obrót ustawia pojazd / siedzenie */
+      } else if (firstPerson) ry = Math.atan2(-fwdX, -fwdZ);
       else if (moving) {
         const target = Math.atan2(-mx, -mz);
         let diff = target - ry;
@@ -913,7 +1068,15 @@ export function playScreen(
         ry += diff * Math.min(1, dt * 14);
       }
       if (!dead) {
-        anim = swimming && !body.onGround ? (moving ? "swim" : "tread") : !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
+        anim = myRide
+          ? myRide.type === "skate"
+            ? drv?.vb.onGround === false ? "jump" : "skate"
+            : myRide.type
+              ? "drive"
+              : "seated"
+          : swimming && !body.onGround
+            ? moving ? "swim" : "tread"
+            : !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
         // ruch albo skok przerywa emotkę
         if (anim !== "idle") {
           emote = null;
@@ -923,9 +1086,34 @@ export function playScreen(
 
       local.root.position.set(body.x, body.y, body.z);
       local.root.rotation.y = ry;
+      // siedzenie w pobliżu (kilka razy na sekundę wystarczy)
+      if ((seatScan += dt) > 0.2) {
+        seatScan = 0;
+        scanSeats();
+      }
+      // pojazdy jadą za kierowcami (my i inni gracze)
+      if (rides.bySid.size)
+        rides.update((sid) => {
+          if (sid === init.you) return myPose();
+          const rm = remotes.get(sid);
+          return rm ? { x: rm.model.root.position.x, y: rm.model.root.position.y, z: rm.model.root.position.z, ry: rm.model.root.rotation.y } : null;
+        });
       local.anim = anim;
       local.update(dt);
       local.setFirstPerson(firstPerson);
+
+      // w samochodzie i łódce kamera sama obraca się za pojazd (chyba że gracz właśnie nią kręci)
+      if (drv && myRide?.type !== "skate" && !firstPerson) {
+        const now = performance.now();
+        if (autoAlpha !== null && Math.abs(camera.alpha - autoAlpha) > 1e-4) camHoldUntil = now + 1500;
+        if (now > camHoldUntil && Math.abs(drv.speed) > 4) {
+          let d = Math.PI / 2 - ry - camera.alpha;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          camera.alpha += d * Math.min(1, dt * 2.5);
+        }
+        autoAlpha = camera.alpha;
+      } else autoAlpha = null;
 
       // kamera za graczem
       const head = new Vector3(body.x, body.y + 4.6, body.z);
