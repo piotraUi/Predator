@@ -466,6 +466,24 @@ export class AvatarModel {
       lerpZ(ra, -0.15);
       lerp(ll, this.anim === "jump" ? -0.3 : 0.2);
       lerp(rl, this.anim === "jump" ? 0.3 : -0.2);
+    } else if (this.anim === "swim") {
+      // kraul: ręce na zmianę nad głową, nogi szybko kopią
+      const a = this.t * 5;
+      la.rotation.x = Math.PI + Math.sin(a) * 1.6;
+      ra.rotation.x = Math.PI - Math.sin(a) * 1.6;
+      lerpZ(la, 0.2);
+      lerpZ(ra, -0.2);
+      lerp(ll, Math.sin(this.t * 14) * 0.35, 30);
+      lerp(rl, -Math.sin(this.t * 14) * 0.35, 30);
+    } else if (this.anim === "tread") {
+      // utrzymywanie się na wodzie: ręce zataczają koła na boki, nogi pedałują
+      const a = this.t * 4;
+      lerp(la, 0.6 + Math.sin(a) * 0.4, 14);
+      lerp(ra, 0.6 + Math.sin(a + Math.PI) * 0.4, 14);
+      lerpZ(la, 0.9 + Math.cos(a) * 0.3, 14);
+      lerpZ(ra, -0.9 - Math.cos(a) * 0.3, 14);
+      lerp(ll, Math.sin(a) * 0.5, 14);
+      lerp(rl, -Math.sin(a) * 0.5, 14);
     } else {
       const b = Math.sin(this.t * 2) * 0.05;
       lerp(la, b, 6);
@@ -580,6 +598,15 @@ export class AvatarModel {
         bodyY = j * 0.8;
         break;
       }
+      case "swim":
+        // ciało poziomo, lekko się kołysze
+        bodyTilt = -1.35;
+        bodyY = 1.6;
+        bodyRot = Math.sin(t * 2.5) * 0.2;
+        break;
+      case "tread":
+        bodyY = Math.sin(t * 3) * 0.12;
+        break;
       case "zombie": {
         const w = Math.sin(t * 3);
         lerp(la, HOLD + w * 0.1, 10);

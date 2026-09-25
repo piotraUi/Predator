@@ -181,6 +181,36 @@ export interface StepResult {
   touched: Part[];
   /** klocek, na którym gracz stoi */
   landedOn: Part | null;
+  /** gracz pływa (klatka piersiowa w wodzie) */
+  swimming: boolean;
+}
+
+/** sterowanie w wodzie: w górę (skok), w dół, i ile ruchu idzie w pionie (patrzenie kamerą w górę / w dół) */
+export interface SwimInput {
+  up: boolean;
+  down: boolean;
+  /** prędkość pionowa z ruchu do przodu i nachylenia kamery (-1..1) */
+  pitch: number;
+}
+
+/** wysokość "klatki piersiowej" nad stopami - od niej zaczyna się pływanie */
+export const SWIM_CHEST = 3.3;
+/** prędkość pływania w pionie */
+export const SWIM_SPEED = 16;
+
+/**
+ * Woda w danym punkcie: zwraca wysokość powierzchni (góra klocka wody) albo null.
+ * Woda nie ma kolizji - to "strefa", w której działa pływanie.
+ */
+export function waterAt(world: CollisionWorld, x: number, y: number, z: number): number | null {
+  let top: number | null = null;
+  for (const b of world.query(x, x, z, z)) {
+    if (b.part.kind !== "water") continue;
+    if (y < b.minY || y > b.maxY || x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+    if (sdf(b, x, y, z) > 0) continue;
+    if (top === null || b.maxY > top) top = b.maxY;
+  }
+  return top;
 }
 
 interface Contacts {
@@ -264,9 +294,33 @@ function groundUnder(solids: Box[], body: Body): Part | null {
   return best;
 }
 
+/**
+ * Pływanie: woda wypycha do powierzchni (głowa nad wodą), mocno hamuje i pozwala płynąć w górę i w dół.
+ * Zwraca true, gdy gracz jest w wodzie (wtedy zwykła grawitacja nie działa).
+ */
+function swimPhysics(world: CollisionWorld, body: Body, dt: number, gravity: number, swim: SwimInput | undefined): boolean {
+  const chest = body.y + SWIM_CHEST;
+  const surface = waterAt(world, body.x, chest, body.z);
+  if (surface === null) return false;
+  const depth = surface - chest; // ile klatka piersiowa jest pod powierzchnią
+  let target: number;
+  if (swim?.up) target = SWIM_SPEED;
+  else if (swim?.down) target = -SWIM_SPEED;
+  else if (swim && Math.abs(swim.pitch) > 0.05) target = swim.pitch * SWIM_SPEED;
+  // wypływanie na powierzchnię i unoszenie się z głową nad wodą
+  else target = Math.max(-SWIM_SPEED * 0.5, Math.min(SWIM_SPEED * 0.6, depth * 6));
+  // przy powierzchni płynięcie w górę nie wyskakuje z wody (chyba że jest brzeg - wtedy skok z wody)
+  if (target > 0 && depth < 0.4 && !swim?.up) target = Math.min(target, depth * 6);
+  body.vy += (target - body.vy) * Math.min(1, dt * 6);
+  // leciutkie tonięcie przy bardzo dużej grawitacji świata (pod wodą nic nie spada szybko)
+  body.vy -= gravity * 0.002 * dt;
+  return true;
+}
+
 /** Przesuwa postać o jeden krok czasu z kolizjami. */
-export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity: number): StepResult {
-  body.vy -= gravity * dt;
+export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity: number, swim?: SwimInput): StepResult {
+  const swimming = swimPhysics(world, body, dt, gravity, swim);
+  if (!swimming) body.vy -= gravity * dt;
   body.vy = Math.max(body.vy, -300);
   const tx = body.vx * dt;
   const ty = body.vy * dt;
@@ -350,7 +404,7 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
       }
     }
   }
-  return { touched, landedOn };
+  return { touched, landedOn, swimming };
 }
 
 // ---------- promienie ----------

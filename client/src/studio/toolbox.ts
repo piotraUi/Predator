@@ -106,6 +106,25 @@ export const TOOLBOX: ToolboxModel[] = [
       { name: "Choinka", shape: "cylinder", sx: 2.5, sy: 3, sz: 2.5, y: 9, color: "#2e7d32" },
     ],
   },
+  { id: "water", name: "Woda", icon: "🌊", cat: "Natura", parts: () => [{ name: "Woda", kind: "water", sx: 24, sy: 8, sz: 24, y: 4, color: "#2f8fd8", collide: false }] },
+  {
+    id: "pool",
+    name: "Basen",
+    icon: "🏊",
+    cat: "Natura",
+    parts: () => {
+      const W = 20, D = 14, H = 6, T = 1;
+      const tile = "#e0f2f1";
+      return [
+        { name: "Dno basenu", sx: W, sy: T, sz: D, y: 0.5, color: "#80cbc4" },
+        { name: "Brzeg", sx: W + 2 * T, sy: H, sz: T, y: H / 2, z: -(D + T) / 2, color: tile },
+        { name: "Brzeg", sx: W + 2 * T, sy: H, sz: T, y: H / 2, z: (D + T) / 2, color: tile },
+        { name: "Brzeg", sx: T, sy: H, sz: D, y: H / 2, x: -(W + T) / 2, color: tile },
+        { name: "Brzeg", sx: T, sy: H, sz: D, y: H / 2, x: (W + T) / 2, color: tile },
+        { name: "Woda", kind: "water" as const, sx: W, sy: H - 1.5, sz: D, y: 1 + (H - 1.5) / 2, color: "#29b6f6", collide: false },
+      ];
+    },
+  },
   { id: "bush", name: "Krzak", icon: "🌿", cat: "Natura", parts: () => [{ name: "Krzak", shape: "sphere", sx: 4, sy: 3, sz: 4, y: 1.2, color: "#388e3c", collide: false }] },
   { id: "rock", name: "Skała", icon: "🪨", cat: "Natura", parts: () => [{ name: "Skała", shape: "sphere", sx: 5, sy: 3, sz: 4, y: 1.2, color: STONE }] },
   {
@@ -308,6 +327,7 @@ export const BEHAVIORS: Behavior[] = [
   { id: "kill", icon: "☠️", label: "Zabija", desc: "Dotknięcie = gracz ginie (jak lawa)", kind: "kill" },
   { id: "bounce", icon: "🚀", label: "Trampolina", desc: "Wybija gracza wysoko w górę", kind: "bounce" },
   { id: "spawn", icon: "🏁", label: "Start / checkpoint", desc: "Tu pojawiają się gracze", kind: "spawn" },
+  { id: "water", icon: "🌊", label: "Woda", desc: "Można w niej pływać (klocek traci kolizję)", kind: "water" },
   {
     id: "coin",
     icon: "💰",

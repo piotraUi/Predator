@@ -6,6 +6,8 @@ export class Input {
   moveX = 0;
   moveY = 0;
   jump = false;
+  /** w dół (pływanie): C albo Ctrl */
+  down = false;
   enabled = true;
   private keys = new Set<string>();
   private joy = { x: 0, y: 0 };
@@ -92,6 +94,7 @@ export class Input {
     if (!this.enabled) {
       this.moveX = this.moveY = 0;
       this.jump = false;
+      this.down = false;
       return;
     }
     const k = this.keys;
@@ -112,6 +115,7 @@ export class Input {
     this.moveX = x;
     this.moveY = y;
     this.jump = k.has("Space") || k.has("TouchJump");
+    this.down = k.has("KeyC") || k.has("ControlLeft");
   }
 
   dispose() {

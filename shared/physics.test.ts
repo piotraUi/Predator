@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { baseplate, makePart } from "./world.ts";
-import { CollisionWorld, stepBody, type Body } from "./physics.ts";
+import { CollisionWorld, stepBody, SWIM_CHEST, type Body } from "./physics.ts";
 
 const G = 196.2;
 const run = (w: CollisionWorld, b: Body, frames: number, vx = 0, vz = 0) => {
@@ -215,4 +215,29 @@ test("boty na mapach nigdy nie wchodzą w klocki", () => {
   fuzz("Arena", demoArena().parts, 2);
   fuzz("Tor przeszkód", demoObby().parts, 3);
   for (const [i, m] of MINIGAMES.entries()) fuzz(m.name, m.make().parts, 10 + i);
+});
+
+test("woda: gracz unosi się z głową nad powierzchnią, może zanurkować i wypłynąć", () => {
+  const floor = { ...makePart({ name: "Dno", x: 0, y: -0.5, z: 0, sx: 100, sy: 1, sz: 100 }) };
+  const water = { ...makePart({ name: "Woda", kind: "water", x: 0, y: 10, z: 0, sx: 60, sy: 20, sz: 60 }), collide: false };
+  const world = new CollisionWorld([floor, water]);
+  const body = { x: 0, y: 30, z: 0, vx: 0, vy: 0, vz: 0, onGround: false };
+  let swimming = false;
+  // wpada do wody z góry i wypływa na powierzchnię
+  for (let i = 0; i < 60 * 8; i++) swimming = stepBody(world, body, 1 / 60, 196.2, { up: false, down: false, pitch: 0 }).swimming;
+  assert.ok(swimming, "pływa");
+  const chest = body.y + SWIM_CHEST;
+  assert.ok(Math.abs(chest - 20) < 1.2, "klatka piersiowa przy powierzchni: " + chest.toFixed(2));
+  assert.ok(!body.onGround, "nie stoi na dnie");
+  // nurkowanie
+  for (let i = 0; i < 60 * 2; i++) stepBody(world, body, 1 / 60, 196.2, { up: false, down: true, pitch: 0 });
+  assert.ok(body.y < 10, "zanurkował: " + body.y.toFixed(2));
+  // wypływanie
+  for (let i = 0; i < 60 * 3; i++) stepBody(world, body, 1 / 60, 196.2, { up: false, down: false, pitch: 0 });
+  assert.ok(body.y + SWIM_CHEST > 18.5, "wypłynął: " + body.y.toFixed(2));
+  // poza wodą - zwykła grawitacja
+  const dry = { x: 80, y: 30, z: 0, vx: 0, vy: 0, vz: 0, onGround: false };
+  const w2 = new CollisionWorld([{ ...floor, sx: 400, sz: 400 }, water]);
+  for (let i = 0; i < 60 * 3; i++) stepBody(w2, dry, 1 / 60, 196.2);
+  assert.ok(dry.onGround && dry.y < 0.2, "poza wodą spada na ziemię");
 });

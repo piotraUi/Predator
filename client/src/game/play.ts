@@ -26,7 +26,7 @@ import { VoiceChat } from "./voice.ts";
 import { GameAudio } from "./audio3d.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
-import { CollisionWorld, PLAYER_RADIUS, raycastParts, stepBody, type Body } from "../../../shared/physics.ts";
+import { CollisionWorld, PLAYER_RADIUS, raycastParts, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
 import { session } from "../state.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
@@ -81,6 +81,8 @@ const EMOTE_ALIASES: Record<string, Emote> = {
 };
 
 const WALK_SPEED = 16;
+/** w wodzie płynie się wolniej */
+const SWIM_SLOW = 0.7;
 const JUMP_POWER = 50;
 const BOUNCE_POWER = 110;
 const SEND_EVERY = 1 / 15;
@@ -104,7 +106,9 @@ export function playScreen(
 ): () => void {
   const canvas = h("canvas", { class: "game-canvas" });
   const loading = h("div", { class: "loading" }, h("div", { class: "spinner" }), "Łączenie z grą…​");
-  const wrap = h("div", { class: "play-screen" }, canvas, loading);
+  // niebieski filtr, gdy kamera jest pod wodą (pod interfejsem gry)
+  const tint = h("div", { class: "underwater-tint" });
+  const wrap = h("div", { class: "play-screen" }, canvas, tint, loading);
   root.append(wrap);
 
   const { engine, dispose: disposeEngine } = createEngine(canvas);
@@ -255,6 +259,9 @@ export function playScreen(
     let anim: Anim = "idle";
     let dead = false;
     let walkSpeed = WALK_SPEED;
+    /** gracz jest w wodzie */
+    let swimming = false;
+    let underwater = false;
     let jumpPower = JUMP_POWER;
     let sendTimer = 0;
     let touching = new Set<string>();
@@ -839,19 +846,29 @@ export function playScreen(
         mz = rightZ * input.moveX + fwdZ * input.moveY;
       }
       const moving = Math.hypot(mx, mz) > 0.05;
-      const speed = walkSpeed * (performance.now() < boostUntil ? boostMult : 1);
+      // w wodzie płynie się wolniej niż biega
+      const speed = walkSpeed * (performance.now() < boostUntil ? boostMult : 1) * (swimming ? SWIM_SLOW : 1);
       body.vx = mx * speed;
       body.vz = mz * speed;
-      if (!dead && input.jump && body.onGround) {
+      if (!dead && input.jump && body.onGround && !swimming) {
         body.vy = jumpPower;
         body.onGround = false;
+      }
+      // pływanie: skok = w górę, C / Ctrl = w dół, a płynięcie do przodu idzie tam, gdzie patrzy kamera
+      const look = (camera.target.y - camera.position.y) / (Vector3.Distance(camera.target, camera.position) || 1);
+      const lookPitch = Math.abs(look) > 0.3 ? (look - Math.sign(look) * 0.3) / 0.7 : 0;
+      const swimIn: SwimInput = { up: !dead && input.jump, down: !dead && input.down, pitch: input.moveY > 0.2 ? lookPitch * input.moveY : 0 };
+      // wyskok z wody na brzeg: skok tuż przy powierzchni
+      if (swimming && !dead && input.jump && waterAt(collisions, body.x, body.y + SWIM_CHEST + 0.9, body.z) === null) {
+        body.vy = Math.max(body.vy, jumpPower * 0.75);
       }
 
       // fizyka w małych krokach
       const steps = Math.ceil(dt / (1 / 60));
       const newTouch = new Set<string>();
       for (let i = 0; i < steps; i++) {
-        const res = stepBody(collisions, body, dt / steps, gravity);
+        const res = stepBody(collisions, body, dt / steps, gravity, swimIn);
+        swimming = res.swimming;
         for (const p of res.touched) {
           newTouch.add(p.id);
           if (p.kind === "kill" && !dead) die();
@@ -896,7 +913,7 @@ export function playScreen(
         ry += diff * Math.min(1, dt * 14);
       }
       if (!dead) {
-        anim = !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
+        anim = swimming && !body.onGround ? (moving ? "swim" : "tread") : !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
         // ruch albo skok przerywa emotkę
         if (anim !== "idle") {
           emote = null;
@@ -932,6 +949,12 @@ export function playScreen(
       }
       setRadius = camera.radius;
       world.followShadows(head);
+      // kamera pod wodą - niebieski filtr
+      const under = waterAt(collisions, camera.position.x, camera.position.y, camera.position.z) !== null;
+      if (under !== underwater) {
+        underwater = under;
+        wrap.classList.toggle("underwater", under);
+      }
 
       // inni gracze - płynne przejście do pozycji z serwera
       const k = Math.min(1, dt * 12);

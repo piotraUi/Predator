@@ -10,7 +10,7 @@ import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
 import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
 
-const ANIMS: Anim[] = ["idle", "walk", "jump", "fall", "dead", ...EMOTES];
+const ANIMS: Anim[] = ["idle", "walk", "jump", "fall", "dead", "swim", "tread", ...EMOTES];
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const LIMIT = 2000;
 const SPAWN_PROTECTION_MS = 2000;

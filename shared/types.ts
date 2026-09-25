@@ -3,8 +3,8 @@ import type { World2D } from "./types2d.ts";
 
 export type PartShape = "box" | "sphere" | "cylinder" | "wedge";
 /** normal = zwykły klocek, spawn = miejsce pojawienia się, kill = zabija (lawa), bounce = trampolina,
- *  pickup = leży na nim narzędzie, które gracz podnosi dotykając */
-export type PartKind = "normal" | "spawn" | "kill" | "bounce" | "pickup" | "npc";
+ *  pickup = leży na nim narzędzie, które gracz podnosi dotykając, water = woda (można w niej pływać) */
+export type PartKind = "normal" | "spawn" | "kill" | "bounce" | "pickup" | "npc" | "water";
 
 export interface Part {
   id: string;
@@ -316,7 +316,7 @@ export type FreeEmote = "wave" | "dance" | "cheer" | "point" | "sit";
 /** emotki ze sklepu */
 export type ShopEmote = "flip" | "spin" | "clap" | "robotdance" | "floss" | "bow" | "jumpjacks" | "zombie";
 export type Emote = FreeEmote | ShopEmote;
-export type Anim = "idle" | "walk" | "jump" | "fall" | "dead" | Emote;
+export type Anim = "idle" | "walk" | "jump" | "fall" | "dead" | "swim" | "tread" | Emote;
 export const FREE_EMOTES: FreeEmote[] = ["wave", "dance", "cheer", "point", "sit"];
 export const SHOP_EMOTES: ShopEmote[] = ["flip", "spin", "clap", "robotdance", "floss", "bow", "jumpjacks", "zombie"];
 export const EMOTES: Emote[] = [...FREE_EMOTES, ...SHOP_EMOTES];

@@ -13,6 +13,7 @@ import {
   Texture,
   TransformNode,
   Vector3,
+  Vector4,
   VertexData,
   type AbstractMesh,
 } from "@babylonjs/core";
@@ -56,6 +57,42 @@ function gridTexture(scene: Scene, uScale: number, vScale: number) {
   return t;
 }
 
+/** Tekstura fal na wodzie (jasne, falujące linie) - przesuwana co klatkę */
+function waterTexture(scene: Scene) {
+  const size = 256;
+  const t = new DynamicTexture("water", { width: size, height: size }, scene, true);
+  const ctx = t.getContext() as unknown as CanvasRenderingContext2D;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
+  // miękkie "zmarszczki" - pofalowane jasne linie, zapętlone na krawędziach
+  ctx.lineCap = "round";
+  for (let i = 0; i < 26; i++) {
+    const y0 = (i * 97) % size;
+    const x0 = (i * 53) % size;
+    const len = 40 + ((i * 37) % 60);
+    ctx.strokeStyle = `rgba(255,255,255,${0.35 + ((i * 13) % 10) / 25})`;
+    ctx.lineWidth = 2 + (i % 3);
+    for (const [ox, oy] of [[0, 0], [-size, 0], [0, -size], [-size, -size]]) {
+      ctx.beginPath();
+      for (let k = 0; k <= len; k += 4) {
+        const x = x0 + k + ox;
+        const y = y0 + Math.sin(k / 9 + i) * 3 + oy;
+        if (k === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+  // lekkie przyciemnienie między falami, żeby tekstura nie była płaska
+  ctx.globalCompositeOperation = "multiply";
+  ctx.fillStyle = "rgba(200,220,235,1)";
+  ctx.fillRect(0, 0, size, size);
+  t.update();
+  t.wrapU = t.wrapV = Texture.WRAP_ADDRESSMODE;
+  t.anisotropicFilteringLevel = 16;
+  return t;
+}
+
 /** Wspólne materiały - jeden na kombinację koloru, materiału i przezroczystości. */
 export class MaterialCache {
   private cache = new Map<string, StandardMaterial>();
@@ -90,6 +127,35 @@ export class MaterialCache {
       m.backFaceCulling = false;
     }
     m.freeze();
+    this.cache.set(key, m);
+    return m;
+  }
+
+  /** tekstury wody przesuwane w czasie (fale) */
+  readonly waterTextures: Texture[] = [];
+
+  /** Woda: półprzezroczysta, błyszcząca, z płynącymi falami. Skala fal zależy od wielkości klocka. */
+  water(color: string, transparency: number, sx: number, sz: number, uvInMesh = false): StandardMaterial {
+    // prostopadłościan wody ma skalę fal w siatce (każda ściana osobno), reszta kształtów - w materiale
+    const us = uvInMesh ? 1 : Math.max(1, Math.round(sx / 16));
+    const vs = uvInMesh ? 1 : Math.max(1, Math.round(sz / 16));
+    const key = `water|${color}|${transparency.toFixed(2)}|${us}x${vs}`;
+    let m = this.cache.get(key);
+    if (m) return m;
+    m = new StandardMaterial(key, this.scene);
+    const c = hexColor(color);
+    m.diffuseColor = c;
+    m.emissiveColor = c.scale(0.25);
+    m.specularColor = new Color3(0.9, 0.95, 1);
+    m.specularPower = 64;
+    const tex = waterTexture(this.scene);
+    tex.uScale = us;
+    tex.vScale = vs;
+    m.diffuseTexture = tex;
+    this.waterTextures.push(tex);
+    m.alpha = Math.max(0.15, 0.62 * (1 - transparency));
+    m.backFaceCulling = false;
+    m.separateCullingPass = true;
     this.cache.set(key, m);
     return m;
   }
@@ -150,6 +216,8 @@ export class WorldView {
   /** w edytorze klocek NPC jest widoczny (półprzezroczysty), w grze - tylko postać */
   private editor: boolean;
   shadows: ShadowGenerator | null = null;
+  /** siatka klocka została zbudowana od nowa (np. woda po zmianie rozmiaru) - Studio podpina do niej gizmo */
+  onMeshRebuilt?: (id: string) => void;
   sun: DirectionalLight;
   hemi: HemisphericLight;
 
@@ -196,6 +264,14 @@ export class WorldView {
         else pos.addInPlace(n.target.subtract(pos).scale(k));
         if (n.spin) n.model.root.rotation.y += dt * 2;
         n.model.update(dt);
+      }
+      // woda płynie
+      if (this.materials.waterTextures.length) {
+        const t = performance.now() / 1000;
+        for (const tex of this.materials.waterTextures) {
+          tex.uOffset = t * 0.03;
+          tex.vOffset = Math.sin(t * 0.4) * 0.05 + t * 0.012;
+        }
       }
       if (this.spinning.size) {
         for (const id of this.spinning) {
@@ -345,9 +421,16 @@ export class WorldView {
         mesh = createWedge(part.id, s);
         break;
       default:
-        mesh = MeshBuilder.CreateBox(part.id, { size: 1 }, s);
+        if (part.kind === "water") {
+          // fale w tej samej skali na każdej ścianie (bez rozciągniętych pasków na bokach)
+          const u = (a: number) => Math.max(0.25, a / 16);
+          const X = u(part.sx), Y = u(part.sy), Z = u(part.sz);
+          const faceUV = [new Vector4(0, 0, X, Y), new Vector4(0, 0, X, Y), new Vector4(0, 0, Z, Y), new Vector4(0, 0, Z, Y), new Vector4(0, 0, X, Z), new Vector4(0, 0, X, Z)];
+          mesh = MeshBuilder.CreateBox(part.id, { size: 1, faceUV }, s);
+          mesh.metadata = { waterKey: `${part.sx}|${part.sy}|${part.sz}` };
+        } else mesh = MeshBuilder.CreateBox(part.id, { size: 1 }, s);
     }
-    mesh.metadata = { partId: part.id };
+    mesh.metadata = { ...(mesh.metadata ?? {}), partId: part.id };
     mesh.receiveShadows = true;
     this.parts.set(part.id, part);
     this.shadows?.addShadowCaster(mesh);
@@ -359,6 +442,14 @@ export class WorldView {
   apply(part: Part) {
     const mesh = this.meshes.get(part.id);
     if (!mesh) return;
+    // woda-prostopadłościan ma fale zapisane w siatce - po zmianie rozmiaru / typu budujemy ją od nowa
+    const waterBox = part.kind === "water" && part.shape === "box";
+    const key = (mesh.metadata as { waterKey?: string } | null)?.waterKey;
+    if (waterBox ? key !== `${part.sx}|${part.sy}|${part.sz}` : key !== undefined) {
+      this.add(part);
+      this.onMeshRebuilt?.(part.id);
+      return;
+    }
     mesh.position.set(part.x, part.y, part.z);
     mesh.scaling.set(part.sx, part.sy, part.sz);
     mesh.rotation.set(0, (part.ry * Math.PI) / 180, 0);
@@ -367,8 +458,13 @@ export class WorldView {
       part.shape === "box" && part.sx * part.sz >= 400 && part.sy <= 4 && part.material !== "neon" && part.material !== "glass"
         ? ([Math.round(part.sx), Math.round(part.sz)] as [number, number])
         : undefined;
-    mesh.material = this.materials.get(part.color, part.material, part.transparency, grid);
+    mesh.material =
+      part.kind === "water"
+        ? this.materials.water(part.color, part.transparency, part.sx, part.sz, waterBox)
+        : this.materials.get(part.color, part.material, part.transparency, grid);
     mesh.isVisible = part.transparency < 0.999;
+    // woda nie rzuca cienia (przez wodę widać dno)
+    if (part.kind === "water") this.shadows?.removeShadowCaster(mesh);
     if (part.spin && !this.editor) this.spinning.add(part.id);
     else this.spinning.delete(part.id);
     if (part.kind === "npc") {

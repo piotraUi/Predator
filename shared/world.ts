@@ -195,7 +195,7 @@ end)
 }
 
 const SHAPES: PartShape[] = ["box", "sphere", "cylinder", "wedge"];
-const KINDS: PartKind[] = ["normal", "spawn", "kill", "bounce", "pickup", "npc"];
+const KINDS: PartKind[] = ["normal", "spawn", "kill", "bounce", "pickup", "npc", "water"];
 const TOOL_TYPES: ToolType[] = ["melee", "ranged", "heal", "boost", "custom"];
 const MATERIALS = ["plastic", "neon", "glass", "metal"] as const;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -226,7 +226,8 @@ export function sanitizeWorld(input: unknown): WorldData {
       ry: (Math.round(num(p.ry, -360, 360, 0) / 90) * 90 + 360) % 360,
       color: typeof p.color === "string" && COLOR_RE.test(p.color) ? p.color : "#a3a2a5",
       transparency: num(p.transparency, 0, 1, 0),
-      collide: p.collide !== false,
+      // w wodzie się pływa - nigdy nie jest twarda
+      collide: p.collide !== false && p.kind !== "water",
       material: MATERIALS.includes(p.material as (typeof MATERIALS)[number])
         ? (p.material as Part["material"])
         : "plastic",

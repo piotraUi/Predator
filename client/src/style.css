@@ -1280,3 +1280,7 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
 .invite-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; min-width: min(360px, 80vw); }
 .invite-row { display: flex; align-items: center; gap: 10px; }
 .invite-name { flex: 1; min-width: 0; }
+
+/* ---------- pod wodą ---------- */
+.underwater-tint { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s; background: radial-gradient(ellipse at center, rgba(30,120,190,.28) 0%, rgba(10,60,120,.62) 100%); }
+.play-screen.underwater .underwater-tint { opacity: 1; }

@@ -66,6 +66,7 @@ const KIND_LABELS: Record<PartKind, string> = {
   bounce: "Trampolina",
   pickup: "Narzędzie do podniesienia",
   npc: "Postać (NPC)",
+  water: "Woda (pływanie)",
 };
 
 const snap = (v: number, step: number) => Math.round(v / step) * step;
@@ -319,6 +320,14 @@ export function studioScreen(
       return p.group ? data.parts.filter((x) => x.group === p.group) : [p];
     }
 
+    // przebudowana siatka zaznaczonego klocka: gizmo i ramka na nową siatkę
+    view.onMeshRebuilt = (id) => {
+      if (selected?.id !== id) return;
+      const m = view.meshes.get(id);
+      if (m) m.showBoundingBox = true;
+      gizmos.attachToMesh(m ?? null);
+    };
+
     function select(p: Part | null) {
       selected = p;
       const mesh = p ? view.meshes.get(p.id) : null;
@@ -509,6 +518,7 @@ export function studioScreen(
       if (b.kind) {
         pushUndo();
         p.kind = b.kind;
+        if (b.kind === "water") p.collide = false;
         view.apply(p);
         changed();
         renderProps();
@@ -1052,6 +1062,7 @@ export function studioScreen(
           select_(p.kind, Object.entries(KIND_LABELS) as [PartKind, string][], (v) => {
             upd(() => {
               p.kind = v;
+              if (v === "water") p.collide = false;
               if (v === "pickup") {
                 p.collide = false;
                 p.toolId ??= data.tools[0]?.id;
