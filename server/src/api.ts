@@ -1,5 +1,5 @@
 import { giveGamesToCreator } from "./creators.ts";
-import { emptyWorld2D } from "../../shared/world2d.ts";
+import { emptyWorld2D, topDownWorld2D } from "../../shared/world2d.ts";
 import express, { type Response } from "express";
 import { CATALOG, findItem } from "../../shared/catalog.ts";
 import { DEFAULT_AVATAR } from "../../shared/catalog.ts";
@@ -313,7 +313,11 @@ api.post("/worlds", requireAuth, (req, res) => {
   if (worlds.byOwner(user.id).length >= MAX_WORLDS_PER_USER)
     return fail(res, 400, `Możesz mieć maksymalnie ${MAX_WORLDS_PER_USER} gier`);
   const name = String(req.body?.name ?? "").trim().slice(0, 40) || "Moja gra";
-  const base = req.body?.mode === "2d" ? { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: emptyWorld2D() } : emptyWorld();
+  const mode = req.body?.mode;
+  const base =
+    mode === "2d" || mode === "2dtop"
+      ? { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: mode === "2dtop" ? topDownWorld2D() : emptyWorld2D() }
+      : emptyWorld();
   // każda nowa gra ma od razu odznakę za wejście - twórca może ją zmienić w Studio
   const data = { ...base, badges: [welcomeBadge()] };
   const w = worlds.create(user.id, name, data, DEFAULT_MAX_PLAYERS);

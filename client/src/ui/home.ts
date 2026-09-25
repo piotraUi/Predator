@@ -992,7 +992,7 @@ async function friendsView(el: HTMLElement, ctx: Ctx) {
 async function createView(el: HTMLElement, ctx: Ctx) {
   const newGame = () => {
     const input = h("input", { placeholder: "Nazwa gry", maxLength: 40, value: "Moja gra" });
-    let mode: "3d" | "2d" = "3d";
+    let mode: "3d" | "2d" | "2dtop" = "3d";
     const pick = h("div", { class: "mode-pick" });
     const renderPick = () =>
       pick.replaceChildren(
@@ -1000,6 +1000,7 @@ async function createView(el: HTMLElement, ctx: Ctx) {
           [
             ["3d", "🧱", "Gra 3D", "Klocki, postacie, narzędzia - jak w Robloxie"],
             ["2d", "🎮", "Gra 2D", "Platformówka z obrazków: skakanie, monety, poziomy"],
+            ["2dtop", "🗺️", "Gra 2D z góry", "Widok z góry jak w RPG: chodzenie w 4 strony"],
           ] as const
         ).map(([m, icon, label, desc]) =>
           h(

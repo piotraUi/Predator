@@ -129,6 +129,7 @@ function sanitizeLevel(raw: unknown, objIds: Set<string>, charIds: Set<string>, 
   }
   if (l.stackPlayers === true) out.stackPlayers = true;
   if (l.selectable === true) out.selectable = true;
+  if (l.topDown === true) out.topDown = true;
   return out;
 }
 
@@ -276,6 +277,44 @@ export function emptyWorld2D(): World2D {
     physics: { ...DEFAULT_PHYSICS_2D },
     sounds: {},
   };
+}
+
+/** Nowa gra 2D z widokiem z góry (jak RPG): łąka, drzewa i kamienie jako ściany, monety do zebrania */
+export function topDownWorld2D(): World2D {
+  const w = emptyWorld2D();
+  const img = (name: string, sz: number, body: string): Asset2D => ({ id: newId2d(), name, type: "image", data: svg(sz, sz, body), w: sz, h: sz, pixel: true });
+  const grass = img("trawa", 32, `<svg viewBox="0 0 32 32"><rect width="32" height="32" fill="#6abe45"/><rect x="5" y="7" width="2" height="4" fill="#58a838"/><rect x="21" y="19" width="2" height="4" fill="#58a838"/><rect x="14" y="26" width="2" height="3" fill="#7fd14f"/></svg>`);
+  const tree = img("drzewo", 32, `<svg viewBox="0 0 32 32"><circle cx="16" cy="14" r="13" fill="#2e7d32"/><circle cx="12" cy="10" r="6" fill="#43a047"/><rect x="13" y="24" width="6" height="8" fill="#6d4c41"/></svg>`);
+  const rock = img("kamień", 32, `<svg viewBox="0 0 32 32"><path d="M3 26 L8 9 L20 4 L29 14 L27 27 Z" fill="#8d8d93"/><path d="M8 9 L20 4 L18 12Z" fill="#a9a9b0"/></svg>`);
+  w.assets.push(grass, tree, rock);
+  const o = (name: string, kind: Obj2D["kind"], frames: Asset2D[], ow: number, oh: number, extra: Partial<Obj2D> = {}): Obj2D => ({
+    id: newId2d(), name, kind, anims: [{ name: "Idle", frames: frames.map((f) => f.id), frameTime: 0.15, loop: true }],
+    w: ow, h: oh, hitbox: [0, 0, 1, 1], solid: "none", role: "none", ...extra,
+  });
+  const grassObj = o("Trawa", "tiled", [grass], 320, 320);
+  const treeObj = o("Drzewo", "sprite", [tree], 64, 64, { solid: "solid", hitbox: [0.3, 0.6, 0.4, 0.4] });
+  const rockObj = o("Kamień", "sprite", [rock], 48, 48, { solid: "solid", hitbox: [0.1, 0.3, 0.8, 0.6] });
+  const fence = o("Płot", "tiled", [rock], 48, 48, { solid: "solid" });
+  w.objects.push(grassObj, treeObj, rockObj, fence);
+  const find = (name: string) => w.objects.find((x) => x.name === name)!;
+  const level = w.levels[0];
+  const inst = (ob: Obj2D, x: number, y: number, iw = ob.w, ih = ob.h, layer: Inst2D["layer"] = "main"): Inst2D => ({ id: newId2d(), obj: ob.id, x, y, w: iw, h: ih, z: 0, layer });
+  const W = 1280, H = 960;
+  level.instances = [
+    inst(grassObj, 0, 0, W, H, "bg"),
+    // płot dookoła
+    inst(fence, -48, -48, W + 96, 48), inst(fence, -48, H, W + 96, 48), inst(fence, -48, 0, 48, H), inst(fence, W, 0, 48, H),
+    ...[[200, 150], [420, 380], [760, 200], [980, 620], [300, 700], [640, 520], [1100, 160], [150, 480]].map(([x, y]) => inst(treeObj, x, y)),
+    ...[[560, 120], [860, 420], [420, 820], [1040, 820]].map(([x, y]) => inst(rockObj, x, y)),
+    ...[[320, 260], [520, 300], [700, 380], [900, 300], [1000, 480], [820, 700], [560, 700], [240, 580]].map(([x, y]) => inst(find("Moneta"), x, y)),
+    inst(find("Start"), 600, 440),
+    { ...inst(find("Licznik monet"), 20, 16), layer: "hud" as const },
+  ];
+  level.name = "Łąka";
+  level.background = "#6abe45";
+  level.killY = null;
+  level.topDown = true;
+  return w;
 }
 
 // ---------- geometria ----------

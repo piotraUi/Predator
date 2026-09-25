@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { newBody, NO_INPUT, SolidWorld, stepBody, type Input2D, type Solid } from "./physics2d.ts";
+import { newBody, NO_INPUT, SolidWorld, stepBody, stepTopDown, type Input2D, type Solid } from "./physics2d.ts";
 import { DEFAULT_PHYSICS_2D } from "./world2d.ts";
 
 const P = DEFAULT_PHYSICS_2D;
@@ -76,4 +76,20 @@ test("drabina: na szczycie nie da się stać, bez wspinania spada się w dół",
   const b = newBody({ x: 45, y: 40, w: 20, h: 30 });
   run(w, b, 120);
   assert.ok(b.box.y + b.box.h > 290, "spadł przez drabinę na ziemię: " + (b.box.y + b.box.h));
+});
+
+test("widok z góry: ruch w 4 strony bez grawitacji, ściany blokują", () => {
+  const world = new SolidWorld([{ box: { x: 100, y: -50, w: 20, h: 5000 }, type: "solid", obj: "sciana", id: "s" }]);
+  const b = newBody({ x: 0, y: 0, w: 20, h: 20 });
+  const p = { ...DEFAULT_PHYSICS_2D };
+  for (let i = 0; i < 60; i++) stepTopDown(world, b, { ...NO_INPUT, down: true }, 1 / 60, p);
+  assert.ok(b.box.y > 50, "idzie w dół bez spadania: " + b.box.y.toFixed(1));
+  for (let i = 0; i < 20; i++) stepTopDown(world, b, { ...NO_INPUT, right: true }, 1 / 60, p);
+  const y = b.box.y;
+  for (let i = 0; i < 100; i++) stepTopDown(world, b, { ...NO_INPUT, right: true }, 1 / 60, p);
+  assert.ok(Math.abs(b.box.x + b.box.w - 100) < 0.5, "ściana zatrzymała: " + b.box.x.toFixed(1));
+  assert.ok(Math.abs(b.box.y - y) < 0.1, "bez grawitacji nie spada");
+  for (let i = 0; i < 30; i++) stepTopDown(world, b, NO_INPUT, 1 / 60, p);
+  assert.equal(b.vx, 0);
+  assert.equal(b.vy, 0);
 });

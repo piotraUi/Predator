@@ -1,6 +1,6 @@
 // Ekran gry 2D: własna postać (fizyka u gracza), inni gracze z serwera, potwory, monety,
 // checkpointy, śmierć i odradzanie, kamera, dźwięki, czat, sterowanie dotykowe i pad.
-import { newBody, NO_INPUT, SolidWorld, stepBody, type Body2D, type Input2D, type Solid } from "../../../shared/physics2d.ts";
+import { newBody, NO_INPUT, SolidWorld, stepBody, stepTopDown, type Body2D, type Input2D, type Solid } from "../../../shared/physics2d.ts";
 import type { Cmd2D, Init2D, LevelSync } from "../../../shared/sim/sim2d.ts";
 import type { ChatMsg } from "../../../shared/types.ts";
 import type { Character2D, Enemy2D, Inst2D, InstState2D, Level2D, NetPlayer2D, Obj2D, World2D } from "../../../shared/types2d.ts";
@@ -534,6 +534,8 @@ export function play2dScreen(
       a.paused = b.vy === 0 && b.vx === 0;
       return pick("climb");
     }
+    // widok z góry: chodzenie w każdą stronę (w górę i w dół też)
+    if (level.topDown) return Math.hypot(b.vx + b.force, b.vy) > 1 ? pick("walk") : pick("idle");
     if (!b.onFloor) return b.vy < 0 ? pick("jump") : pick("fall");
     if (Math.abs(b.vx + b.force) > 1) return pick("walk");
     const stand = b.floorObj ? objs.get(b.floorObj)?.standAnim : undefined;
@@ -621,7 +623,7 @@ export function play2dScreen(
       }
     } else {
       me.body.force = force;
-      const jumped = stepBody(solids, me.body, inp, dt, physics(), maxSpeed());
+      const jumped = level.topDown ? (stepTopDown(solids, me.body, inp, dt, physics(), maxSpeed()), false) : stepBody(solids, me.body, inp, dt, physics(), maxSpeed());
       if (jumped) assets.play(w.sounds.jump, { volume: 0.35 });
       if (inp.left && !inp.right) me.flip = true;
       else if (inp.right && !inp.left) me.flip = false;
@@ -721,7 +723,8 @@ export function play2dScreen(
       return;
     }
     pet.body.force = force;
-    stepBody(solids, pet.body, delayed, dt, physics(), maxSpeed());
+    if (level.topDown) stepTopDown(solids, pet.body, delayed, dt, physics(), maxSpeed());
+    else stepBody(solids, pet.body, delayed, dt, physics(), maxSpeed());
     if (delayed.left && !delayed.right) pet.flip = true;
     else if (delayed.right && !delayed.left) pet.flip = false;
     setAnim(pet, pickAnim(pet, delayed, false));

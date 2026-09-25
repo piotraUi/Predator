@@ -294,6 +294,60 @@ function land(b: Body2D, s: Solid) {
   b.floorObj = s.obj;
 }
 
+/**
+ * Widok z góry: bez grawitacji i skakania, ruch w 8 kierunków (po skosie tak samo szybko),
+ * ściany blokują w obu osiach. Drabiny i platformy "jumpthru" nie mają tu znaczenia.
+ */
+export function stepTopDown(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Physics2D, maxSpeed = p.maxSpeed) {
+  let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  let dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+  const l = Math.hypot(dx, dy);
+  if (l > 0) (dx /= l), (dy /= l);
+  // szybkie ruszanie i hamowanie (jak w RPG), bez poślizgu
+  const k = Math.min(1, dt * 14);
+  b.vx += (dx * maxSpeed - b.vx) * k;
+  b.vy += (dy * maxSpeed - b.vy) * k;
+  if (Math.abs(b.vx) < 0.5 && !dx) b.vx = 0;
+  if (Math.abs(b.vy) < 0.5 && !dy) b.vy = 0;
+  b.onFloor = true;
+  b.onLadder = false;
+  b.jumping = false;
+  b.jumpV = b.fallV = 0;
+  b.floorObj = null;
+  b.blocked = false;
+  const steps = Math.max(1, Math.ceil(dt / (1 / 60)));
+  for (let i = 0; i < steps; i++) {
+    const mx = ((b.vx + b.force) * dt) / steps;
+    const my = (b.vy * dt) / steps;
+    if (mx) {
+      const moved = sweepAxis(world, b.box, mx, "x");
+      if (moved !== mx) (b.blocked = true), (b.vx = 0);
+      b.box.x += moved;
+    }
+    if (my) {
+      const moved = sweepAxis(world, b.box, my, "y");
+      if (moved !== my) b.vy = 0;
+      b.box.y += moved;
+    }
+  }
+}
+
+/** ile da się przesunąć prostokąt w jednej osi, zanim trafi w ścianę */
+function sweepAxis(world: SolidWorld, box: Box, d: number, axis: "x" | "y"): number {
+  const sweep: Box =
+    axis === "x"
+      ? d > 0 ? { x: box.x + box.w, y: box.y + EPS, w: d, h: box.h - 2 * EPS } : { x: box.x + d, y: box.y + EPS, w: -d, h: box.h - 2 * EPS }
+      : d > 0 ? { x: box.x + EPS, y: box.y + box.h, w: box.w - 2 * EPS, h: d } : { x: box.x + EPS, y: box.y + d, w: box.w - 2 * EPS, h: -d };
+  let move = d;
+  const inner = { x: box.x + EPS, y: box.y + EPS, w: box.w - 2 * EPS, h: box.h - 2 * EPS };
+  for (const s of world.query(sweep, tmp)) {
+    if (s.type !== "solid" || overlaps(inner, s.box)) continue;
+    if (axis === "x") move = d > 0 ? Math.min(move, s.box.x - (box.x + box.w)) : Math.max(move, s.box.x + s.box.w - box.x);
+    else move = d > 0 ? Math.min(move, s.box.y - (box.y + box.h)) : Math.max(move, s.box.y + s.box.h - box.y);
+  }
+  return d > 0 ? Math.max(0, move) : Math.min(0, move);
+}
+
 /** Punkt w ścianie (np. "czujnik" potwora przed nim) */
 export function pointInSolid(world: SolidWorld, x: number, y: number) {
   for (const s of world.query({ x, y, w: 0.01, h: 0.01 }, tmp)) if (s.type === "solid") return true;

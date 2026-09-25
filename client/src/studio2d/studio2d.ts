@@ -724,6 +724,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         checkIn("Noc / ciemność (światła rozjaśniają)", !!l.ambient, (v) => (l.ambient = v ? "#606080" : undefined)),
         l.ambient ? field("Kolor ciemności", colorIn(l.ambient, (v) => (l.ambient = v))) : "",
         checkIn("Śmierć bez checkpointu = poziom od nowa", !!l.restartOnDeath, (v) => (l.restartOnDeath = v || undefined)),
+        checkIn("Widok z góry (bez grawitacji, ruch w 4 strony - jak w RPG)", !!l.topDown, (v) => (l.topDown = v || undefined)),
         checkIn("Gracze mogą stawać sobie na głowach", !!l.stackPlayers, (v) => (l.stackPlayers = v || undefined)),
         checkIn("Do wyboru z menu gry", !!l.selectable, (v) => (l.selectable = v || undefined)),
         checkIn("Poziom startowy", w.startLevel === l.id, (v) => v && (w.startLevel = l.id)),

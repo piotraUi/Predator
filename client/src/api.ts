@@ -134,7 +134,7 @@ export const api = {
   worldInfo: (id: number) => req<WorldInfo>("GET", `/worlds/${id}/info`),
   vote: (id: number, value: number) => req<WorldInfo>("POST", `/worlds/${id}/vote`, { value }),
   myWorlds: () => req<WorldInfo[]>("GET", "/worlds/mine"),
-  createWorld: (name: string, mode: "3d" | "2d" = "3d") => req<WorldInfo>("POST", "/worlds", { name, mode }),
+  createWorld: (name: string, mode: "3d" | "2d" | "2dtop" = "3d") => req<WorldInfo>("POST", "/worlds", { name, mode }),
   getWorld: (id: number) => req<{ info: WorldInfo; data: WorldData }>("GET", "/worlds/" + id),
   saveWorld: (
     id: number,

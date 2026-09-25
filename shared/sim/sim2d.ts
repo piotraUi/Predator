@@ -2,7 +2,7 @@
 // Serwer pilnuje stanu świata: monety, checkpointy, poziomy, przyciski i bramy, potwory, skrypty Lua.
 // Ruch własnej postaci liczy gracz u siebie (płynność), serwer sprawdza, czego dotknął.
 import { filterChat } from "../chatFilter.ts";
-import { newBody, NO_INPUT, pointInSolid, SolidWorld, stepBody, type Body2D, type Solid } from "../physics2d.ts";
+import { newBody, NO_INPUT, pointInSolid, SolidWorld, stepBody, stepTopDown, type Body2D, type Solid } from "../physics2d.ts";
 import { LuaEngine, type LuaValue, type ScriptHost } from "../scripting/lua.ts";
 import type { ChatMsg, WorldData } from "../types.ts";
 import type { Character2D, Enemy2D, Inst2D, InstState2D, Level2D, NetPlayer2D, Obj2D, World2D } from "../types2d.ts";
@@ -584,7 +584,11 @@ export class Sim2D {
       }
       if (inZone && !e.inZone) jump = true;
       e.inZone = inZone;
-      stepBody(s.solids, b, { ...NO_INPUT, left: e.flip, right: !e.flip, jump }, dt, params);
+      if (s.level.topDown) {
+        // z góry: potwór chodzi w lewo i w prawo, przy ścianie zawraca
+        stepTopDown(s.solids, b, { ...NO_INPUT, left: e.flip, right: !e.flip }, dt, params);
+        if (b.blocked) e.flip = !e.flip;
+      } else stepBody(s.solids, b, { ...NO_INPUT, left: e.flip, right: !e.flip, jump }, dt, params);
       if (jump) b.jumpWas = false;
       if (hazard) {
         // ginie w ogniu / na kolcach i wraca po chwili

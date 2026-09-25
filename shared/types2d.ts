@@ -128,6 +128,8 @@ export interface Level2D {
   stackPlayers?: boolean;
   /** można go wybrać z menu gry (inaczej trzeba do niego dojść) */
   selectable?: boolean;
+  /** widok z góry (jak w grach RPG): bez grawitacji, ruch w 4 strony, ściany blokują ze wszystkich stron */
+  topDown?: boolean;
 }
 
 /** Postać do grania: sprite i nazwy jego animacji */
