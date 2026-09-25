@@ -31,6 +31,8 @@ import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../en
 import { openSettings, settings } from "../settings.ts";
 import { badgeEditor } from "./badgeEditor.ts";
 import { soundsLightEditor } from "./soundsEditor.ts";
+import { SKYBOXES } from "../../../shared/skybox.ts";
+import { skyPreview } from "../engine/skybox.ts";
 import {
   behaviorIdOf,
   behaviorsOf,
@@ -149,7 +151,7 @@ export function studioScreen(
     const undo: string[] = [];
     const redo: string[] = [];
 
-    const view = new WorldView(scene, { shadows: false, skyColor: data.skyColor });
+    const view = new WorldView(scene, { shadows: false, skyColor: data.skyColor, skybox: data.skybox });
     view.setTools(data.tools);
     view.setCharacters(data.characters, data.animations);
     view.load(data.parts);
@@ -214,11 +216,22 @@ export function studioScreen(
     const pg = gizmos.gizmos.positionGizmo!;
     const sg = gizmos.gizmos.scaleGizmo!;
     pg.scaleRatio = sg.scaleRatio = matchMedia("(pointer: coarse)").matches ? 1.6 : 1.1;
-    sg.sensitivity = 3;
+    // skalowanie o stały krok siatki (1 → 2 → 3), a nie mnożenie rozmiaru - inaczej jeden krok
+    // w dół przy siatce 1 dawał rozmiar 0 i klocek od razu robił się płaski
+    sg.incrementalSnap = true;
+    sg.sensitivity = 1.5;
     const applySnap = () => {
       pg.snapDistance = gridStep;
       sg.snapDistance = gridStep;
     };
+    // klocek nigdy nie jest cieńszy niż krok siatki (albo 0.2)
+    sg.onDragObservable.add(() => {
+      if (!selected) return;
+      const mesh = view.meshes.get(selected.id);
+      if (!mesh) return;
+      const min = Math.max(0.2, Math.min(gridStep, 1));
+      mesh.scaling.set(Math.max(min, Math.abs(mesh.scaling.x)), Math.max(min, Math.abs(mesh.scaling.y)), Math.max(min, Math.abs(mesh.scaling.z)));
+    });
     applySnap();
     gizmos.positionGizmoEnabled = false;
     gizmos.scaleGizmoEnabled = false;
@@ -262,15 +275,19 @@ export function studioScreen(
       selected.x = round(mesh.position.x);
       selected.y = round(mesh.position.y);
       selected.z = round(mesh.position.z);
-      selected.sx = round(Math.max(0.2, Math.abs(mesh.scaling.x)));
-      selected.sy = round(Math.max(0.2, Math.abs(mesh.scaling.y)));
-      selected.sz = round(Math.max(0.2, Math.abs(mesh.scaling.z)));
+      // rozmiar do 0.01 (bez śmieci po przecinku z macierzy gizma)
+      const size = (v: number) => Math.round(Math.max(0.2, Math.abs(v)) * 100) / 100;
+      selected.sx = size(mesh.scaling.x);
+      selected.sy = size(mesh.scaling.y);
+      selected.sz = size(mesh.scaling.z);
       view.apply(selected);
       changed();
       renderProps();
     };
     pg.onDragEndObservable.add(onGizmoEnd);
     sg.onDragEndObservable.add(onGizmoEnd);
+    if (localStorage.getItem("predator.debug"))
+      (window as unknown as { __studio: unknown }).__studio = { scene, camera, sg, view, data, select: (name: string) => select(data.parts.find((p) => p.name === name) ?? null) };
 
     // ---------- wybieranie ----------
     scene.onPointerObservable.add((pi) => {
@@ -1377,6 +1394,31 @@ export function studioScreen(
       const desc = h("textarea", { value: meta.description, maxLength: 500, rows: 3 });
       const maxP = h("input", { type: "number", min: "1", max: String(MAX_PLAYERS_LIMIT), value: String(meta.maxPlayers) });
       const sky = h("input", { type: "color", value: data.skyColor });
+      // gotowe niebo: kafelki z podglądem, pierwszy = zwykły kolor
+      let skybox = data.skybox ?? "";
+      const skyGrid = h("div", { class: "sky-grid" });
+      const renderSkyGrid = () =>
+        skyGrid.replaceChildren(
+          h(
+            "button",
+            { type: "button", class: "sky-tile" + (!skybox ? " on" : ""), onClick: () => ((skybox = ""), renderSkyGrid(), view.setSky(sky.value)) },
+            h("span", { class: "sky-plain", style: `background:${sky.value}` }),
+            h("span", null, "🎨 Kolor"),
+          ),
+          ...SKYBOXES.map((s) =>
+            h(
+              "button",
+              { type: "button", class: "sky-tile" + (skybox === s.id ? " on" : ""), title: s.name, onClick: () => ((skybox = s.id), renderSkyGrid(), view.setSkybox(s.id)) },
+              skyPreview(s, 120, 60),
+              h("span", null, s.icon + " " + s.name),
+            ),
+          ),
+        );
+      renderSkyGrid();
+      sky.addEventListener("input", () => {
+        if (!skybox) view.setSky(sky.value);
+        renderSkyGrid();
+      });
       const grav = h("input", { type: "number", min: "10", max: "500", step: "1", value: String(data.gravity) });
       const pub = h("input", { type: "checkbox", checked: src.published });
       const pvp = h("input", { type: "checkbox", checked: data.pvp });
@@ -1396,7 +1438,8 @@ export function studioScreen(
           h("label", null, "Nazwa", name),
           h("label", null, "Opis", desc),
           h("label", null, `Maks. graczy na serwer (1–${MAX_PLAYERS_LIMIT})`, maxP),
-          h("label", null, "Kolor nieba", sky),
+          h("div", { class: "prop" }, h("span", null, "Niebo (podgląd od razu w Studio)"), skyGrid),
+          h("label", null, "Kolor nieba (gdy wybrane „Kolor”)", sky),
           h("label", null, "Grawitacja (normalnie 196)", grav),
           h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
@@ -1407,12 +1450,14 @@ export function studioScreen(
             : h("p", { class: "muted", style: "font-size:13px;margin:0" }, "Gra z pliku - żeby ją opublikować, wyślij ją na serwer (Plik → Wyślij na serwer)."),
         ),
         [
-          { label: "Anuluj", onClick: () => close() },
+          { label: "Anuluj", onClick: () => (close(), data.skybox ? view.setSkybox(data.skybox) : view.setSky(data.skyColor)) },
           {
             label: "Zapisz",
             kind: "primary",
             onClick: async () => {
               data.skyColor = sky.value;
+              if (skybox) data.skybox = skybox;
+              else delete data.skybox;
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
               data.pvp = pvp.checked;
               const al = audioLight.read();
@@ -1421,7 +1466,8 @@ export function studioScreen(
               data.badges = badges.read();
               data.playerCharacter = playerChar.value || undefined;
               renderCharacters();
-              view.setSky(data.skyColor);
+              if (data.skybox) view.setSkybox(data.skybox);
+              else view.setSky(data.skyColor);
               meta.name = name.value.trim().slice(0, 40) || meta.name;
               meta.description = desc.value.slice(0, 500);
               meta.maxPlayers = Math.min(MAX_PLAYERS_LIMIT, Math.max(1, Math.round(Number(maxP.value) || 30)));

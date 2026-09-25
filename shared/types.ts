@@ -141,6 +141,8 @@ export interface WorldData {
   parts: Part[];
   scripts: WorldScript[];
   skyColor: string;
+  /** gotowe niebo: "day", "night", "sunset"... (bez = zwykły kolor nieba) */
+  skybox?: string;
   gravity: number;
   tools: ToolDef[];
   /** czy gracze mogą sobie zadawać obrażenia */

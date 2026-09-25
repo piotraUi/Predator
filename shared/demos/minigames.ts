@@ -681,6 +681,7 @@ end)
     parts,
     scripts: [script("Wieża", src)],
     skyColor: "#1a1030",
+    skybox: "hell",
     gravity: 196.2,
     tools: [],
     pvp: false,

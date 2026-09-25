@@ -21,6 +21,8 @@ import type { AnimDef, CharacterDef, Part, ToolDef } from "../../../shared/types
 import { AvatarModel } from "./avatar.ts";
 import { buildToolModel } from "./toolModels.ts";
 import { hexColor } from "./color.ts";
+import { findSkybox, type SkyboxDef } from "../../../shared/skybox.ts";
+import { SkyDome } from "./skybox.ts";
 
 export function createEngine(canvas: HTMLCanvasElement) {
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true, antialias: true });
@@ -141,6 +143,10 @@ export class WorldView {
   /** klocki, które się kręcą (tylko wygląd) */
   private spinning = new Set<string>();
   private baseLight = { hemi: 0.85, sun: 0.7 };
+  private brightness = 1;
+  private skyColor = "#8ec8ff";
+  private skyDef: SkyboxDef | null = null;
+  private dome: SkyDome | null = null;
   /** w edytorze klocek NPC jest widoczny (półprzezroczysty), w grze - tylko postać */
   private editor: boolean;
   shadows: ShadowGenerator | null = null;
@@ -149,7 +155,7 @@ export class WorldView {
 
   constructor(
     public scene: Scene,
-    opts: { shadows?: boolean; skyColor?: string; editor?: boolean } = {},
+    opts: { shadows?: boolean; skyColor?: string; skybox?: string; editor?: boolean } = {},
   ) {
     this.editor = !!opts.editor;
     this.materials = new MaterialCache(scene);
@@ -178,6 +184,8 @@ export class WorldView {
       this.shadows.bias = 0.0008;
       this.shadows.normalBias = 0.02;
     }
+    this.skyColor = opts.skyColor ?? "#8ec8ff";
+    this.setSkybox(opts.skybox);
     // NPC się animują i płynnie dochodzą do nowej pozycji (skrypty przesuwają je skokami)
     scene.onBeforeRenderObservable.add(() => {
       const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.1);
@@ -270,10 +278,8 @@ export class WorldView {
   }
 
   /** jasność świata (1 = normalnie) i mgła (0 = daleka, domyślna) */
-  setLight(brightness: number, fog: number, sky: string) {
-    this.hemi.intensity = this.baseLight.hemi * brightness;
-    this.sun.intensity = this.baseLight.sun * brightness;
-    this.scene.ambientColor = new Color3(0.3, 0.3, 0.3).scale(Math.min(1, brightness));
+  setLight(brightness: number, fog: number) {
+    this.brightness = brightness;
     if (fog > 0) {
       this.scene.fogStart = fog * 0.25;
       this.scene.fogEnd = fog;
@@ -281,13 +287,41 @@ export class WorldView {
       this.scene.fogStart = 250;
       this.scene.fogEnd = 700;
     }
-    this.setSky(sky);
+    this.applySky();
   }
 
+  /** zwykły kolor nieba - wyłącza gotowe niebo (skybox) */
   setSky(color: string) {
-    const c = hexColor(color);
+    this.skyColor = color;
+    this.skyDef = null;
+    this.applySky();
+  }
+
+  /** gotowe niebo (noc, zachód słońca, kosmos...); pusty/nieznany = zwykły kolor nieba */
+  setSkybox(id: string | null | undefined) {
+    this.skyDef = findSkybox(id) ?? null;
+    this.applySky();
+  }
+
+  private applySky() {
+    const def = this.skyDef;
+    const b = this.brightness * (def?.light ?? 1);
+    this.hemi.intensity = this.baseLight.hemi * b;
+    this.sun.intensity = this.baseLight.sun * b;
+    this.hemi.diffuse = def ? hexColor(def.tint) : Color3.White();
+    this.hemi.groundColor = def ? hexColor(def.ground) : new Color3(0.55, 0.55, 0.6);
+    this.sun.diffuse = def ? hexColor(def.tint) : Color3.White();
+    this.scene.ambientColor = new Color3(0.3, 0.3, 0.3).scale(Math.min(1, b));
+    const c = hexColor(def ? def.fog : this.skyColor);
     this.scene.clearColor = c.toColor4(1);
     this.scene.fogColor = c;
+    if (def) {
+      if (this.dome) this.dome.set(def);
+      else this.dome = new SkyDome(this.scene, def);
+    } else {
+      this.dome?.dispose();
+      this.dome = null;
+    }
   }
 
   /** Cień podąża za graczem */

@@ -102,6 +102,7 @@ end)
     parts,
     scripts: [script("Tacos", lua)],
     skyColor: "#87ceeb",
+    skybox: "day",
     gravity: 196.2,
     tools: [],
     pvp: false,

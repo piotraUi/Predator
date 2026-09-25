@@ -206,6 +206,7 @@ end)
 | `playAnimation(player, "Nazwa")`, `stopAnimation(player)` | animacja z edytora animacji na graczu |
 | `npcAnimation("NazwaKlocka", "Animacja")` | animacja NPC |
 | `setSky("#0b1026")` | kolor nieba (np. noc) |
+| `setSkybox("night")`, `setSkybox("space", player)` | gotowe niebo: `day`, `cloudy`, `sunset`, `dawn`, `night`, `aurora`, `space`, `storm`, `candy`, `hell` (`""` = zwykły kolor); w Studio: Gra → Niebo |
 
 ## Narzędzia i bronie
 

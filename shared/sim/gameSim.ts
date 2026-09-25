@@ -2,6 +2,7 @@
 // Działa na serwerze (pokój Colyseus) i w przeglądarce (testowanie offline w Studio) -
 // różni się tylko "transport", którym wysyłamy wiadomości do graczy.
 import { filterChat } from "../chatFilter.ts";
+import { findSkybox, SKYBOXES } from "../skybox.ts";
 import { CollisionWorld, rayBox, raycastParts } from "../physics.ts";
 import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
@@ -61,6 +62,8 @@ export class GameSim {
   private lua: LuaEngine | null = null;
   private logs: { text: string; error: boolean }[] = [];
   private sky: string;
+  /** gotowe niebo (skybox) - pusty = zwykły kolor */
+  private skybox: string;
 
   constructor(
     private data: WorldData,
@@ -71,6 +74,7 @@ export class GameSim {
     for (const tool of data.tools) this.toolsById.set(tool.id, tool);
     this.collisions = new CollisionWorld(data.parts);
     this.sky = data.skyColor;
+    this.skybox = data.skybox ?? "";
     this.startScripts();
   }
 
@@ -106,7 +110,7 @@ export class GameSim {
     const { scripts: _hidden, ...publicData } = this.data;
     this.t.send(sid, "init", {
       you: sid,
-      world: { ...publicData, skyColor: this.sky, parts: [...this.partsById.values()] },
+      world: { ...publicData, skyColor: this.sky, skybox: this.skybox || undefined, parts: [...this.partsById.values()] },
       info: { ...this.info, isOwner: user.isOwner },
       players: [...this.players.values()].map(this.netPlayer),
       spawn,
@@ -579,6 +583,7 @@ export class GameSim {
       setSky: (c) => {
         if (!COLOR_RE.test(c)) return;
         this.sky = c;
+        this.skybox = "";
         this.t.broadcast("sky", c);
       },
     };
@@ -626,6 +631,13 @@ export class GameSim {
         for (const part of this.partsById.values())
           if (part.name === name) changes.push({ id: part.id, transparency: visible ? part.transparency : 1, collide: visible ? part.collide : false });
         if (changes.length) this.t.send(target, "part", changes);
+      },
+      // gotowe niebo: setSkybox("night") dla wszystkich albo setSkybox("night", player); "" = zwykły kolor
+      setSkybox: (name, target) => {
+        const id = typeof name === "string" && name && name !== "none" ? findSkybox(name)?.id : "";
+        if (id === undefined) return this.log(`setSkybox: nie ma nieba „${String(name)}” (są: ${SKYBOXES.map((s) => s.id).join(", ")})`, true);
+        if (target === undefined || target === null || target === "") this.skybox = id;
+        to(target, "skybox", id);
       },
       setSkyFor: (sid, color) => {
         if (typeof color === "string" && COLOR_RE.test(color)) to(sid, "sky", color);

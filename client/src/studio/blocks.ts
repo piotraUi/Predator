@@ -4,6 +4,7 @@ import * as Blockly from "blockly/core";
 import "blockly/blocks";
 import { luaGenerator, Order } from "blockly/lua";
 import * as Pl from "blockly/msg/pl";
+import { SKYBOXES } from "../../../shared/skybox.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 Blockly.setLocale(Pl as any);
@@ -74,6 +75,7 @@ Blockly.common.defineBlocksWithJsonArray([
   { type: "p_stop_anim", message0: "zatrzymaj animację gracza", previousStatement: null, nextStatement: null, colour: PLAYER },
   { type: "p_npc_anim", message0: "NPC %1 niech odtwarza %2", args0: [partField("PART", "NPC"), partField("ANIM", "Machanie")], previousStatement: null, nextStatement: null, colour: PART },
   { type: "p_sky", message0: "zmień kolor nieba na %1", args0: [{ type: "field_dropdown", name: "COLOR", options: [["dzień", "#8ec8ff"], ["zachód słońca", "#ffb57a"], ["noc", "#0b1026"], ["burza", "#4a5160"], ["kosmos", "#000000"]] }], previousStatement: null, nextStatement: null, colour: VALUE },
+  { type: "p_skybox", message0: "ustaw niebo %1", args0: [{ type: "field_dropdown", name: "SKY", options: SKYBOXES.map((s) => [s.icon + " " + s.name, s.id]) }], previousStatement: null, nextStatement: null, colour: VALUE },
   { type: "p_killer_score", message0: "dodaj zabójcy %1 punktów", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Działa w bloczku „gdy gracz zginie”" },
 
   // ---- wartości ----
@@ -133,6 +135,7 @@ g.forBlock["p_play_anim"] = (b) => `if player then playAnimation(player, ${q(Str
 g.forBlock["p_stop_anim"] = () => `if player then stopAnimation(player) end\n`;
 g.forBlock["p_npc_anim"] = (b) => `npcAnimation(${part(b)}, ${q(String(b.getFieldValue("ANIM") ?? ""))})\n`;
 g.forBlock["p_sky"] = (b) => `setSky(${q(b.getFieldValue("COLOR"))})\n`;
+g.forBlock["p_skybox"] = (b) => `setSkybox(${q(b.getFieldValue("SKY"))})\n`;
 g.forBlock["p_health"] = () => [`(player and getHealth(player) or 0)`, Order.ATOMIC];
 g.forBlock["p_player_name"] = () => [`(player and playerName(player) or "")`, Order.ATOMIC];
 g.forBlock["p_message"] = () => [`(message or "")`, Order.ATOMIC];
@@ -155,6 +158,7 @@ const TOOLBOX = {
       contents: [
         block("p_say", { inputs: { TEXT: textShadow("Cześć!") } }),
         block("p_sky"),
+        block("p_skybox"),
         block("p_wait", { inputs: { SEC: numShadow(1) } }),
         block("p_print", { inputs: { TEXT: textShadow("test") } }),
       ],

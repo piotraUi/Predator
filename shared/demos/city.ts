@@ -453,5 +453,5 @@ talk("Tancerz", "Ale imprezka! 🕺")
     },
   ];
 
-  return { parts, scripts, tools, characters, animations, pvp: false, skyColor: "#8ec8ff", gravity: 196.2 };
+  return { parts, scripts, tools, characters, animations, pvp: false, skyColor: "#8ec8ff", skybox: "day", gravity: 196.2 };
 }

@@ -2,6 +2,7 @@
 import { sanitizeWorld2D } from "./world2d.ts";
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
 import { DEFAULT_AVATAR } from "./catalog.ts";
+import { findSkybox } from "./skybox.ts";
 import type {
   BadgeDef,
   Accessory,
@@ -66,7 +67,7 @@ export function spawnPart(x = 0, z = 0): Part {
 
 /** Pusty świat dla nowej gry */
 export function emptyWorld(): WorldData {
-  return { parts: [baseplate(), spawnPart()], scripts: [], skyColor: "#8ec8ff", gravity: 196.2, tools: [], pvp: true, characters: [], animations: [] };
+  return { parts: [baseplate(), spawnPart()], scripts: [], skyColor: "#8ec8ff", skybox: "day", gravity: 196.2, tools: [], pvp: true, characters: [], animations: [] };
 }
 
 /** Przykładowy tor przeszkód z przykładowymi skryptami - tworzony przy pierwszym uruchomieniu serwera */
@@ -125,7 +126,7 @@ end)
 `,
     },
   ];
-  return { parts, scripts, skyColor: "#8ec8ff", gravity: 196.2, tools: [], pvp: false, characters: [], animations: [] };
+  return { parts, scripts, skyColor: "#8ec8ff", skybox: "day", gravity: 196.2, tools: [], pvp: false, characters: [], animations: [] };
 }
 
 /** Nowe narzędzie z szablonu */
@@ -190,7 +191,7 @@ end)
 `,
     },
   ];
-  return { parts, scripts, skyColor: "#ffb57a", gravity: 196.2, tools: [sword, pistol, rifle, hammer, medkit, coffee], pvp: true, characters: [], animations: [] };
+  return { parts, scripts, skyColor: "#ffb57a", skybox: "sunset", gravity: 196.2, tools: [sword, pistol, rifle, hammer, medkit, coffee], pvp: true, characters: [], animations: [] };
 }
 
 const SHAPES: PartShape[] = ["box", "sphere", "cylinder", "wedge"];
@@ -285,6 +286,7 @@ export function sanitizeWorld(input: unknown): WorldData {
     ...(playerCharacter ? { playerCharacter } : {}),
     pvp: w.pvp !== false,
     skyColor: typeof w.skyColor === "string" && COLOR_RE.test(w.skyColor) ? w.skyColor : "#8ec8ff",
+    ...(typeof w.skybox === "string" && findSkybox(w.skybox) ? { skybox: findSkybox(w.skybox)!.id } : {}),
     gravity: num(w.gravity, 10, 500, 196.2),
     badges: sanitizeBadges(w.badges),
     ...sanitizeAudioLight(w),

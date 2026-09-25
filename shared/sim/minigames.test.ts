@@ -108,3 +108,31 @@ test("Chowany: runda zaczyna się przy 2 graczach", () => {
   r.done();
   assert.deepEqual(r.errors, []);
 });
+
+test("setSkybox: gotowe niebo dla wszystkich i dla jednego gracza", () => {
+  const data = { ...MINIGAMES[0].make(), scripts: [] as WorldData["scripts"] };
+  data.scripts = [
+    {
+      id: "s",
+      name: "Niebo",
+      type: "lua",
+      enabled: true,
+      source: `onPlayerJoin(function(p) setSkybox("space", p) end)\nonChat(function(p, m) if m == "noc" then setSkybox("night") end if m == "zle" then setSkybox("nie-ma") end end)`,
+    },
+  ];
+  const r = run(data);
+  r.join("a", true);
+  assert.ok(r.sent.some((m) => m.sid === "a" && m.type === "skybox" && m.msg === "space"));
+  r.sim.handle("a", "chat", "noc");
+  r.advance(0.2);
+  assert.ok(r.sent.some((m) => m.sid === "*" && m.type === "skybox" && m.msg === "night"));
+  // nowy gracz dostaje aktualne niebo od razu w init
+  r.join("b");
+  const init = r.sent.find((m) => m.sid === "b" && m.type === "init")!.msg as { world: WorldData };
+  assert.equal(init.world.skybox, "night");
+  r.advance(3); // czat ma limit wiadomości na sekundę
+  r.sim.handle("a", "chat", "zle");
+  r.advance(0.2);
+  r.done();
+  assert.equal(r.errors.length, 1, "nieznane niebo = błąd w konsoli");
+});

@@ -1158,3 +1158,11 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
   .studio-fab { gap: 2px; padding: 4px; }
   .studio-fab button { min-width: 40px; height: 44px; padding: 0 3px; font-size: 18px; }
 }
+
+/* wybór nieba (skybox) w Studio */
+.sky-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px; }
+.sky-tile { display: flex; flex-direction: column; gap: 3px; padding: 4px; background: var(--bg3); border: 2px solid transparent; border-radius: 10px;
+  font-size: 11px; color: var(--text); cursor: pointer; text-align: center; }
+.sky-tile canvas, .sky-plain { width: 100%; aspect-ratio: 2; border-radius: 6px; display: block; }
+.sky-tile.on { border-color: var(--accent); }
+.sky-tile:hover { border-color: var(--blue); }

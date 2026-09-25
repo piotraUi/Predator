@@ -164,7 +164,7 @@ export function playScreen(
     started = true;
     clearTimeout(joinTimeout);
     loading.remove();
-    const world = new WorldView(scene, { shadows: true, skyColor: init.world.skyColor });
+    const world = new WorldView(scene, { shadows: true, skyColor: init.world.skyColor, skybox: init.world.skybox });
     const parts = new Map<string, Part>(init.world.parts.map((p) => [p.id, p]));
     world.load(init.world.parts);
     for (const [id, m] of world.meshes) {
@@ -402,9 +402,8 @@ export function playScreen(
     }
 
     // ---------- światło, latarka, dźwięki, mowa ----------
-    let sky = init.world.skyColor;
     const light = { ...DEFAULT_LIGHT, ...(init.world.light ?? {}) };
-    world.setLight(light.brightness, light.fog, sky);
+    world.setLight(light.brightness, light.fog);
     const audio = new GameAudio(init.world.sounds, init.world.music);
     cleanups.push(() => audio.dispose());
     if (light.flashlight) {
@@ -653,14 +652,12 @@ export function playScreen(
       }
       remotes.get(m.sid)?.model.playCustom(m.anim ? (animsById.get(m.anim) ?? null) : null);
     });
-    r.onMessage("sky", (c: string) => {
-      sky = c;
-      world.setSky(c);
-    });
+    r.onMessage("sky", (c: string) => world.setSky(c));
+    r.onMessage("skybox", (id: string) => (id ? world.setSkybox(id) : world.setSky(init.world.skyColor)));
     r.onMessage("light", (l: { brightness?: number; fog?: number }) => {
       if (typeof l.brightness === "number") light.brightness = l.brightness;
       if (typeof l.fog === "number") light.fog = l.fog;
-      world.setLight(light.brightness, light.fog, sky);
+      world.setLight(light.brightness, light.fog);
     });
     r.onMessage("sound", (m: { name: string }) => audio.play(m.name));
     r.onMessage("music", (m: { name: string }) => audio.setMusic(m.name));
