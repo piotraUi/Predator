@@ -452,7 +452,8 @@ export class WorldView {
     }
     mesh.position.set(part.x, part.y, part.z);
     mesh.scaling.set(part.sx, part.sy, part.sz);
-    mesh.rotation.set(0, (part.ry * Math.PI) / 180, 0);
+    mesh.rotationQuaternion = null;
+    mesh.rotation.set(((part.rx ?? 0) * Math.PI) / 180, (part.ry * Math.PI) / 180, ((part.rz ?? 0) * Math.PI) / 180);
     // duże płaskie klocki dostają siatkę co 4 jednostki
     const grid =
       part.shape === "box" && part.sx * part.sz >= 400 && part.sy <= 4 && part.material !== "neon" && part.material !== "glass"

@@ -204,6 +204,12 @@ const num = (v: unknown, min: number, max: number, def: number) => {
   const n = typeof v === "number" && Number.isFinite(v) ? v : def;
   return Math.min(max, Math.max(min, n));
 };
+/** kąt w stopniach: 0..360, z dokładnością do 0.01° */
+const angle = (v: unknown) => {
+  const a = typeof v === "number" && Number.isFinite(v) ? v : 0;
+  const r = Math.round((((a % 360) + 360) % 360) * 100) / 100;
+  return r >= 360 ? 0 : r;
+};
 const str = (v: unknown, max: number, def: string) => (typeof v === "string" ? v.slice(0, max) : def);
 
 /** Czyści dane świata przesłane przez klienta - nie ufamy niczemu z zewnątrz. */
@@ -223,7 +229,9 @@ export function sanitizeWorld(input: unknown): WorldData {
       sx: num(p.sx, 0.1, 2048, 4),
       sy: num(p.sy, 0.1, 2048, 1),
       sz: num(p.sz, 0.1, 2048, 2),
-      ry: (Math.round(num(p.ry, -360, 360, 0) / 90) * 90 + 360) % 360,
+      ry: angle(p.ry),
+      ...(angle(p.rx) ? { rx: angle(p.rx) } : {}),
+      ...(angle(p.rz) ? { rz: angle(p.rz) } : {}),
       color: typeof p.color === "string" && COLOR_RE.test(p.color) ? p.color : "#a3a2a5",
       transparency: num(p.transparency, 0, 1, 0),
       // w wodzie się pływa - nigdy nie jest twarda

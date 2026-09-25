@@ -31,25 +31,46 @@ export interface Box {
   minY: number; maxY: number;
   minZ: number; maxZ: number;
   hx: number; hy: number; hz: number;
-  cos: number; sin: number;
+  /** obrót klocka (macierz 3x3, lokalny -> świat, wierszami) */
+  m: number[];
+  /** klocek jest obrócony (nie tylko o wielokrotność 90° wokół osi Y) */
+  rotated: boolean;
+}
+
+/**
+ * Macierz obrotu jak w Babylonie (mesh.rotation = x, y, z): najpierw Z, potem X, na końcu Y.
+ * Zwraca 9 liczb: świat = m * lokalny.
+ */
+export function rotationMatrix(rxDeg: number, ryDeg: number, rzDeg: number): number[] {
+  const a = (rxDeg * Math.PI) / 180, b = (ryDeg * Math.PI) / 180, c = (rzDeg * Math.PI) / 180;
+  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cc = Math.cos(c), sc = Math.sin(c);
+  // Rz: x' = cc x - sc y, y' = sc x + cc y
+  // Rx: y' = ca y - sa z, z' = sa y + ca z
+  // Ry: x' = cb x + sb z, z' = -sb x + cb z
+  // M = Ry * Rx * Rz
+  return [
+    cb * cc + sb * sa * sc, -cb * sc + sb * sa * cc, sb * ca,
+    ca * sc, ca * cc, -sa,
+    -sb * cc + cb * sa * sc, sb * sc + cb * sa * cc, cb * ca,
+  ];
 }
 
 function partBox(p: Part): Box {
-  const a = (p.ry * Math.PI) / 180;
-  const cos = Math.cos(a);
-  const sin = Math.sin(a);
+  const m = rotationMatrix(p.rx ?? 0, p.ry, p.rz ?? 0);
   const hx = p.sx / 2;
   const hy = p.sy / 2;
   const hz = p.sz / 2;
   // obwiednia obróconego klocka
-  const ex = Math.abs(cos) * hx + Math.abs(sin) * hz;
-  const ez = Math.abs(sin) * hx + Math.abs(cos) * hz;
+  const ex = Math.abs(m[0]) * hx + Math.abs(m[1]) * hy + Math.abs(m[2]) * hz;
+  const ey = Math.abs(m[3]) * hx + Math.abs(m[4]) * hy + Math.abs(m[5]) * hz;
+  const ez = Math.abs(m[6]) * hx + Math.abs(m[7]) * hy + Math.abs(m[8]) * hz;
+  const rotated = !!(p.rx || p.rz) || Math.abs(Math.sin(((p.ry % 90) * Math.PI) / 180)) > 1e-6;
   return {
     part: p,
     minX: p.x - ex, maxX: p.x + ex,
-    minY: p.y - hy, maxY: p.y + hy,
+    minY: p.y - ey, maxY: p.y + ey,
     minZ: p.z - ez, maxZ: p.z + ez,
-    hx, hy, hz, cos, sin,
+    hx, hy, hz, m, rotated,
   };
 }
 
@@ -96,11 +117,14 @@ function boxSdf(x: number, y: number, z: number, hx: number, hy: number, hz: num
 /** Odległość punktu w świecie od klocka */
 export function sdf(b: Box, x: number, y: number, z: number): number {
   const dx = x - b.part.x;
+  const dy = y - b.part.y;
   const dz = z - b.part.z;
-  // obrót odwrotny do obrotu klocka (Babylon: obrót wokół Y)
-  const lx = dx * b.cos - dz * b.sin;
-  const lz = dx * b.sin + dz * b.cos;
-  return sdfLocal(b, lx, y - b.part.y, lz);
+  // obrót odwrotny do obrotu klocka (macierz transponowana)
+  const m = b.m;
+  const lx = m[0] * dx + m[3] * dy + m[6] * dz;
+  const ly = m[1] * dx + m[4] * dy + m[7] * dz;
+  const lz = m[2] * dx + m[5] * dy + m[8] * dz;
+  return sdfLocal(b, lx, ly, lz);
 }
 
 /** Kierunek "na zewnątrz" powierzchni w danym punkcie */
@@ -456,7 +480,7 @@ function rayBoxExit(ox: number, oy: number, oz: number, dx: number, dy: number, 
 /** Dokładne trafienie promieniem w kształt (po trafieniu w obwiednię) */
 function rayShape(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, b: Box, t0: number): number | null {
   // zwykły, nieobrócony klocek - obwiednia to dokładnie jego kształt
-  if (b.part.shape === "box" && Math.abs(b.sin) < 1e-6) return t0;
+  if (b.part.shape === "box" && !b.rotated) return t0;
   const t1 = rayBoxExit(ox, oy, oz, dx, dy, dz, b);
   let t = t0;
   for (let i = 0; i < 64 && t <= t1; i++) {

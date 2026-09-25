@@ -18,8 +18,11 @@ export interface Part {
   x: number; y: number; z: number;
   /** rozmiar */
   sx: number; sy: number; sz: number;
-  /** obrót wokół osi Y w stopniach (wielokrotność 90) */
+  /** obrót wokół osi Y w stopniach (dowolny kąt) */
   ry: number;
+  /** obrót wokół osi X i Z w stopniach (brak = 0) */
+  rx?: number;
+  rz?: number;
   color: string;
   /** 0 = pełny, 1 = niewidzialny */
   transparency: number;

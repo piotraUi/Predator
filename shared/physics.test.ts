@@ -241,3 +241,23 @@ test("woda: gracz unosi się z głową nad powierzchnią, może zanurkować i wy
   for (let i = 0; i < 60 * 3; i++) stepBody(w2, dry, 1 / 60, 196.2);
   assert.ok(dry.onGround && dry.y < 0.2, "poza wodą spada na ziemię");
 });
+
+test("obrót o dowolny kąt: pochylona deska (obrót wokół X) działa jak rampa", () => {
+  const ground = makePart({ name: "Ziemia", x: 0, y: -0.5, z: 0, sx: 200, sy: 1, sz: 200 });
+  // deska 30 długości, pochylona o 20° - wznosi się w stronę -z
+  const ramp = { ...makePart({ name: "Rampa", x: 0, y: 5, z: 0, sx: 8, sy: 1, sz: 30 }), rx: 20 };
+  const w = new CollisionWorld([ground, ramp]);
+  const b: Body = { x: 0, y: 1, z: 20, vx: 0, vy: 0, vz: 0, onGround: false };
+  run(w, b, 30);
+  // po ~1.6 s jest w połowie deski (z ≈ -5), gdzie deska jest na wysokości ~7
+  run(w, b, 96, 0, -16);
+  assert.ok(b.z < 0 && b.y > 5, "wszedł po pochylonej desce: y=" + b.y.toFixed(2) + " z=" + b.z.toFixed(2));
+  // obrót o 45° wokół Y: ściana stoi ukośnie i nadal blokuje
+  const wall = { ...makePart({ name: "Ściana", x: 0, y: 5, z: -10, sx: 60, sy: 10, sz: 1 }), ry: 45 };
+  const w2 = new CollisionWorld([ground, wall]);
+  const c: Body = { x: 0, y: 1, z: 0, vx: 0, vy: 0, vz: 0, onGround: false };
+  run(w2, c, 60 * 2, 0, -16);
+  // gracz ślizga się wzdłuż ukośnej ściany, ale nigdy nie przechodzi na drugą stronę
+  const side = (c.x - 0) * Math.SQRT1_2 + (c.z + 10) * Math.SQRT1_2;
+  assert.ok(side > 0.5, "gracz po swojej stronie ukośnej ściany: " + side.toFixed(2));
+});

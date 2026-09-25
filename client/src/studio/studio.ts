@@ -4,6 +4,7 @@ import {
   CreateScreenshotUsingRenderTargetAsync,
   GizmoManager,
   PointerEventTypes,
+  Quaternion,
   Ray,
   Scene,
   Vector3,
@@ -50,7 +51,7 @@ import {
 } from "./toolbox.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
-type Tool = "select" | "move" | "scale";
+type Tool = "select" | "move" | "scale" | "rotate";
 
 /** szybkie kolory w panelu Właściwości */
 const QUICK_COLORS = [
@@ -231,10 +232,15 @@ export function studioScreen(
     gizmos.usePointerToAttachGizmos = false;
     gizmos.positionGizmoEnabled = true;
     gizmos.scaleGizmoEnabled = true;
+    gizmos.rotationGizmoEnabled = true;
     gizmos.boundingBoxGizmoEnabled = false;
     const pg = gizmos.gizmos.positionGizmo!;
     const sg = gizmos.gizmos.scaleGizmo!;
-    pg.scaleRatio = sg.scaleRatio = matchMedia("(pointer: coarse)").matches ? 1.6 : 1.1;
+    const rg = gizmos.gizmos.rotationGizmo!;
+    pg.scaleRatio = sg.scaleRatio = rg.scaleRatio = matchMedia("(pointer: coarse)").matches ? 1.6 : 1.1;
+    // obrót w osiach świata (łatwiej zrozumieć niż osie klocka) i o stały krok
+    rg.updateGizmoRotationToMatchAttachedMesh = false;
+    let rotStep = 15;
     // skalowanie o stały krok siatki (1 → 2 → 3), a nie mnożenie rozmiaru - inaczej jeden krok
     // w dół przy siatce 1 dawał rozmiar 0 i klocek od razu robił się płaski
     sg.incrementalSnap = true;
@@ -242,6 +248,7 @@ export function studioScreen(
     const applySnap = () => {
       pg.snapDistance = gridStep;
       sg.snapDistance = gridStep;
+      rg.snapDistance = (rotStep * Math.PI) / 180;
     };
     // klocek nigdy nie jest cieńszy niż krok siatki (albo 0.2)
     sg.onDragObservable.add(() => {
@@ -254,6 +261,57 @@ export function studioScreen(
     applySnap();
     gizmos.positionGizmoEnabled = false;
     gizmos.scaleGizmoEnabled = false;
+    gizmos.rotationGizmoEnabled = false;
+
+    // obracanie gizmem: model obraca się cały wokół zaznaczonego klocka
+    const eulerDeg = (q: Quaternion) => {
+      const e = q.toEulerAngles();
+      const d = (r: number) => Math.round(((((r * 180) / Math.PI) % 360) + 360) % 360 * 100) / 100 % 360;
+      return { rx: d(e.x), ry: d(e.y), rz: d(e.z) };
+    };
+    const partQuat = (p: Part) => Quaternion.FromEulerAngles(((p.rx ?? 0) * Math.PI) / 180, (p.ry * Math.PI) / 180, ((p.rz ?? 0) * Math.PI) / 180);
+    let rotStart: { q0: Quaternion; pivot: Vector3; members: { p: Part; pos: Vector3; q: Quaternion }[] } | null = null;
+    rg.onDragStartObservable.add(() => {
+      if (!selected) return (rotStart = null);
+      rotStart = {
+        q0: partQuat(selected),
+        pivot: new Vector3(selected.x, selected.y, selected.z),
+        members: groupOf(selected).map((p) => ({ p, pos: new Vector3(p.x, p.y, p.z), q: partQuat(p) })),
+      };
+    });
+    const rotDelta = () => {
+      const mesh = selected && view.meshes.get(selected.id);
+      if (!mesh || !rotStart) return null;
+      const q = mesh.rotationQuaternion ?? Quaternion.FromEulerVector(mesh.rotation);
+      return q.multiply(Quaternion.Inverse(rotStart.q0));
+    };
+    rg.onDragObservable.add(() => {
+      const dq = rotDelta();
+      if (!dq || !rotStart || rotStart.members.length < 2) return;
+      for (const m of rotStart.members) {
+        if (m.p === selected) continue;
+        const mesh = view.meshes.get(m.p.id);
+        if (!mesh) continue;
+        mesh.position.copyFrom(rotStart.pivot.add(m.pos.subtract(rotStart.pivot).applyRotationQuaternion(dq)));
+        mesh.rotationQuaternion = dq.multiply(m.q);
+      }
+    });
+    rg.onDragEndObservable.add(() => {
+      const dq = rotDelta();
+      if (!dq || !rotStart || !selected) return;
+      pushUndo();
+      for (const m of rotStart.members) {
+        const pos = rotStart.pivot.add(m.pos.subtract(rotStart.pivot).applyRotationQuaternion(dq));
+        Object.assign(m.p, { x: round(pos.x), y: round(pos.y), z: round(pos.z) }, eulerDeg(dq.multiply(m.q)));
+        if (!m.p.rx) delete m.p.rx;
+        if (!m.p.rz) delete m.p.rz;
+        view.apply(m.p);
+      }
+      rotStart = null;
+      gizmos.attachToMesh(view.meshes.get(selected.id) ?? null);
+      changed();
+      renderProps();
+    });
 
     // model: pozostałe części jadą razem z przeciąganą
     let dragStart: { x: number; y: number; z: number } | null = null;
@@ -376,6 +434,7 @@ export function studioScreen(
       tool = t;
       gizmos.positionGizmoEnabled = !!selected && t === "move";
       gizmos.scaleGizmoEnabled = !!selected && t === "scale";
+      gizmos.rotationGizmoEnabled = !!selected && t === "rotate";
       if (selected) gizmos.attachToMesh(view.meshes.get(selected.id) ?? null);
       applySnap();
       for (const b of toolbar.querySelectorAll<HTMLElement>("[data-tool]")) b.classList.toggle("active", b.dataset.tool === t);
@@ -733,6 +792,17 @@ export function studioScreen(
       { class: "tb-select", title: "Krok siatki", onChange: (e: Event) => ((gridStep = Number((e.target as HTMLSelectElement).value)), applySnap()) },
       [0.25, 0.5, 1, 2, 4].map((v) => h("option", { value: String(v), selected: v === 1 }, `Siatka ${v}`)),
     );
+    const rotSel = h(
+      "select",
+      { class: "tb-select", title: "Krok obracania", onChange: (e: Event) => ((rotStep = Number((e.target as HTMLSelectElement).value)), applySnap()) },
+      [
+        [1, "Obrót 1°"],
+        [5, "Obrót 5°"],
+        [15, "Obrót 15°"],
+        [45, "Obrót 45°"],
+        [90, "Obrót 90°"],
+      ].map(([v, l]) => h("option", { value: String(v), selected: v === 15 }, String(l))),
+    );
     const toolbar = h(
       "div",
       { class: "studio-toolbar" },
@@ -769,7 +839,8 @@ export function studioScreen(
       h("button", { class: "tb-btn", "data-tool": "select", onClick: () => setTool("select"), title: "Wybierz (1)" }, "👆", h("span", null, "Wybierz")),
       h("button", { class: "tb-btn", "data-tool": "move", onClick: () => setTool("move"), title: "Przesuń (2)" }, "✥", h("span", null, "Przesuń")),
       h("button", { class: "tb-btn", "data-tool": "scale", onClick: () => setTool("scale"), title: "Skaluj (3)" }, "⤡", h("span", null, "Skaluj")),
-      h("button", { class: "tb-btn", onClick: rotate, title: "Obróć o 90° (R)" }, "⟳", h("span", null, "Obróć")),
+      h("button", { class: "tb-btn", "data-tool": "rotate", onClick: () => setTool("rotate"), title: "Obracaj o dowolny kąt (4) · R = szybki obrót o 90°" }, "⟳", h("span", null, "Obróć")),
+      rotSel,
       gridSel,
       h("div", { class: "tb-sep" }),
       h(
@@ -997,6 +1068,23 @@ export function studioScreen(
             if (Number.isFinite(v)) upd(() => (p[key] = Math.max(min, v)));
           },
         });
+      /** kąt w stopniach (dowolny) - pole puste / 0 usuwa obrót */
+      const angleInput = (key: "rx" | "ry" | "rz") =>
+        h("input", {
+          type: "number",
+          step: "15",
+          value: String(p[key] ?? 0),
+          onChange: (e: Event) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            if (!Number.isFinite(v)) return;
+            const a = Math.round((((v % 360) + 360) % 360) * 100) / 100;
+            upd(() => {
+              if (key === "ry") p.ry = a;
+              else if (a) p[key] = a;
+              else delete p[key];
+            });
+          },
+        });
       const select_ = <T extends string>(value: T, options: [T, string][], onPick: (v: T) => void) =>
         h(
           "select",
@@ -1119,7 +1207,8 @@ export function studioScreen(
         h("div", { class: "xyz" }, field("X", numInput("x")), field("Y", numInput("y")), field("Z", numInput("z"))),
         h("div", { class: "prop-group" }, "Rozmiar"),
         h("div", { class: "xyz" }, field("X", numInput("sx", 0.2)), field("Y", numInput("sy", 0.2)), field("Z", numInput("sz", 0.2))),
-        field("Obrót", select_(String(p.ry), [["0", "0°"], ["90", "90°"], ["180", "180°"], ["270", "270°"]], (v) => upd(() => (p.ry = Number(v))))),
+        h("div", { class: "prop-group" }, "Obrót (stopnie)"),
+        h("div", { class: "xyz" }, field("X", angleInput("rx")), field("Y", angleInput("ry")), field("Z", angleInput("rz"))),
         field(
           "Przezroczystość",
           h("input", {
@@ -1543,6 +1632,7 @@ export function studioScreen(
       else if (e.key === "1") setTool("select");
       else if (e.key === "2") setTool("move");
       else if (e.key === "3") setTool("scale");
+      else if (e.key === "4") setTool("rotate");
       else if (e.key === "r" || e.key === "R") rotate();
       else if (e.key === "f" || e.key === "F") focus();
       else keys.add(e.code);
