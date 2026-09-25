@@ -17,7 +17,7 @@ import {
 } from "./auth.ts";
 import { config } from "./config.ts";
 import { live } from "./live.ts";
-import { alerts, badges, friends, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
+import { alerts, badges, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { mutes, stock, trades } from "./social.ts";
 
@@ -219,6 +219,55 @@ api.post("/worlds/:id/vote", requireAuth, (req, res) => {
   const v = Number(req.body?.value);
   votes.set(me.id, info.id, v > 0 ? 1 : v < 0 ? -1 : 0);
   res.json({ ...infoById(info.id)!, myVote: votes.get(me.id, info.id) });
+});
+
+// ---------- biblioteka modeli ----------
+const MAX_MODELS_PER_USER = 100;
+const MODEL_ICON_RE = /^\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]{0,6}$/u;
+
+/** model w bibliotece: klocki + to, czego potrzebują (narzędzia, postacie, animacje, zachowania) */
+function sanitizeModel(input: unknown) {
+  const m = (input ?? {}) as Record<string, unknown>;
+  const clean = sanitizeWorld({ parts: m.parts, tools: m.tools, characters: m.characters, animations: m.animations, scripts: [] });
+  if (!clean.parts.length) return null;
+  const behaviors = Array.isArray(m.behaviors) ? m.behaviors.filter((b): b is string => typeof b === "string" && /^[a-z0-9_-]{1,30}$/i.test(b)).slice(0, 20) : [];
+  return { v: 1 as const, parts: clean.parts, tools: clean.tools, characters: clean.characters, animations: clean.animations, behaviors };
+}
+
+api.get("/models", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const q = String(req.query.q ?? "").trim().replace(/[%_]/g, "").slice(0, 40);
+  res.json(models.search(q, req.query.mine ? me.id : null).map((r) => ({ id: r.id, name: r.name, icon: r.icon, parts: r.parts, uses: r.uses, ownerName: r.owner_name, mine: r.owner_id === me.id, createdAt: r.created_at })));
+});
+
+api.post("/models", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const name = String(req.body?.name ?? "").trim().slice(0, 40);
+  if (!name) return fail(res, 400, "Podaj nazwę modelu");
+  if (models.countByOwner(me.id) >= MAX_MODELS_PER_USER) return fail(res, 400, `Możesz udostępnić najwyżej ${MAX_MODELS_PER_USER} modeli`);
+  const model = sanitizeModel(req.body?.model);
+  if (!model) return fail(res, 400, "Model jest pusty");
+  if (model.parts.length > 500) return fail(res, 400, "Model może mieć najwyżej 500 klocków");
+  const data = JSON.stringify(model);
+  if (data.length > 3_000_000) return fail(res, 400, "Model jest za duży");
+  const icon = typeof req.body?.icon === "string" && MODEL_ICON_RE.test(req.body.icon) ? req.body.icon : "📦";
+  res.json({ id: models.create(me.id, filterChat(name) || name, icon, model.parts.length, data) });
+});
+
+api.get("/models/:id", requireAuth, (req, res) => {
+  const m = models.get(Number(req.params.id));
+  if (!m) return fail(res, 404, "Nie ma takiego modelu");
+  models.used(m.id);
+  res.json({ name: m.name, ...JSON.parse(m.data) });
+});
+
+api.delete("/models/:id", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const m = models.get(Number(req.params.id));
+  if (!m) return fail(res, 404, "Nie ma takiego modelu");
+  if (m.owner_id !== me.id && !isAdminName(me.username)) return fail(res, 403, "To nie twój model");
+  models.remove(m.id);
+  res.json({ ok: true });
 });
 
 api.get("/worlds/mine", requireAuth, (req, res) => {

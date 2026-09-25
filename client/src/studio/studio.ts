@@ -567,6 +567,7 @@ export function studioScreen(
     function renderToolbox() {
       const clip = readClip();
       toolboxBody.replaceChildren(
+        h("button", { class: "btn small lib-open", onClick: () => openLibrary() }, "📚 Biblioteka modeli"),
         clip
           ? h(
               "button",
@@ -697,9 +698,9 @@ export function studioScreen(
       renderToolbox();
       toast(`📋 Skopiowano: ${selected.name}${members.length > 1 ? ` (${members.length} klocków)` : ""}. Wklej w dowolnej grze: Ctrl+V`, "good");
     }
-    /** wkleja ze schowka przed kamerą (także model skopiowany w innej grze) */
-    function paste() {
-      const clip = readClip();
+    /** wkleja ze schowka przed kamerą (także model skopiowany w innej grze albo z Biblioteki) */
+    function paste(fromLibrary?: Clip) {
+      const clip = fromLibrary ?? readClip();
       if (!clip) return toast("Schowek jest pusty - skopiuj coś (Ctrl+C)", "info");
       if (data.parts.length + clip.parts.length > MAX_PARTS) return toast(`Maksymalnie ${MAX_PARTS} klocków`, "error");
       pushUndo();
@@ -738,6 +739,128 @@ export function studioScreen(
       changed();
       select(made[0]);
       toast(`📥 Wklejono: ${name}${clip.from && clip.from !== meta.name ? ` (z gry „${clip.from}”)` : ""}`, "good");
+    }
+
+    // ---------- biblioteka modeli (wspólna dla wszystkich twórców) ----------
+    const LIB_ICONS = ["📦", "🏠", "🌳", "🚗", "🪑", "🏰", "🗼", "⛲", "🚀", "🐉", "🎡", "🍕", "⚔️", "💎", "🧱", "🌋"];
+    function shareModel() {
+      if (!selected) return toast("Najpierw zaznacz klocek albo model", "info");
+      if (!session.user) return toast("Zaloguj się na serwerze, żeby udostępnić model", "error");
+      const members = groupOf(selected);
+      const name = h("input", { value: selected.name, maxLength: 40 });
+      let icon = members.some((m) => m.vehicle) ? "🚗" : members.some((m) => m.kind === "seat") ? "🪑" : "📦";
+      const icons = h("div", { class: "lib-icons" });
+      const drawIcons = () =>
+        icons.replaceChildren(...LIB_ICONS.map((e) => h("button", { class: "lib-icon" + (e === icon ? " active" : ""), onClick: () => ((icon = e), drawIcons()) }, e)));
+      drawIcons();
+      const close = modal(
+        "📤 Udostępnij w Bibliotece",
+        h(
+          "div",
+          { class: "form" },
+          h("p", { class: "muted", style: "margin:0;font-size:13px" }, `Każdy twórca będzie mógł wstawić ten model (${members.length} ${members.length === 1 ? "klocek" : "klocków"}) do swojej gry - razem z narzędziami, postaciami i zachowaniami.`),
+          h("label", null, "Nazwa", name),
+          h("div", null, "Ikonka", icons),
+        ),
+        [
+          { label: "Anuluj", onClick: () => close() },
+          {
+            label: "Udostępnij",
+            kind: "primary",
+            onClick: async () => {
+              const toolIds = new Set(members.map((m) => m.toolId).filter(Boolean));
+              const charIds = new Set(members.map((m) => m.characterId).filter(Boolean));
+              const animIds = new Set(members.map((m) => m.animId).filter(Boolean));
+              try {
+                await api.shareModel(name.value.trim() || selected!.name, icon, {
+                  parts: members,
+                  tools: data.tools.filter((t) => toolIds.has(t.id)),
+                  characters: data.characters.filter((c) => charIds.has(c.id)),
+                  animations: data.animations.filter((a) => animIds.has(a.id)),
+                  behaviors: behaviorsOf(data.scripts, selected!.name).map((sc) => behaviorIdOf(sc)).filter(Boolean),
+                });
+                close();
+                toast("📚 Model jest w Bibliotece - inni twórcy mogą go wstawić", "good");
+              } catch (e) {
+                toast((e as Error).message, "error");
+              }
+            },
+          },
+        ],
+      );
+    }
+    function openLibrary() {
+      if (!session.user) return toast("Biblioteka działa po zalogowaniu na serwerze", "error");
+      const search = h("input", { type: "search", placeholder: "🔍 Szukaj modeli (dom, drzewo, auto…)" });
+      let mine = false;
+      const tabs = h("div", { class: "pv-chips" });
+      const list = h("div", { class: "lib-grid" }, h("div", { class: "muted" }, "Ładowanie…"));
+      let seq = 0;
+      const load = async () => {
+        const my = ++seq;
+        tabs.replaceChildren(
+          h("button", { class: "pv-chip" + (!mine ? " active" : ""), onClick: () => ((mine = false), load()) }, "Wszystkie"),
+          h("button", { class: "pv-chip" + (mine ? " active" : ""), onClick: () => ((mine = true), load()) }, "Moje"),
+        );
+        try {
+          const items = await api.models(search.value.trim(), mine);
+          if (my !== seq) return;
+          list.replaceChildren(
+            ...(items.length
+              ? items.map((m) =>
+                  h(
+                    "div",
+                    { class: "lib-card" },
+                    h("div", { class: "lib-card-ic" }, m.icon),
+                    h("b", null, m.name),
+                    h("div", { class: "muted small" }, `${m.ownerName} · ${m.parts} kl. · użyto ${m.uses}×`),
+                    h(
+                      "div",
+                      { class: "lib-card-actions" },
+                      h(
+                        "button",
+                        {
+                          class: "btn small primary",
+                          onClick: async () => {
+                            try {
+                              const d = await api.model(m.id);
+                              close();
+                              paste({ v: 1, from: `Biblioteka: ${m.ownerName}`, name: d.name, parts: d.parts, behaviors: d.behaviors, tools: d.tools, characters: d.characters, animations: d.animations });
+                            } catch (e) {
+                              toast((e as Error).message, "error");
+                            }
+                          },
+                        },
+                        "Wstaw",
+                      ),
+                      m.mine
+                        ? h(
+                            "button",
+                            {
+                              class: "btn small danger",
+                              title: "Usuń z Biblioteki",
+                              onClick: async () => {
+                                if (!(await ask(`Usunąć „${m.name}” z Biblioteki?`, "Usuń", "Anuluj", true))) return;
+                                await api.deleteModel(m.id).catch(() => {});
+                                load();
+                              },
+                            },
+                            "🗑",
+                          )
+                        : "",
+                    ),
+                  ),
+                )
+              : [h("div", { class: "muted" }, mine ? "Nie udostępniłeś jeszcze żadnego modelu. Zaznacz model i kliknij „📤 Udostępnij”." : "Nic nie znaleziono.")]),
+          );
+        } catch (e) {
+          if (my === seq) list.replaceChildren(h("div", { class: "form-error" }, (e as Error).message));
+        }
+      };
+      let t = 0;
+      search.addEventListener("input", () => (clearTimeout(t), (t = window.setTimeout(load, 300))));
+      const close = modal("📚 Biblioteka modeli", h("div", { class: "lib" }, search, tabs, list));
+      load();
     }
 
     function remove() {
@@ -1218,6 +1341,7 @@ export function studioScreen(
           { class: "prop-actions" },
           h("button", { class: "btn small", title: "Ctrl+C - potem wklej w tej albo innej grze (Ctrl+V)", onClick: () => copySelection() }, "📋 Kopiuj"),
           readClip() ? h("button", { class: "btn small", title: "Ctrl+V", onClick: () => paste() }, "📥 Wklej") : "",
+          h("button", { class: "btn small", title: "Inni twórcy będą mogli wstawić ten model", onClick: () => shareModel() }, "📤 Udostępnij"),
         ),
         field(
           members.length > 1 ? "Nazwa modelu" : "Nazwa",

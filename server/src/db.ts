@@ -99,6 +99,18 @@ CREATE TABLE IF NOT EXISTS game_data (
   PRIMARY KEY (world_id, user_id)
 );
 
+-- biblioteka modeli udostępnionych przez twórców (Studio: Biblioteka)
+CREATE TABLE IF NOT EXISTS models (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL DEFAULT '📦',
+  parts INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  uses INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
 -- zakupy w sklepach gier (pass = raz, item = count razy)
 CREATE TABLE IF NOT EXISTS purchases (
   world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
@@ -487,4 +499,32 @@ export const purchases = {
       throw e;
     }
   },
+};
+
+export interface ModelRow {
+  id: number;
+  owner_id: number;
+  owner_name: string;
+  name: string;
+  icon: string;
+  parts: number;
+  uses: number;
+  created_at: number;
+}
+
+export const models = {
+  create: (ownerId: number, name: string, icon: string, parts: number, data: string) =>
+    Number(db.prepare("INSERT INTO models (owner_id, name, icon, parts, data, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(ownerId, name, icon, parts, data, Date.now()).lastInsertRowid),
+  search: (q: string, ownerId: number | null, limit = 60) =>
+    db
+      .prepare(
+        `SELECT m.id, m.owner_id, u.username AS owner_name, m.name, m.icon, m.parts, m.uses, m.created_at FROM models m JOIN users u ON u.id = m.owner_id
+         WHERE (? = '' OR m.name LIKE '%' || ? || '%' OR u.username LIKE '%' || ? || '%') AND (? IS NULL OR m.owner_id = ?)
+         ORDER BY m.uses DESC, m.created_at DESC LIMIT ?`,
+      )
+      .all(q, q, q, ownerId, ownerId, limit) as unknown as ModelRow[],
+  get: (id: number) => db.prepare("SELECT * FROM models WHERE id = ?").get(id) as { id: number; owner_id: number; name: string; data: string } | undefined,
+  used: (id: number) => db.prepare("UPDATE models SET uses = uses + 1 WHERE id = ?").run(id),
+  countByOwner: (ownerId: number) => (db.prepare("SELECT COUNT(*) AS c FROM models WHERE owner_id = ?").get(ownerId) as { c: number }).c,
+  remove: (id: number) => db.prepare("DELETE FROM models WHERE id = ?").run(id),
 };

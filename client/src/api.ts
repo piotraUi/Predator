@@ -1,4 +1,8 @@
 import type {
+  AnimDef,
+  CharacterDef,
+  Part,
+  ToolDef,
   Avatar,
   ChatMessage,
   Conversation,
@@ -151,6 +155,11 @@ export const api = {
     ),
   readAlerts: () => req("POST", "/notifications/read"),
   live: () => req<LiveEvent[]>("GET", "/live"),
+  // biblioteka modeli
+  models: (q = "", mine = false) => req<LibraryModel[]>("GET", `/models?q=${encodeURIComponent(q)}${mine ? "&mine=1" : ""}`),
+  model: (id: number) => req<{ name: string; parts: Part[]; tools: ToolDef[]; characters: CharacterDef[]; animations: AnimDef[]; behaviors: string[] }>("GET", `/models/${id}`),
+  shareModel: (name: string, icon: string, model: unknown) => req<{ id: number }>("POST", "/models", { name, icon, model }),
+  deleteModel: (id: number) => req("DELETE", `/models/${id}`),
   invite: (friendId: number, privateCode?: string) => req<{ ok: true; online: boolean }>("POST", "/invite", { friendId, privateCode }),
   // społeczność
   report: (kind: "user" | "world" | "group", targetId: number, reason: string, text: string) =>
@@ -251,3 +260,14 @@ export type LiveEvent =
   | { kind: "online"; fromId: number; from: string; at: number }
   | { kind: "playing"; fromId: number; from: string; worldId: number; worldName: string; roomId: string; at: number }
   | { kind: "invite"; fromId: number; from: string; worldId: number; worldName: string; roomId: string; privateCode?: string; at: number };
+
+export interface LibraryModel {
+  id: number;
+  name: string;
+  icon: string;
+  parts: number;
+  uses: number;
+  ownerName: string;
+  mine: boolean;
+  createdAt: number;
+}

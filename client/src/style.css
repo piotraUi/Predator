@@ -1306,3 +1306,16 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
 .terrain-mat { width: 40px; height: 40px; border-radius: 10px; border: 2px solid transparent; font-size: 18px; cursor: pointer; }
 .terrain-mat.active { border-color: var(--text); }
 canvas.terrain-brush { cursor: crosshair; }
+
+/* ---------- biblioteka modeli ---------- */
+.lib { display: flex; flex-direction: column; gap: 10px; }
+.modal:has(.lib) { width: min(620px, 94vw); max-width: none; }
+.lib .pv-chips { margin: 0; }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; max-height: 55vh; overflow-y: auto; }
+.lib-card { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); }
+.lib-card-ic { font-size: 30px; }
+.lib-card-actions { display: flex; gap: 6px; margin-top: auto; }
+.lib-icons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.lib-icon { width: 36px; height: 36px; font-size: 20px; border-radius: 8px; border: 2px solid transparent; background: var(--bg2); cursor: pointer; }
+.lib-icon.active { border-color: var(--blue); }
+.lib-open { width: 100%; margin-bottom: 8px; }
