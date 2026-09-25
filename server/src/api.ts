@@ -16,6 +16,7 @@ import {
   type AuthedRequest,
 } from "./auth.ts";
 import { config } from "./config.ts";
+import { live } from "./live.ts";
 import { alerts, badges, friends, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { mutes, stock, trades } from "./social.ts";
@@ -375,6 +376,36 @@ api.get("/notifications", requireAuth, (req, res) => {
     trades: trades.incoming(me.id),
     alerts: alerts.unread(me.id).map((a) => ({ id: a.id, text: a.text, at: a.created_at })),
   });
+});
+
+/** powiadomienia na żywo (znajomy online / gra w… / zaproszenie) - znikają po odebraniu */
+api.get("/live", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  presence.touch(me.id);
+  res.json(live.drain(me.id));
+});
+
+/** zaproszenie znajomego do gry, w której właśnie jestem */
+api.post("/invite", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const friendId = Number(req.body?.friendId);
+  if (!areFriends(me.id, friendId)) return fail(res, 400, "Możesz zapraszać tylko znajomych");
+  const playing = presence.get(me.id).playing;
+  if (!playing) return fail(res, 400, "Zapraszać możesz tylko w trakcie gry");
+  const code = typeof req.body?.privateCode === "string" ? req.body.privateCode.slice(0, 20) : undefined;
+  const sent = live.push(friendId, {
+    kind: "invite",
+    fromId: me.id,
+    from: me.username,
+    worldId: playing.worldId,
+    worldName: playing.worldName,
+    roomId: playing.roomId,
+    ...(playing.private && code ? { privateCode: code } : {}),
+  });
+  if (!sent) return fail(res, 429, "Już zaprosiłeś tę osobę - poczekaj chwilę");
+  // znajomy nie jest w Predatorze - zostawiamy wiadomość na czacie
+  if (!presence.get(friendId).online) messages.send(me.id, friendId, `🎮 Zapraszam cię do gry „${playing.worldName}”! Wejdź, pogramy razem.`);
+  res.json({ ok: true, online: presence.get(friendId).online });
 });
 
 api.post("/notifications/read", requireAuth, (req, res) => {

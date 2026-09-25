@@ -10,6 +10,7 @@ import type { GameConnection } from "../game/connection.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
 import { VoiceChat } from "../game/voice.ts";
 import { gameShop } from "../game/gameShop.ts";
+import { openInviteFriends } from "../game/inviteFriends.ts";
 import { AssetStore, unlockAudio } from "./assets.ts";
 import { fitScale, LevelView, type Camera2D, type Entity2D } from "./render.ts";
 
@@ -49,7 +50,7 @@ interface Actor {
 
 export function play2dScreen(
   root: HTMLElement,
-  params: { conn: GameConnection; init: Init2D; back?: { screen: string; params?: Record<string, unknown> }; offline: boolean },
+  params: { conn: GameConnection; init: Init2D; back?: { screen: string; params?: Record<string, unknown> }; offline: boolean; privateCode?: string },
   go: Go,
 ): () => void {
   const { conn, init } = params;
@@ -304,6 +305,7 @@ export function play2dScreen(
           )
         : "",
       levelMenu(),
+      params.offline ? "" : h("button", { class: "btn", onClick: () => (menu.classList.add("hidden"), openInviteFriends(params.privateCode)) }, "👥 Zaproś znajomych"),
       h("button", { class: "btn", onClick: () => menu.classList.add("hidden") }, "Wróć do gry"),
       h("button", { class: "btn danger", onClick: () => exit() }, params.offline ? "Wróć do Studio" : "Wyjdź z gry"),
     );

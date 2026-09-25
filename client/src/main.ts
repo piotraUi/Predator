@@ -2,6 +2,7 @@ import "./style.css";
 import { api, getServerUrl, getToken, needsServerAddress, pingServer, setToken } from "./api.ts";
 import { session } from "./state.ts";
 import { authScreen } from "./ui/auth.ts";
+import { startLiveNotifications } from "./ui/liveNotify.ts";
 import { h, logo, toast } from "./ui/dom.ts";
 import { desktop, launchFile, type OpenedFile } from "./files.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
@@ -187,6 +188,7 @@ async function boot() {
     return;
   }
   watchConnection();
+  startLiveNotifications(go);
   try {
     // aplikacja: najpierw sprawdzamy, czy serwer odpowiada (domyślnie serwer Predator)
     if (needsServerAddress) {

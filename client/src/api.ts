@@ -150,6 +150,8 @@ export const api = {
       "/notifications",
     ),
   readAlerts: () => req("POST", "/notifications/read"),
+  live: () => req<LiveEvent[]>("GET", "/live"),
+  invite: (friendId: number, privateCode?: string) => req<{ ok: true; online: boolean }>("POST", "/invite", { friendId, privateCode }),
   // społeczność
   report: (kind: "user" | "world" | "group", targetId: number, reason: string, text: string) =>
     req("POST", "/reports", { kind, targetId, reason, text }),
@@ -243,3 +245,9 @@ export const adminApi = {
 /** Adres miniaturki gry (albo null) - ?v= zmienia się po każdym zapisie, więc przeglądarka może ją trzymać w pamięci */
 export const thumbnailUrl = (w: Pick<WorldInfo, "id" | "hasThumbnail" | "updatedAt">) =>
   w.hasThumbnail ? `${getServerUrl()}/api/worlds/${w.id}/thumbnail?v=${w.updatedAt}` : null;
+
+/** powiadomienie na żywo od serwera */
+export type LiveEvent =
+  | { kind: "online"; fromId: number; from: string; at: number }
+  | { kind: "playing"; fromId: number; from: string; worldId: number; worldName: string; roomId: string; at: number }
+  | { kind: "invite"; fromId: number; from: string; worldId: number; worldName: string; roomId: string; privateCode?: string; at: number };

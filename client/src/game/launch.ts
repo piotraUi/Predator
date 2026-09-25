@@ -45,7 +45,7 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
     : (() => {
         const client = new Client(wsUrl());
         const r = params.roomId
-          ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL })
+          ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL, ...(params.privateCode ? { privateCode: params.privateCode } : {}) })
           : params.privateCode
             ? client.joinOrCreate("private", { worldId: params.worldId, privateCode: params.privateCode, token: getToken(), v: GAME_PROTOCOL })
             : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL });
@@ -70,7 +70,7 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
             const { play2dScreen } = await import("../game2d/play2d.ts");
             if (disposed) return;
             wrap.remove();
-            inner = play2dScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline }, go);
+            inner = play2dScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode }, go);
           } else {
             const { playScreen } = await import("./play.ts");
             if (disposed) return;

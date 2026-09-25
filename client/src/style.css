@@ -1267,3 +1267,16 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
 .pv-cat-ic { font-size: 24px; }
 .pv-genre-tag { align-self: flex-start; margin: 6px 0 2px; border: none; border-radius: 999px; padding: 4px 12px; background: var(--bg2); color: var(--text); font-weight: 700; font-size: 13px; cursor: pointer; }
 .pv-sort { flex: none; max-width: 190px; }
+
+/* ---------- powiadomienia na żywo ---------- */
+.live-notes { position: fixed; z-index: 70; top: calc(var(--inset-top) + 64px); right: calc(var(--inset-right) + 12px); display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
+.live-note { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 14px; background: rgba(24, 25, 30, 0.94); color: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.35); font-size: 14px; transform: translateX(120%); opacity: 0; transition: transform .3s ease, opacity .3s ease; }
+.live-note.show { transform: none; opacity: 1; }
+.live-note.invite { border: 2px solid #2ecc71; }
+.live-note-ic { font-size: 22px; flex: none; }
+.live-note-text { flex: 1; min-width: 0; line-height: 1.3; }
+.live-note .icon-btn { color: #fff; flex: none; }
+.live-note .btn { flex: none; }
+.invite-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; min-width: min(360px, 80vw); }
+.invite-row { display: flex; align-items: center; gap: 10px; }
+.invite-name { flex: 1; min-width: 0; }

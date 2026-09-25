@@ -21,6 +21,7 @@ import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { gameShop } from "./gameShop.ts";
+import { openInviteFriends } from "./inviteFriends.ts";
 import { VoiceChat } from "./voice.ts";
 import { GameAudio } from "./audio3d.ts";
 import { AvatarModel } from "../engine/avatar.ts";
@@ -89,6 +90,8 @@ export function playScreen(
   params: {
     worldId?: number;
     roomId?: string;
+    /** kod prywatnego serwera (do zaproszeń) */
+    privateCode?: string;
     /** gra uruchomiona lokalnie, bez serwera (test ze Studio) */
     offline?: { name: string; data: WorldData };
     /** dokąd wrócić po wyjściu z gry */
@@ -403,6 +406,7 @@ export function playScreen(
       h("p", { class: "muted" }, "Twórca: " + init.info.ownerName),
       h("button", { class: "btn", onClick: () => { menu.classList.add("hidden"); die(); } }, "Zresetuj postać (R)"),
       h("button", { class: "btn", onClick: () => openSettings() }, "🎚 Ustawienia (czułość kamery)"),
+      params.offline ? null : h("button", { class: "btn", onClick: () => (menu.classList.add("hidden"), openInviteFriends(params.privateCode)) }, "👥 Zaproś znajomych"),
       h("button", { class: "btn", onClick: () => menu.classList.add("hidden") }, "Wróć do gry"),
       h("button", { class: "btn danger", onClick: () => leave() }, "Wyjdź z gry"),
     );

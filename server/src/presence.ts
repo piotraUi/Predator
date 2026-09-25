@@ -13,14 +13,23 @@ const worldCounts = new Map<number, number>();
 /** Ile osób gra na prywatnym serwerze (po kodzie) */
 const privateCounts = new Map<string, number>();
 
+/** powiadomienia dla znajomych (ustawia live.ts - bez importu w kółko) */
+export const presenceHooks: {
+  online?: (userId: number) => void;
+  playing?: (userId: number, p: NonNullable<Presence["playing"]>) => void;
+} = {};
+
 export const presence = {
   touch(userId: number) {
+    const wasOnline = presence.get(userId).online;
     const p = map.get(userId) ?? { lastSeen: 0, playing: null };
     p.lastSeen = Date.now();
     map.set(userId, p);
+    if (!wasOnline) presenceHooks.online?.(userId);
   },
   setPlaying(userId: number, playing: Presence["playing"]) {
     const p = map.get(userId) ?? { lastSeen: Date.now(), playing: null };
+    if (playing && !playing.private && p.playing?.worldId !== playing.worldId) presenceHooks.playing?.(userId, playing);
     p.playing = playing;
     p.lastSeen = Date.now();
     map.set(userId, p);
