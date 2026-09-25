@@ -1170,3 +1170,57 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
 /* pierwsza osoba: kropka celownika na środku */
 .fp-cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
   background: #fff; box-shadow: 0 0 0 1.5px #0008; pointer-events: none; z-index: 4; }
+
+/* ---------- edytor rysowania (Studio 2D) ---------- */
+.paint { position: fixed; inset: 0; z-index: 320; background: var(--bg); display: flex; flex-direction: column; }
+.paint-top { display: flex; align-items: center; gap: 4px; padding: 6px 10px; background: var(--bg2); border-bottom: 1px solid var(--line);
+  overflow-x: auto; flex-shrink: 0; scrollbar-width: none; }
+.paint-top .tb-btn { min-width: 40px; font-size: 18px; }
+.paint-title { white-space: nowrap; margin-right: 6px; }
+.paint-body { flex: 1; display: flex; min-height: 0; }
+.paint-tools { display: flex; flex-direction: column; gap: 4px; padding: 8px; background: var(--bg2); border-right: 1px solid var(--line); overflow-y: auto; }
+.paint-tool { width: 46px; height: 46px; font-size: 22px; border: 2px solid transparent; border-radius: 10px; background: var(--bg3); cursor: pointer; }
+.paint-tool.on { border-color: var(--accent); background: #3a2328; }
+.paint-stage { flex: 1; overflow: auto; display: flex; padding: 20px; min-width: 0; touch-action: none; }
+.paint-view { margin: auto; flex-shrink: 0; box-shadow: 0 0 0 1px var(--line), 0 8px 30px #0008; touch-action: none;
+  /* szachownica = przezroczyste tło */
+  background: repeating-conic-gradient(#d8d8d8 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px; }
+.paint-stage.pixel .paint-view { image-rendering: pixelated; }
+.paint-side { width: 250px; padding: 12px; background: var(--bg2); border-left: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.paint-row { display: flex; align-items: center; gap: 8px; }
+.paint-color { width: 56px; height: 40px; padding: 2px; }
+.paint-palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.paint-palette.recent { min-height: 24px; }
+.paint-sw { aspect-ratio: 1; border-radius: 6px; border: 2px solid #0005; padding: 0; cursor: pointer; }
+.paint-sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.paint-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.paint-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.paint-help { margin: 0; }
+.paint-choose { display: flex; flex-direction: column; gap: 10px; }
+.paint-choice { display: flex; flex-direction: column; gap: 6px; }
+.paint-choice .template { width: 100%; }
+.paint-sizes { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 4px; }
+.frame-draw { font-size: 16px; }
+@media (max-width: 760px), (max-height: 520px) {
+  .paint-body { flex-direction: column; }
+  .paint-tools { flex-direction: row; border-right: none; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; flex-shrink: 0; }
+  .paint-tool { flex-shrink: 0; }
+  .paint-side { width: auto; border-left: none; border-top: 1px solid var(--line); max-height: 34vh; flex-shrink: 0; }
+  .paint-palette { grid-template-columns: repeat(16, 1fr); }
+  .paint-stage { padding: 10px; }
+}
+@media (max-height: 520px) {
+  .paint-body { flex-direction: row; }
+  .paint-tools { flex-direction: column; overflow-y: auto; }
+  .paint-side { width: 220px; max-height: none; }
+  .paint-palette { grid-template-columns: repeat(8, 1fr); }
+}
+.studio2d .ltab-page > .panel-body { max-height: none; }
+.studio2d .ltab { font-size: 10.5px; }
+@media (max-width: 760px), (max-height: 520px) {
+  /* na telefonie Gotowe / Anuluj zawsze widać (reszta paska przewija się w bok) */
+  .paint-top .btn { order: -2; flex-shrink: 0; padding: 8px 12px; }
+  .paint-top .btn.primary { order: -3; }
+  .paint-title { display: none; }
+}
+.paint-top .muted { white-space: nowrap; }

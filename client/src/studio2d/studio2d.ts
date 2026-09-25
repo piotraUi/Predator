@@ -18,6 +18,8 @@ import type { StudioFile } from "../studio/studio.ts";
 import { ask, h, isCompact, isTouch, logo, modal, toast } from "../ui/dom.ts";
 import { badgeEditor } from "../studio/badgeEditor.ts";
 import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
+import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
+import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 
@@ -355,28 +357,46 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     const props = h("div", { class: "panel-body" });
     const title = (text: string, ...actions: Node[]) => h("div", { class: "panel-title" }, text, actions.length ? h("span", { class: "panel-actions" }, actions) : null);
     const small = (label: string, fn: () => void, t?: string) => h("button", { class: "btn small", onClick: fn, title: t }, label);
-    const leftPanel = h(
-      "aside",
-      { class: "studio-panel left" },
-      title("Poziomy", small("+ Nowy", () => addLevel())),
-      levelsList,
-      title("Obiekty", small("+ Nowy", () => newObject())),
-      h("div", { class: "hint pad" }, "Kliknij obiekt, a potem planszę, żeby go postawić."),
-      objectsList,
-      title("Postacie", small("+ Nowa", () => editCharacter(null))),
-      charsList,
-      title("Dźwięki", small("+ Dodaj", () => addSounds())),
-      soundsList,
-      title("Skrypty Lua", small("+ Lua", () => addScript())),
-      scriptsList,
+    // lewy panel w zakładkach - jak w Studio 3D
+    const kitBody = h("div", { class: "panel-body toolbox" });
+    const page = (...kids: (Node | string)[]) => h("div", { class: "ltab-page" }, ...kids);
+    const LEFT_TABS: { id: string; icon: string; label: string; page: HTMLElement }[] = [
+      { id: "kit", icon: "🧱", label: "Zestaw", page: page(title("Zestaw - kliknij i postaw"), h("p", { class: "panel-hint" }, "Gotowe rzeczy z zachowaniem. Kliknij, a potem planszę."), kitBody) },
+      {
+        id: "objects",
+        icon: "🖼️",
+        label: "Obiekty",
+        page: page(title("Obiekty w grze", small("+ Nowy", () => newObject())), h("p", { class: "panel-hint" }, "Kliknij obiekt, a potem planszę. ✎ = obrazki, rysowanie i zachowanie."), objectsList),
+      },
+      { id: "levels", icon: "🗺️", label: "Poziomy", page: page(title("Poziomy", small("+ Nowy", () => addLevel())), levelsList) },
+      { id: "chars", icon: "🧍", label: "Postacie", page: page(title("Postacie", small("+ Nowa", () => editCharacter(null))), h("p", { class: "panel-hint" }, "Postać gracza: obrazki z obiektu i nazwy animacji (chodzenie, skok...)."), charsList) },
+      { id: "sounds", icon: "🔊", label: "Dźwięki", page: page(title("Dźwięki", small("+ Dodaj", () => addSounds())), soundsList) },
+      { id: "scripts", icon: "📜", label: "Skrypty", page: page(title("Skrypty Lua", small("+ Lua", () => addScript())), scriptsList) },
+    ];
+    const leftTabs = h(
+      "div",
+      { class: "ltabs" },
+      LEFT_TABS.map((t) => h("button", { class: "ltab", "data-ltab": t.id, title: t.label, onClick: () => showLeftTab(t.id) }, h("span", { class: "ltab-ic" }, t.icon), h("span", null, t.label))),
     );
+    const leftPages = h("div", { class: "ltab-pages" });
+    const leftPanel = h("aside", { class: "studio-panel left" }, leftTabs, leftPages);
+    function showLeftTab(id: string) {
+      const t = LEFT_TABS.find((x) => x.id === id) ?? LEFT_TABS[0];
+      leftPages.replaceChildren(t.page);
+      for (const b of leftTabs.querySelectorAll<HTMLElement>(".ltab")) b.classList.toggle("active", b.dataset.ltab === t.id);
+      if (isCompact()) {
+        rightPanel.classList.remove("open");
+        leftPanel.classList.add("open");
+        syncMobileTabs();
+      }
+    }
     const closeBtn = () => h("button", { class: "panel-close", title: "Zamknij", onClick: () => closePanels() }, "✕");
-    leftPanel.prepend(h("div", { class: "panel-title m-only" }, "Poziomy i obiekty", closeBtn()));
+    leftTabs.append(closeBtn());
     const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości", closeBtn()), props);
     const mobileTabs = h(
       "div",
       { class: "studio-mtabs" },
-      h("button", { onClick: () => togglePanel(leftPanel) }, "📋 Poziomy i obiekty"),
+      h("button", { onClick: () => togglePanel(leftPanel) }, "🧱 Zestaw i obiekty"),
       h("button", { onClick: () => togglePanel(rightPanel) }, "🔧 Właściwości"),
     );
     function togglePanel(p: HTMLElement) {
@@ -403,7 +423,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     const fabBtn = (icon: string, label: string, onClick: () => void, cls = "") =>
       h("button", { class: cls, title: label, onClick: (e: Event) => (e.stopPropagation(), onClick()) }, icon, h("small", null, label));
     const fab = {
-      add: fabBtn("＋", "Obiekt", () => togglePanel(leftPanel), "accent"),
+      add: fabBtn("＋", "Dodaj", () => showLeftTab("kit"), "accent"),
       stop: fabBtn("✋", "Koniec", () => setBrush(null)),
       dup: fabBtn("⧉", "Kopia", () => duplicate()),
       del: fabBtn("🗑", "Usuń", () => removeSelected()),
@@ -544,6 +564,40 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         ),
       );
     }
+    /** Zestaw: kafelki z gotowymi obiektami */
+    function renderKit() {
+      kitBody.replaceChildren(
+        ...KIT_CATS.flatMap((cat) => [
+          h("div", { class: "tbx-cat" }, cat),
+          h(
+            "div",
+            { class: "tbx-grid" },
+            KIT_2D.filter((k) => k.cat === cat).map((k) =>
+              h("button", { class: "tbx-item", title: k.name, onClick: () => addKit(k) }, h("span", { class: "tbx-ic" }, k.icon), h("span", { class: "tbx-name" }, k.name)),
+            ),
+          ),
+        ]),
+      );
+    }
+    async function addKit(k: Kit2D) {
+      const { assets: list, obj: o } = k.make();
+      remember();
+      for (const a of list) {
+        w.assets.push(a);
+        await assets.add(a);
+      }
+      let n = 2;
+      const baseName = o.name;
+      while (w.objects.some((x) => x.name === o.name)) o.name = `${baseName} ${n++}`;
+      w.objects.push(o);
+      view.refreshObjects();
+      editObj = o;
+      selected = null;
+      setBrush(o);
+      renderAll();
+      if (!isCompact()) toast(`Kliknij na planszy, żeby postawić: ${o.name}. Esc = koniec`);
+    }
+
     function renderAll() {
       renderLevels();
       renderObjects();
@@ -710,6 +764,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         field("Pozycja X / Y", pair(numIn(i.x, (v) => (i.x = v)), numIn(i.y, (v) => (i.y = v)))),
         field("Szerokość / wysokość", pair(numIn(i.w, (v) => (i.w = Math.max(1, v))), numIn(i.h, (v) => (i.h = Math.max(1, v))))),
         field("Warstwa", selectIn(Object.entries(LAYER_LABELS) as [string, string][], i.layer, (v) => (i.layer = v as Inst2D["layer"]))),
+        field("Obrót (stopnie, tylko wygląd)", numIn(i.angle ?? 0, (v) => (i.angle = ((v % 360) + 360) % 360 || undefined), 15)),
         i.layer === "bg" ? field("Przesuwanie tła (0 = stoi, 1 = jak świat)", numIn(i.parallax ?? 0, (v) => (i.parallax = Math.min(1, Math.max(0, v))), 0.1)) : "",
         checkIn("Odbity w poziomie", !!i.flip, (v) => (i.flip = v || undefined)),
         animNames.length > 1 ? field("Animacja", selectIn(animNames, i.anim ?? o.anims[0].name, (v) => (i.anim = v === o.anims[0].name ? undefined : v))) : "",
@@ -814,13 +869,75 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       );
     }
 
+    /** rysunek z edytora jako obrazek gry */
+    function paintAsset(r: PaintResult, name: string): Asset2D | null {
+      if (r.data.length > MAX_ASSET_CHARS) {
+        toast("Rysunek jest za duży - zmniejsz płótno", "error");
+        return null;
+      }
+      return { id: newId2d(), name, type: "image", data: r.data, w: r.w, h: r.h, pixel: r.pixel };
+    }
+    /** obrazki do obiektu: narysowane w edytorze albo z plików (kilka plików = klatki) */
+    async function pickImages(title: string, multiple: boolean): Promise<{ list: Asset2D[]; name: string } | null> {
+      const src = await chooseImageSource(title, multiple);
+      if (!src) return null;
+      if ("drawn" in src) {
+        const a = paintAsset(src.drawn, "rysunek");
+        return a ? { list: [a], name: "Rysunek" } : null;
+      }
+      try {
+        const files = src.files.sort((p, q) => p.name.localeCompare(q.name, undefined, { numeric: true }));
+        return { list: await Promise.all(files.map(imageAsset)), name: files[0].name.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]?\d+$/, "") || "Obiekt" };
+      } catch (e) {
+        toast((e as Error).message, "error");
+        return null;
+      }
+    }
+    /** poprawianie klatki w edytorze - powstaje nowy obrazek (inne obiekty ze starym się nie zmieniają) */
+    async function editFrame(a: Anim2D, idx: number) {
+      const old = w.assets.find((x) => x.id === a.frames[idx]);
+      if (!old) return;
+      const r = await paintEditor({ title: "Popraw klatkę", image: old.data, pixel: old.pixel ?? true });
+      const as = r && paintAsset(r, old.name);
+      if (!as) return;
+      remember();
+      w.assets.push(as);
+      await assets.add(as);
+      a.frames[idx] = as.id;
+      view.refreshObjects();
+      renderProps();
+      renderObjects();
+    }
+    /** nowa klatka narysowana na bazie ostatniej (łatwe animacje: kopiujesz i zmieniasz kawałek) */
+    async function drawFrame(o: Obj2D, a: Anim2D) {
+      const last = w.assets.find((x) => x.id === a.frames[a.frames.length - 1]);
+      const r = await paintEditor({
+        title: last ? "Nowa klatka (kopia ostatniej)" : "Nowa klatka",
+        image: last?.data,
+        pixel: last?.pixel ?? true,
+        w: Math.max(8, Math.min(512, Math.round(o.w))),
+        h: Math.max(8, Math.min(512, Math.round(o.h))),
+      });
+      const as = r && paintAsset(r, o.name + " " + (a.frames.length + 1));
+      if (!as) return;
+      remember();
+      w.assets.push(as);
+      await assets.add(as);
+      if (o.kind === "tiled") a.frames = [as.id];
+      else a.frames.push(as.id);
+      view.refreshObjects();
+      renderProps();
+      renderObjects();
+    }
+
     function animEditor(o: Obj2D) {
       const box = h("div", { class: "anims" });
       const addFrames = async (a: Anim2D) => {
-        const files = await pickFiles(["image/png", "image/jpeg", "image/gif", "image/webp"], true);
-        if (!files.length) return;
+        const picked = await pickImages(o.kind === "tiled" ? "Obrazek kafelków" : "Klatki animacji", o.kind !== "tiled");
+        if (!picked) return;
+        if (o.kind === "tiled") a.frames = [];
         try {
-          const list = await Promise.all(files.sort((p, q) => p.name.localeCompare(q.name, undefined, { numeric: true })).map(imageAsset));
+          const list = picked.list;
           remember();
           for (const as of list) {
             w.assets.push(as);
@@ -845,12 +962,13 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
             const as = w.assets.find((x) => x.id === f);
             return h(
               "div",
-              { class: "frame" },
+              { class: "frame", title: "Kliknij, żeby poprawić w edytorze rysowania", onClick: () => editFrame(a, idx) },
               as ? h("img", { src: as.data, alt: "" }) : "?",
-              h("button", { class: "frame-x", title: "Usuń klatkę", onClick: () => (remember(), a.frames.splice(idx, 1), renderProps()) }, "×"),
+              h("button", { class: "frame-x", title: "Usuń klatkę", onClick: (e: Event) => (e.stopPropagation(), remember(), a.frames.splice(idx, 1), renderProps()) }, "×"),
             );
           }),
-          h("button", { class: "frame add", title: o.kind === "tiled" ? "Wybierz obrazek" : "Dodaj klatki (można kilka plików naraz)", onClick: () => (o.kind === "tiled" && (a.frames = []), addFrames(a)) }, "+"),
+          h("button", { class: "frame add", title: o.kind === "tiled" ? "Nowy obrazek: narysuj albo wybierz plik" : "Dodaj klatki: narysuj albo wybierz pliki", onClick: () => addFrames(a) }, "+"),
+          h("button", { class: "frame add frame-draw", title: "Narysuj nową klatkę (na bazie ostatniej)", onClick: () => drawFrame(o, a) }, "🎨"),
         );
         box.append(
           h(
@@ -907,19 +1025,14 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         let o: Obj2D;
         const base = { id: newId2d(), hitbox: [0, 0, 1, 1] as Obj2D["hitbox"], solid: "none" as Solid2D, role: "none" as Role2D };
         if (kind === "sprite" || kind === "tiled") {
-          const files = await pickFiles(["image/png", "image/jpeg", "image/gif", "image/webp"], kind === "sprite");
-          if (!files.length) return;
-          let list: Asset2D[];
-          try {
-            list = await Promise.all(files.sort((p, q) => p.name.localeCompare(q.name, undefined, { numeric: true })).map(imageAsset));
-          } catch (e) {
-            return toast((e as Error).message, "error");
-          }
+          const picked = await pickImages(kind === "sprite" ? "Nowy obrazek / animacja" : "Nowe kafelki", kind === "sprite");
+          if (!picked) return;
+          const list = picked.list;
           for (const a of list) {
             w.assets.push(a);
             await assets.add(a);
           }
-          const name = files[0].name.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]?\d+$/, "") || "Obiekt";
+          const name = picked.name;
           const iw = list[0].w ?? 32, ih = list[0].h ?? 32;
           o = kind === "sprite"
             ? { ...base, name, kind: "sprite", anims: [{ name: "Idle", frames: list.map((a) => a.id), frameTime: 0.1, loop: true }], w: iw, h: ih }
@@ -1347,6 +1460,8 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         remember();
         const maxZ = level.instances.reduce((m, i) => Math.max(m, i.z), 0);
         const inst: Inst2D = { id: newId2d(), obj: brush.id, x: pos.x, y: pos.y, w: brush.w, h: brush.h, z: maxZ + 1, layer: "main" };
+        // przycisk i brama od razu połączone (klucz 1) - można zmienić we właściwościach
+        if (brush.role === "button" || brush.role === "gate") inst.key = 1;
         level.instances.push(inst);
         view.invalidate();
         selected = inst;
@@ -1522,7 +1637,11 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       cancelAnimationFrame(raf);
     });
 
+    renderKit();
     renderAll();
+    showLeftTab(w.objects.length > 8 ? "objects" : "kit");
+    leftPanel.classList.remove("open");
+    syncMobileTabs();
     if (startDirty) changed();
     if (shouldShowGuide("2d")) setTimeout(() => openGuide("2d"), 600);
     assets.ready.then(() => {

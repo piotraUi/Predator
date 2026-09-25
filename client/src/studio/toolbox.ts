@@ -538,10 +538,11 @@ export function openGuide(kind: "3d" | "2d") {
     ["▶", "Testuj", "Kliknij zielone „Testuj” i zagraj w swoją grę. Potem Zapisz 💾."],
   ];
   const steps2d: [string, string, string][] = [
-    ["🧱", "Wybierz obiekt", "Po lewej w „Obiekty” kliknij to, co chcesz postawić: ziemię, monetę, kolce, drabinę…"],
+    ["🧱", "Weź coś z Zestawu", "Zakładka „Zestaw” po lewej: ziemia, monety, kolce, drabina, potwór, meta… - od razu z zachowaniem."],
+    ["🎨", "Narysuj własne obrazki", "„+ Nowy” obiekt albo ✎ przy obiekcie: narysuj pixel art albo zwykły obrazek, albo wybierz zdjęcie. Kliknij klatkę, żeby ją poprawić."],
     ["🖱️", "Stawiaj na planszy", "Klikaj na planszy, żeby stawiać. Postawiony obiekt możesz przeciągać, a za rogi zmieniać jego rozmiar."],
     ["🔍", "Przesuwaj widok", "Kółko myszy przybliża, prawy albo środkowy przycisk przesuwa planszę (na telefonie dwa palce)."],
-    ["🏃", "Postać i poziomy", "Ustaw postać gracza i dodawaj kolejne poziomy w panelu po lewej."],
+    ["🏃", "Postać i poziomy", "Postać gracza i kolejne poziomy ustawiasz w zakładkach „Postacie” i „Poziomy”."],
     ["▶", "Testuj", "Kliknij „Testuj” i zagraj. Potem Zapisz 💾."],
   ];
   const steps = kind === "3d" ? steps3d : steps2d;
