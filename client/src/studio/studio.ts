@@ -30,6 +30,7 @@ import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
 import { badgeEditor } from "./badgeEditor.ts";
+import { productEditor } from "./productEditor.ts";
 import { soundsLightEditor } from "./soundsEditor.ts";
 import { SKYBOXES } from "../../../shared/skybox.ts";
 import { skyPreview } from "../engine/skybox.ts";
@@ -1446,6 +1447,7 @@ export function studioScreen(
         data.characters.map((c) => h("option", { value: c.id, selected: data.playerCharacter === c.id }, "🧍 " + c.name)),
       );
       const badges = badgeEditor(data.badges);
+      const products = productEditor(data.products);
       const audioLight = soundsLightEditor(data);
       const close = modal(
         "Ustawienia gry",
@@ -1462,6 +1464,7 @@ export function studioScreen(
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
           audioLight.el,
           badges.el,
+          products.el,
           src.online
             ? h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać"))
             : h("p", { class: "muted", style: "font-size:13px;margin:0" }, "Gra z pliku - żeby ją opublikować, wyślij ją na serwer (Plik → Wyślij na serwer)."),
@@ -1481,6 +1484,9 @@ export function studioScreen(
               for (const k of ["sounds", "music", "light"] as const) delete data[k];
               Object.assign(data, JSON.parse(JSON.stringify(al)));
               data.badges = badges.read();
+              const prod = products.read();
+              if (prod.length) data.products = prod;
+              else delete data.products;
               data.playerCharacter = playerChar.value || undefined;
               renderCharacters();
               if (data.skybox) view.setSkybox(data.skybox);

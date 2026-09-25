@@ -20,6 +20,7 @@ import type { ActionAnim, Anim, Avatar, ChatMsg, Emote, NetPlayer, Part, ToolDef
 import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
+import { gameShop } from "./gameShop.ts";
 import { VoiceChat } from "./voice.ts";
 import { GameAudio } from "./audio3d.ts";
 import { AvatarModel } from "../engine/avatar.ts";
@@ -579,6 +580,10 @@ export function playScreen(
       wrap.append(voice.panel);
       cleanups.push(() => voice.dispose());
     }
+    // sklep gry (pokazuje się, gdy gra ma produkty)
+    const shop = gameShop(r, { offline: !!params.offline, onCoins: (c) => (coinsEl.textContent = String(c)) });
+    topbar.insertBefore(shop.button, topbar.querySelector(".hud-title"));
+    cleanups.push(() => shop.dispose());
 
     const addChat = (m: ChatMsg) => {
       const line = m.system

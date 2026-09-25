@@ -55,7 +55,7 @@ const HOOK_EVERY = 1000;
 const MAX_HOOKS = 300;
 
 const PRELUDE = `
-local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {}, answer = {} }
+local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {}, answer = {}, purchase = {} }
 local tasks = {}
 local now = 0
 
@@ -90,6 +90,8 @@ function onDied(fn) table.insert(handlers.died, fn) end
 function onToolUse(fn) table.insert(handlers.tool, fn) end
 -- onAnswer(function(player, id, text) ... end) - odpowiedź z okienka prompt()
 function onAnswer(fn) table.insert(handlers.answer, fn) end
+-- sklep: onPurchase(function(player, productName) ... end) - gracz właśnie coś kupił
+function onPurchase(fn) table.insert(handlers.purchase, fn) end
 -- gry 2D: onLevelEnter(function(player, levelName) ... end)
 function onLevelEnter(fn) table.insert(handlers.level, fn) end
 function onTouch(partName, fn)
@@ -492,6 +494,9 @@ export class LuaEngine {
   }
   answered(player: string, id: string, text: string) {
     this.call("__fire", "answer", player, id, text);
+  }
+  purchased(player: string, productName: string) {
+    this.call("__fire", "purchase", player, productName);
   }
   chat(player: string, text: string) {
     this.call("__fire", "chat", player, text);

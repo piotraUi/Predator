@@ -163,3 +163,35 @@ end)`,
   assert.deepEqual(said.filter((t) => t.startsWith("wejscie")), ["wejscie 1", "wejscie 2", "wejscie 3"]);
   assert.deepEqual(disk.get(7), { wejscia: 3, nick: "Ania" });
 });
+
+test("sklep: promptPurchase, onPurchase i ownsProduct", () => {
+  const data = { ...MINIGAMES[0].make(), scripts: [] as WorldData["scripts"] };
+  data.products = [
+    { id: "vip", name: "VIP", description: "", icon: "👑", price: 20, kind: "pass" },
+    { id: "c100", name: "100 monet", description: "", icon: "🪙", price: 5, kind: "item" },
+  ];
+  data.scripts = [{
+    id: "s", name: "Sklep", type: "lua", enabled: true,
+    source: `onPlayerJoin(function(p)
+  promptPurchase(p, "VIP")
+  tell(p, "vip " .. tostring(ownsProduct(p, "VIP")))
+end)
+onPurchase(function(p, product)
+  tell(p, "kupiono " .. product .. " vip=" .. tostring(ownsProduct(p, "VIP")))
+end)`,
+  }];
+  const got: { type: string; msg: unknown }[] = [];
+  const sim = new GameSim(data, { send: (_s, type, msg) => got.push({ type, msg }), broadcast: () => {} }, { id: 1, name: "t", ownerName: "t" });
+  sim.join("a", { userId: 7, username: "Ania", avatar: DEFAULT_AVATAR, isOwner: false, owned: [] });
+  const shop = got.find((g) => g.type === "shop")?.msg as { products: unknown[]; owned: string[] };
+  assert.equal(shop.products.length, 2);
+  assert.deepEqual(got.find((g) => g.type === "shopprompt")?.msg, { id: "vip" });
+  sim.purchased("a", "c100");
+  sim.purchased("a", "vip");
+  sim.tick();
+  const said = got.filter((g) => g.type === "chat").map((g) => (g.msg as { text: string }).text);
+  assert.ok(said.includes("vip false"));
+  assert.ok(said.includes("kupiono 100 monet vip=false"));
+  assert.ok(said.includes("kupiono VIP vip=true"));
+  sim.dispose();
+});

@@ -619,6 +619,26 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
     h("h2", null, "Opis"),
     h("p", { class: "pv-desc" }, w.description || "Twórca nie dodał jeszcze opisu."),
     w.published ? privateServersSection(w, ctx) : "",
+    ...(w.products?.length
+      ? [h("h2", null, "Sklep gry"), h(
+          "div",
+          { class: "pv-badges" },
+          w.products.map((p) =>
+            h(
+              "div",
+              { class: "pv-badge-card" + (p.owned ? " mine" : "") },
+              h("div", { class: "pv-badge-ic shop" }, p.icon || "🛍️"),
+              h(
+                "div",
+                { class: "pv-badge-main" },
+                h("b", null, p.name),
+                p.description ? h("div", { class: "muted small" }, p.description) : null,
+                h("div", { class: "small" }, p.owned ? "✅ Masz to" : `🪙 ${p.price}${p.kind === "item" ? " · można kupować wiele razy" : ""}`),
+              ),
+            ),
+          ),
+        ), h("p", { class: "muted small" }, "Kupujesz w grze - przycisk 🛒 na górze ekranu.")]
+      : []),
     ...(w.badges?.length
       ? [h("h2", null, "Odznaki"), h(
           "div",

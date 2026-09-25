@@ -226,6 +226,20 @@ Blockly.common.defineBlocksWithJsonArray([
 ]);
 g.forBlock["p_save"] = (b) => `if player then saveData(player, ${q(String(b.getFieldValue("KEY") ?? ""))}, ${val(b, "VAL", "0")}) end\n`;
 g.forBlock["p_load"] = (b) => [`(player and loadData(player, ${q(String(b.getFieldValue("KEY") ?? ""))}, ${val(b, "DEF", "0")}) or ${val(b, "DEF", "0")})`, Order.ATOMIC];
+// ---------- sklep gry ----------
+const SHOP = 45;
+Blockly.common.defineBlocksWithJsonArray([
+  { type: "p_on_purchase", message0: "gdy gracz kupi %1 %2 %3", args0: [{ type: "field_input", name: "NAME", text: "VIP" }, { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: SHOP, tooltip: "Produkty dodajesz w Ustawieniach gry → Sklep gry" },
+  { type: "p_prompt_purchase", message0: "pokaż graczowi zakup %1", args0: [{ type: "field_input", name: "NAME", text: "VIP" }], previousStatement: null, nextStatement: null, colour: SHOP, tooltip: "Okienko 'Kupić?' - gdy gracz kupi, zadziała bloczek 'gdy gracz kupi'" },
+  { type: "p_owns_product", message0: "gracz ma %1", args0: [{ type: "field_input", name: "NAME", text: "VIP" }], output: "Boolean", colour: SHOP, tooltip: "Czy gracz kupił ten produkt (tylko dla kupowanych raz, na zawsze)" },
+  { type: "p_open_shop", message0: "otwórz graczowi sklep", previousStatement: null, nextStatement: null, colour: SHOP },
+]);
+g.forBlock["p_on_purchase"] = (b) =>
+  `onPurchase(function(player, product)\nif product == ${q(String(b.getFieldValue("NAME") ?? ""))} then\n${stmts(b)}end\nend)\n`;
+g.forBlock["p_prompt_purchase"] = (b) => `if player then promptPurchase(player, ${q(String(b.getFieldValue("NAME") ?? ""))}) end\n`;
+g.forBlock["p_owns_product"] = (b) => [`(player and ownsProduct(player, ${q(String(b.getFieldValue("NAME") ?? ""))}) or false)`, Order.ATOMIC];
+g.forBlock["p_open_shop"] = () => `if player then openShop(player) end\n`;
+
 g.forBlock["p_delete_data"] = (b) => `if player then deleteData(player, ${q(String(b.getFieldValue("KEY") ?? ""))}) end\n`;
 
 const block = (type: string, extra: Record<string, unknown> = {}) => ({ kind: "block", type, ...extra });
@@ -322,7 +336,11 @@ const SAVE_CATEGORY = {
     block("p_delete_data"),
   ],
 };
-TOOLBOX.contents.splice(TOOLBOX.contents.length - 5, 0, SAVE_CATEGORY);
+const SHOP_CATEGORY = {
+  kind: "category", name: "Sklep", colour: SHOP,
+  contents: [block("p_on_purchase"), block("p_prompt_purchase"), block("p_owns_product"), block("p_open_shop")],
+};
+TOOLBOX.contents.splice(TOOLBOX.contents.length - 5, 0, SAVE_CATEGORY, SHOP_CATEGORY);
 const TOOLBOX_2D = {
   kind: "categoryToolbox",
   contents: [
@@ -376,6 +394,7 @@ const TOOLBOX_2D = {
       contents: [block("d2_character"), block("d2_player_anim"), block("d2_reset_anims"), block("d2_camera", { inputs: { X: numShadow(0), Y: numShadow(0) } }), block("d2_camera_free")],
     },
     SAVE_CATEGORY,
+    SHOP_CATEGORY,
     ...COMMON,
   ],
 };

@@ -16,7 +16,7 @@ import {
   type AuthedRequest,
 } from "./auth.ts";
 import { config } from "./config.ts";
-import { alerts, badges, friends, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
+import { alerts, badges, friends, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { mutes, stock, trades } from "./social.ts";
 
@@ -171,8 +171,17 @@ api.get("/worlds/:id/info", requireAuth, (req, res) => {
   const me = (req as AuthedRequest).user;
   const info = infoById(Number(req.params.id));
   if (!info || (!info.published && info.ownerId !== me.id)) return fail(res, 404, "Nie ma takiej gry");
-  res.json({ ...info, myVote: votes.get(me.id, info.id), badges: badgeInfo(info.id, me.id) });
+  res.json({ ...info, myVote: votes.get(me.id, info.id), badges: badgeInfo(info.id, me.id), products: productInfo(info.id, me.id) });
 });
+
+/** sklep gry: produkty i czy je mam */
+function productInfo(worldId: number, userId: number): WorldInfo["products"] {
+  const w = worlds.byId(worldId);
+  const defs = w ? (sanitizeWorld(JSON.parse(w.data)).products ?? []) : [];
+  if (!defs.length) return [];
+  const mine = new Set(purchases.owned(worldId, userId));
+  return defs.map((d) => ({ ...d, owned: d.kind === "pass" && mine.has(d.id) }));
+}
 
 /** odznaki gry: ile osób je zdobyło i czy mam je ja */
 function badgeInfo(worldId: number, userId: number): WorldInfo["badges"] {

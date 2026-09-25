@@ -3,6 +3,7 @@
 // różni się tylko "transport", którym wysyłamy wiadomości do graczy.
 import { filterChat } from "../chatFilter.ts";
 import { findSkybox, SKYBOXES } from "../skybox.ts";
+import { GameShop } from "./shop.ts";
 import { PlayerDataStore, type GameStorage } from "./playerData.ts";
 import { CollisionWorld, rayBox, raycastParts } from "../physics.ts";
 import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
@@ -32,6 +33,8 @@ export interface SimUser {
   isOwner: boolean;
   /** kupione emotki (brak = wszystkie, np. test w Studio) */
   emotes?: string[];
+  /** kupione passy w sklepie tej gry (id produktów) */
+  owned?: string[];
 }
 
 export interface SimInfo {
@@ -67,6 +70,8 @@ export class GameSim {
   private sky: string;
   /** zapisany postęp graczy (saveData / loadData) */
   private dataStore: PlayerDataStore;
+  /** sklep gry (promptPurchase / ownsProduct / onPurchase) */
+  readonly shop: GameShop;
   /** gotowe niebo (skybox) - pusty = zwykły kolor */
   private skybox: string;
 
@@ -79,6 +84,7 @@ export class GameSim {
     for (const tool of data.tools) this.toolsById.set(tool.id, tool);
     this.collisions = new CollisionWorld(data.parts);
     this.dataStore = new PlayerDataStore(t.storage, (text, error) => this.log(text, error));
+    this.shop = new GameShop(data.products ?? [], (sid, type, msg) => this.t.send(sid, type, msg));
     this.sky = data.skyColor;
     this.skybox = data.skybox ?? "";
     this.startScripts();
@@ -126,6 +132,7 @@ export class GameSim {
     this.chat({ from: "", text: `${user.username} dołączył do gry`, system: true });
     if (user.isOwner) for (const l of this.logs) this.t.send(sid, "log", l);
     this.dataStore.attach(sid, user.userId);
+    this.shop.attach(sid, user.owned, user.isOwner);
     this.lua?.playerJoined(sid);
     this.scoresDirty = true;
   }
@@ -135,6 +142,7 @@ export class GameSim {
     if (!p) return;
     this.lua?.playerLeft(sid);
     this.dataStore.detach(sid);
+    this.shop.detach(sid);
     this.players.delete(sid);
     this.t.broadcast("leave", sid);
     this.chat({ from: "", text: `${p.username} wyszedł z gry`, system: true });
@@ -175,6 +183,12 @@ export class GameSim {
   }
 
   // ---------- Wiadomości od graczy ----------
+
+  /** serwer pobrał monety za produkt - skrypt dostaje onPurchase */
+  purchased(sid: string, productId: string) {
+    const name = this.shop.purchased(sid, productId);
+    if (name && this.players.has(sid)) this.lua?.purchased(sid, name);
+  }
 
   handle(sid: string, type: string, msg: unknown) {
     switch (type) {
@@ -602,6 +616,7 @@ export class GameSim {
       return;
     }
     this.dataStore.register(this.lua);
+    this.shop.register(this.lua);
     // cel: id gracza albo pusty tekst / nil = wszyscy
     const to = (target: unknown, type: string, msg: unknown) => {
       const sid = typeof target === "string" ? target : "";

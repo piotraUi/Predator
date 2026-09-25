@@ -89,6 +89,13 @@ export class LocalRoom implements GameConnection {
 
   send(type: string, msg?: unknown) {
     const m = msg === undefined ? undefined : structuredClone(msg);
+    // test w Studio: zakup za darmo, żeby sprawdzić skrypt onPurchase
+    if (type === "buy") {
+      const id = String((m as { id?: unknown })?.id ?? "");
+      this.deliver("bought", { id, test: true });
+      queueMicrotask(() => this.sim.purchased(this.sid, id));
+      return;
+    }
     queueMicrotask(() => this.sim.handle(this.sid, type, m));
   }
 

@@ -8,6 +8,7 @@ import type { ChatMsg, WorldData } from "../types.ts";
 import type { Character2D, Enemy2D, Inst2D, InstState2D, Level2D, NetPlayer2D, Obj2D, World2D } from "../types2d.ts";
 import { instBox, levelByName, newId2d, overlaps, type Box } from "../world2d.ts";
 import type { SimInfo, SimTransport, SimUser } from "./gameSim.ts";
+import { GameShop } from "./shop.ts";
 import { PlayerDataStore } from "./playerData.ts";
 
 const LIMIT = 1_000_000;
@@ -116,6 +117,8 @@ export class Sim2D {
   private lua: LuaEngine | null = null;
   /** zapisany postęp graczy (saveData / loadData) */
   private dataStore: PlayerDataStore;
+  /** sklep gry (promptPurchase / ownsProduct / onPurchase) */
+  readonly shop: GameShop;
   private logs: { text: string; error: boolean }[] = [];
   private lastTick = Date.now();
   private scoresDirty = false;
@@ -127,6 +130,7 @@ export class Sim2D {
   ) {
     this.w = data.world2d!;
     this.dataStore = new PlayerDataStore(t.storage, (text, error) => this.log(text, error));
+    this.shop = new GameShop(data.products ?? [], (sid, type, msg) => this.t.send(sid, type, msg));
     for (const o of this.w.objects) this.objs.set(o.id, o);
     for (const c of this.w.characters) this.chars.set(c.id, c);
     this.startScripts();
@@ -291,6 +295,7 @@ export class Sim2D {
     for (const l of this.logs) this.t.send(sid, "log", l);
     this.systemChat(`${user.username} dołącza do gry`);
     this.dataStore.attach(sid, user.userId);
+    this.shop.attach(sid, user.owned, user.isOwner);
     this.lua?.playerJoined(sid);
     this.lua?.fire("level", sid, s.level.name);
     this.scoresDirty = true;
@@ -305,6 +310,7 @@ export class Sim2D {
     this.systemChat(`${p.username} wychodzi z gry`);
     this.lua?.playerLeft(sid);
     this.dataStore.detach(sid);
+    this.shop.detach(sid);
     this.scoresDirty = true;
   }
 
@@ -323,6 +329,12 @@ export class Sim2D {
   }
 
   // ---------- wiadomości od graczy ----------
+
+  /** serwer pobrał monety za produkt - skrypt dostaje onPurchase */
+  purchased(sid: string, productId: string) {
+    const name = this.shop.purchased(sid, productId);
+    if (name && this.players.has(sid)) this.lua?.purchased(sid, name);
+  }
 
   handle(sid: string, type: string, msg: unknown) {
     const p = this.players.get(sid);
@@ -737,6 +749,7 @@ export class Sim2D {
       return;
     }
     this.dataStore.register(this.lua);
+    this.shop.register(this.lua);
     const S = (v: LuaValue) => (typeof v === "string" ? v : v === null || v === undefined ? "" : String(v));
     const N = (v: LuaValue, def = 0) => (typeof v === "number" && Number.isFinite(v) ? v : def);
     this.lua.defineFunctions({

@@ -9,6 +9,7 @@ import { Input } from "../engine/input.ts";
 import type { GameConnection } from "../game/connection.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
 import { VoiceChat } from "../game/voice.ts";
+import { gameShop } from "../game/gameShop.ts";
 import { AssetStore, unlockAudio } from "./assets.ts";
 import { fitScale, LevelView, type Camera2D, type Entity2D } from "./render.ts";
 
@@ -318,6 +319,9 @@ export function play2dScreen(
   // czat głosowy ze znajomymi (tylko w grze na serwerze)
   const voice = params.offline ? null : new VoiceChat(conn, init.you);
   if (voice) (topbar.insertBefore(voice.button, topbar.lastChild), wrap.append(voice.panel));
+  // sklep gry (pokazuje się, gdy gra ma produkty)
+  const shop = gameShop(conn, { offline: !!params.offline });
+  topbar.insertBefore(shop.button, topbar.lastChild);
   const myName = init.players.find((p) => p.sid === init.you)?.username ?? "";
 
   function exit() {
@@ -807,6 +811,7 @@ export function play2dScreen(
     window.removeEventListener("keydown", unlock);
     input.dispose();
     voice?.dispose();
+    shop.dispose();
     if (!leaving) {
       leaving = true;
       conn.leave();

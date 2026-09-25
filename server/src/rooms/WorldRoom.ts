@@ -3,11 +3,11 @@
 import { Room, type Client } from "colyseus";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
 import { Sim2D } from "../../../shared/sim/sim2d.ts";
-import { GAME_PROTOCOL, type BadgeDef } from "../../../shared/types.ts";
+import { creatorCut, GAME_PROTOCOL, type BadgeDef, type ProductDef } from "../../../shared/types.ts";
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
-import { alerts, badges, gameData, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
+import { alerts, badges, gameData, purchases, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
 import { presence } from "../presence.ts";
 import { areFriends, mutes, privateServers, type PrivateServerRow } from "../social.ts";
 import { PAID_EMOTES } from "../../../shared/catalog.ts";
@@ -24,6 +24,9 @@ export class WorldRoom extends Room {
   private sim!: GameSim | Sim2D;
   private joinedAt = new Map<string, { userId: number; at: number }>();
   private badgeDefs: BadgeDef[] = [];
+  private products: ProductDef[] = [];
+  /** ostatni zakup gracza (ochrona przed wielokrotnym kliknięciem) */
+  private lastBuy = new Map<string, number>();
   /** prywatny serwer (null = publiczny) */
   private priv: PrivateServerRow | null = null;
   /** gracze z włączonym czatem głosowym */
@@ -45,6 +48,7 @@ export class WorldRoom extends Room {
     // sanitizeWorld uzupełnia też brakujące pola w starszych zapisach
     const data = sanitizeWorld(JSON.parse(world.data));
     this.badgeDefs = data.badges ?? [];
+    this.products = data.products ?? [];
     const Sim = data.mode === "2d" ? Sim2D : GameSim;
     this.sim = new Sim(
       data,
@@ -76,6 +80,7 @@ export class WorldRoom extends Room {
         }
         this.sim.handle(client.sessionId, type, msg);
       });
+    this.onMessage("buy", (client, m: { id?: unknown }) => this.buy(client, String(m?.id ?? "")));
     // czat głosowy: tylko między znajomymi, serwer przekazuje sygnały połączenia WebRTC
     this.onMessage("voice", (client, on: unknown) => {
       if (on === true) this.voiceOn.add(client.sessionId);
@@ -129,6 +134,7 @@ export class WorldRoom extends Room {
       avatar: toPublicUser(user).avatar,
       isOwner: user.id === this.world.owner_id,
       emotes: (JSON.parse(user.inventory) as string[]).filter((id) => PAID_EMOTES.includes(id)),
+      owned: this.products.length ? purchases.owned(this.world.id, user.id) : [],
     });
     // odznaki za samo wejście do gry (chwilę później, żeby gra zdążyła się wczytać)
     for (const def of this.badgeDefs)
@@ -149,6 +155,24 @@ export class WorldRoom extends Room {
     });
   }
 
+  /** zakup w sklepie gry: monety od gracza, część dla twórcy, a skrypt dostaje onPurchase */
+  private buy(client: Client, id: string) {
+    const j = this.joinedAt.get(client.sessionId);
+    const product = this.products.find((p) => p.id === id);
+    if (!j || !product) return client.send("buyfail", { id, error: "Nie ma takiego produktu" });
+    const last = this.lastBuy.get(client.sessionId) ?? 0;
+    if (Date.now() - last < 800) return;
+    this.lastBuy.set(client.sessionId, Date.now());
+    const res = purchases.buy(this.world.id, j.userId, this.world.owner_id, product, creatorCut(product.price));
+    if (!res.ok) return client.send("buyfail", { id, error: res.error });
+    client.send("bought", { id, coins: res.coins, paid: res.paid });
+    if (res.creatorGot > 0) {
+      const buyer = this.sim.players.get(client.sessionId)?.username ?? "Gracz";
+      alerts.add(this.world.owner_id, `🛒 ${buyer} kupił(a) „${product.name}” w grze „${this.world.name}”. Dostajesz +${res.creatorGot} monet.`);
+    }
+    this.sim.purchased(client.sessionId, id);
+  }
+
   /** twórca dostaje premię i powiadomienie, gdy gra przekroczy kolejny próg wizyt */
   private visitMilestone() {
     const visits = worlds.byId(this.world.id)?.visits ?? 0;
@@ -165,6 +189,7 @@ export class WorldRoom extends Room {
     const j = this.joinedAt.get(client.sessionId);
     if (!j) return;
     this.joinedAt.delete(client.sessionId);
+    this.lastBuy.delete(client.sessionId);
     this.sim.leave(client.sessionId);
     presence.setPlaying(j.userId, null);
     presence.setWorldCount(this.world.id, -1);

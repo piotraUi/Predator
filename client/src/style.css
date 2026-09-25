@@ -1237,3 +1237,22 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
   max-width: calc(100% - 16px); padding: 8px 8px 8px 14px; border-radius: 12px; background: #2b2150; color: #fff; font-size: 14px;
   box-shadow: 0 8px 24px #0008; border: 1px solid #6a5acd; }
 .update-banner .icon-btn { color: #fff; }
+
+/* ---------- sklep w grze ---------- */
+.shop-bg { z-index: 60; }
+.shop-modal { max-width: 440px; }
+.shop-balance { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.shop-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.shop-item { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
+.shop-icon { font-size: 30px; width: 44px; text-align: center; flex: none; }
+.shop-icon.big { font-size: 64px; width: auto; }
+.shop-text { flex: 1; min-width: 0; }
+.shop-name { font-weight: 800; }
+.shop-desc { font-size: 13px; color: var(--muted); }
+.shop-kind { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.shop-item .btn { flex: none; white-space: nowrap; }
+.shop-prompt { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.shop-prompt .shop-balance { margin: 6px 0 0; }
+.shop-prompt-actions { display: flex; gap: 8px; margin-top: 6px; }
+.product-edit-cut { font-size: 11px; color: var(--good); }
+.pv-badge-ic.shop { filter: none; background: rgba(127,127,127,.18); }

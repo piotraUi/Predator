@@ -22,7 +22,7 @@ import type {
   WorldLight,
   WorldSound,
 } from "./types.ts";
-import { JOINTS, MAX_BADGE_REWARD } from "./types.ts";
+import { JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
 
 export const MAX_PARTS = 5000;
 export const MAX_SCRIPTS = 50;
@@ -289,6 +289,7 @@ export function sanitizeWorld(input: unknown): WorldData {
     ...(typeof w.skybox === "string" && findSkybox(w.skybox) ? { skybox: findSkybox(w.skybox)!.id } : {}),
     gravity: num(w.gravity, 10, 500, 196.2),
     badges: sanitizeBadges(w.badges),
+    ...(Array.isArray(w.products) && w.products.length ? { products: sanitizeProducts(w.products) } : {}),
     ...sanitizeAudioLight(w),
     ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),
   };
@@ -394,6 +395,29 @@ export function sanitizeBadges(input: unknown): BadgeDef[] {
       icon: [...str(b.icon, 16, "🏅")].slice(0, 2).join("") || "🏅",
       trigger: b.trigger === "join" ? "join" : "script",
       reward: Math.round(num(b.reward, 0, MAX_BADGE_REWARD, 0)),
+    });
+  }
+  return out;
+}
+
+export const MAX_PRODUCTS = 30;
+export function sanitizeProducts(input: unknown): ProductDef[] {
+  const out: ProductDef[] = [];
+  const ids = new Set<string>();
+  for (const raw of Array.isArray(input) ? input.slice(0, MAX_PRODUCTS) : []) {
+    const p = (raw ?? {}) as Record<string, unknown>;
+    const name = str(p.name, 40, "").trim();
+    if (!name) continue;
+    let id = str(p.id, 40, "").replace(/[^A-Za-z0-9_-]/g, "") || newId();
+    if (ids.has(id)) id = newId();
+    ids.add(id);
+    out.push({
+      id,
+      name,
+      description: str(p.description, 200, ""),
+      icon: [...str(p.icon, 16, "🛍️")].slice(0, 2).join("") || "🛍️",
+      price: Math.round(num(p.price, 1, MAX_PRODUCT_PRICE, 10)),
+      kind: p.kind === "item" ? "item" : "pass",
     });
   }
   return out;

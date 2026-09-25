@@ -17,6 +17,7 @@ import { LUA_HELP_2D, openScriptEditor } from "../studio/scriptEditor.ts";
 import type { StudioFile } from "../studio/studio.ts";
 import { ask, h, isCompact, isTouch, logo, modal, toast } from "../ui/dom.ts";
 import { badgeEditor } from "../studio/badgeEditor.ts";
+import { productEditor } from "../studio/productEditor.ts";
 import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
 import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
 import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
@@ -1263,6 +1264,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         return { k, s, el: h("label", null, label, s) };
       });
       const badges = badgeEditor(data.badges);
+      const products = productEditor(data.products);
       const close = modal(
         "Ustawienia gry",
         h(
@@ -1276,6 +1278,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           h("div", { class: "prop-group" }, "Dźwięki"),
           h("div", { class: "grid2" }, soundSel.map((s) => s.el)),
           badges.el,
+          products.el,
           src.online
             ? h("label", { class: "check" }, pub, h("span", null, "Opublikowana - inni mogą w nią grać"))
             : h("p", { class: "muted", style: "font-size:13px;margin:0" }, "Gra z pliku - żeby ją opublikować, wyślij ją na serwer (Plik → Wyślij na serwer)."),
@@ -1300,6 +1303,9 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
               }
               src.published = pub.checked;
               data.badges = badges.read();
+              const prod = products.read();
+              if (prod.length) data.products = prod;
+              else delete data.products;
               close();
               if (src.online) {
                 if (await save(true)) toast("Zapisano ustawienia", "good");

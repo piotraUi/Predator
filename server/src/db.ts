@@ -98,6 +98,17 @@ CREATE TABLE IF NOT EXISTS game_data (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (world_id, user_id)
 );
+
+-- zakupy w sklepach gier (pass = raz, item = count razy)
+CREATE TABLE IF NOT EXISTS purchases (
+  world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  spent INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (world_id, user_id, product_id)
+);
 `);
 
 // migracje starszych baz
@@ -410,5 +421,65 @@ export const gameData = {
     db.prepare(
       "INSERT INTO game_data (world_id, user_id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(world_id, user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
     ).run(worldId, userId, JSON.stringify(data), Date.now());
+  },
+};
+
+export type BuyResult = { ok: true; coins: number; paid: number; creatorGot: number } | { ok: false; error: string };
+
+export const purchases = {
+  /** kupione produkty gracza w tej grze */
+  owned: (worldId: number, userId: number) =>
+    (db.prepare("SELECT product_id FROM purchases WHERE world_id = ? AND user_id = ? AND count > 0").all(worldId, userId) as { product_id: string }[]).map(
+      (r) => r.product_id,
+    ),
+  /** sprzedaż produktów gry: ile razy i za ile */
+  sales: (worldId: number) =>
+    db.prepare("SELECT product_id, SUM(count) AS n, SUM(spent) AS coins FROM purchases WHERE world_id = ? GROUP BY product_id").all(worldId) as unknown as {
+      product_id: string;
+      n: number;
+      coins: number;
+    }[],
+  /**
+   * Zakup w jednej transakcji: pobiera monety od gracza, twórca dostaje swoją część.
+   * Twórca kupuje we własnej grze za darmo (do testów).
+   */
+  buy(worldId: number, userId: number, ownerId: number, product: { id: string; price: number; kind: "pass" | "item" }, creatorCut: number): BuyResult {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (product.kind === "pass") {
+        const had = db.prepare("SELECT count FROM purchases WHERE world_id = ? AND user_id = ? AND product_id = ?").get(worldId, userId, product.id) as
+          | { count: number }
+          | undefined;
+        if (had && had.count > 0) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: "Już to masz" };
+        }
+      }
+      const own = userId === ownerId;
+      const price = own ? 0 : product.price;
+      if (price > 0) {
+        const r = db.prepare("UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?").run(price, userId, price);
+        if (Number(r.changes) === 0) {
+          db.exec("ROLLBACK");
+          return { ok: false, error: "Masz za mało monet" };
+        }
+      }
+      const cut = own ? 0 : creatorCut;
+      if (cut > 0) db.prepare("UPDATE users SET coins = coins + ? WHERE id = ?").run(cut, ownerId);
+      db.prepare(
+        `INSERT INTO purchases (world_id, user_id, product_id, count, spent, updated_at) VALUES (?, ?, ?, 1, ?, ?)
+         ON CONFLICT(world_id, user_id, product_id) DO UPDATE SET count = count + 1, spent = spent + excluded.spent, updated_at = excluded.updated_at`,
+      ).run(worldId, userId, product.id, price, Date.now());
+      db.exec("COMMIT");
+      const coins = (db.prepare("SELECT coins FROM users WHERE id = ?").get(userId) as { coins: number } | undefined)?.coins ?? 0;
+      return { ok: true, coins, paid: price, creatorGot: cut };
+    } catch (e) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        /* już wycofane */
+      }
+      throw e;
+    }
   },
 };

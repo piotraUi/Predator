@@ -153,6 +153,8 @@ export interface WorldData {
   playerCharacter?: string;
   /** odznaki (nagrody) do zdobycia w tej grze */
   badges?: BadgeDef[];
+  /** sklep gry: rzeczy do kupienia za monety Predatora (skrypt: promptPurchase / onPurchase) */
+  products?: ProductDef[];
   /** dźwięki gry 3D (skrypty: playSound, setMusic) */
   sounds?: WorldSound[];
   /** nazwa dźwięku grającego w pętli jako muzyka */
@@ -199,6 +201,22 @@ export interface BadgeDef {
 }
 export const MAX_BADGE_REWARD = 25;
 
+/** Produkt w sklepie gry */
+export interface ProductDef {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  /** cena w monetach Predatora (1-1000) */
+  price: number;
+  /** pass = kupuje się raz i ma na zawsze (np. VIP), item = można kupować wiele razy (np. 100 monet w grze) */
+  kind: "pass" | "item";
+}
+export const MAX_PRODUCT_PRICE = 1000;
+/** jaką część ceny dostaje twórca gry (reszta znika - to opłata Predatora) */
+export const CREATOR_SHARE = 0.7;
+export const creatorCut = (price: number) => Math.floor(price * CREATOR_SHARE);
+
 export interface WorldInfo {
   id: number;
   name: string;
@@ -217,6 +235,8 @@ export interface WorldInfo {
   myVote?: number;
   /** odznaki gry (na stronie gry) */
   badges?: (BadgeDef & { earned: number; mine: boolean })[];
+  /** sklep gry (na stronie gry) */
+  products?: (ProductDef & { owned: boolean })[];
 }
 
 /** Ocena gry w procentach (jak "Ocena 93%") albo null, gdy nikt jeszcze nie głosował */
