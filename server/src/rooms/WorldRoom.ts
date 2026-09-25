@@ -13,6 +13,9 @@ import { areFriends, mutes, privateServers, type PrivateServerRow } from "../soc
 import { PAID_EMOTES } from "../../../shared/catalog.ts";
 
 const TICK_MS = 50; // 20 razy na sekundę
+/** czat głosowy: zasięg (jednostki świata 3D) i najwięcej rozmówców naraz */
+const VOICE_RANGE = 160;
+const VOICE_MAX = 12;
 /** nagrody dla twórcy za kolejne progi wizyt: [wizyty, monety] */
 const VISIT_MILESTONES: [number, number][] = [
   [1, 10], [10, 25], [50, 50], [100, 100], [500, 250], [1000, 500], [5000, 1000], [10000, 2500],
@@ -31,6 +34,10 @@ export class WorldRoom extends Room {
   private priv: PrivateServerRow | null = null;
   /** gracze z włączonym czatem głosowym */
   private voiceOn = new Set<string>();
+  /** kto może mnie słyszeć: wszyscy w pobliżu albo tylko znajomi */
+  private voiceMode = new Map<string, "all" | "friends">();
+  /** ostatnio wysłana lista rozmówców (wysyłamy tylko zmiany) */
+  private voiceSent = new Map<string, string>();
 
   onCreate(options: { worldId?: number; privateCode?: string }) {
     const world = worlds.byId(Number(options.worldId));
@@ -81,12 +88,22 @@ export class WorldRoom extends Room {
         this.sim.handle(client.sessionId, type, msg);
       });
     this.onMessage("buy", (client, m: { id?: unknown }) => this.buy(client, String(m?.id ?? "")));
-    // czat głosowy: tylko między znajomymi, serwer przekazuje sygnały połączenia WebRTC
+    // czat głosowy: gracze w pobliżu (albo tylko znajomi), serwer przekazuje sygnały połączenia WebRTC
     this.onMessage("voice", (client, on: unknown) => {
-      if (on === true) this.voiceOn.add(client.sessionId);
-      else this.voiceOn.delete(client.sessionId);
+      if (on === true) {
+        const j = this.joinedAt.get(client.sessionId);
+        const muted = j ? mutes.message(j.userId) : null;
+        if (muted) return client.send("chat", { from: "", text: "🔇 " + muted, system: true });
+        this.voiceOn.add(client.sessionId);
+      } else this.voiceOn.delete(client.sessionId);
       this.updateVoicePeers();
     });
+    this.onMessage("voicemode", (client, mode: unknown) => {
+      this.voiceMode.set(client.sessionId, mode === "friends" ? "friends" : "all");
+      this.updateVoicePeers();
+    });
+    // kto jest blisko, zmienia się w trakcie gry
+    this.clock.setInterval(() => this.voiceOn.size > 1 && this.updateVoicePeers(), 2000);
     this.onMessage("rtc", (client, m: { to?: unknown; data?: unknown }) => {
       const to = typeof m?.to === "string" ? m.to : "";
       if (!this.canTalk(client.sessionId, to)) return;
@@ -194,6 +211,8 @@ export class WorldRoom extends Room {
     presence.setPlaying(j.userId, null);
     presence.setWorldCount(this.world.id, -1);
     if (this.priv) presence.setPrivateCount(this.priv.code, -1);
+    this.voiceMode.delete(client.sessionId);
+    this.voiceSent.delete(client.sessionId);
     if (this.voiceOn.delete(client.sessionId)) this.updateVoicePeers();
   }
 
@@ -207,22 +226,58 @@ export class WorldRoom extends Room {
     for (const c of this.clients) if (this.joinedAt.get(c.sessionId)?.userId === userId) c.leave(4000);
   }
 
-  /** czy dwie osoby mogą ze sobą rozmawiać głosowo (obie mają włączony mikrofon i są znajomymi) */
+  /** odległość między graczami (gry 2D: ten sam poziom = blisko) */
+  private voiceDistance(a: string, b: string): number {
+    const pa = this.sim.players.get(a) as { x: number; y: number; z?: number; level?: string } | undefined;
+    const pb = this.sim.players.get(b) as typeof pa;
+    if (!pa || !pb) return Infinity;
+    if (this.sim instanceof Sim2D) return pa.level === pb.level ? 0 : Infinity;
+    return Math.hypot(pa.x - pb.x, (pa.z ?? 0) - (pb.z ?? 0), (pa.y - pb.y) * 0.5);
+  }
+
+  /** czy dwie osoby mogą ze sobą rozmawiać głosowo (obie mają włączony głos, żadna nie jest wyciszona) */
   private canTalk(a: string, b: string) {
     if (a === b || !this.voiceOn.has(a) || !this.voiceOn.has(b)) return false;
     const ua = this.joinedAt.get(a)?.userId;
     const ub = this.joinedAt.get(b)?.userId;
-    return !!ua && !!ub && areFriends(ua, ub);
+    if (!ua || !ub || mutes.message(ua) || mutes.message(ub)) return false;
+    // "tylko znajomi" u któregokolwiek z nich = muszą być znajomymi
+    if (this.voiceMode.get(a) === "friends" || this.voiceMode.get(b) === "friends") return areFriends(ua, ub);
+    return true;
   }
 
-  /** każdy z włączonym głosem dostaje listę znajomych, z którymi może rozmawiać */
+  /**
+   * Każdy z włączonym głosem dostaje listę osób, z którymi rozmawia: najbliżsi gracze (połączenia są
+   * bezpośrednie, więc najwyżej VOICE_MAX naraz). Lista jest zawsze symetryczna - A słyszy B tylko, gdy B słyszy A.
+   */
   private updateVoicePeers() {
-    for (const sid of this.voiceOn) {
-      const peers = [...this.voiceOn]
-        .filter((o) => this.canTalk(sid, o))
-        .map((o) => ({ sid: o, username: this.sim.players.get(o)?.username ?? "?" }));
-      this.clients.find((c) => c.sessionId === sid)?.send("voicepeers", peers);
+    const on = [...this.voiceOn];
+    const pairs: { a: string; b: string; d: number }[] = [];
+    for (let i = 0; i < on.length; i++)
+      for (let k = i + 1; k < on.length; k++) {
+        const a = on[i], b = on[k];
+        if (!this.canTalk(a, b)) continue;
+        const d = this.voiceDistance(a, b);
+        if (d <= VOICE_RANGE) pairs.push({ a, b, d });
+      }
+    pairs.sort((x, y) => x.d - y.d);
+    const count = new Map<string, number>();
+    const peers = new Map<string, string[]>(on.map((s) => [s, []]));
+    for (const { a, b } of pairs) {
+      if ((count.get(a) ?? 0) >= VOICE_MAX || (count.get(b) ?? 0) >= VOICE_MAX) continue;
+      count.set(a, (count.get(a) ?? 0) + 1);
+      count.set(b, (count.get(b) ?? 0) + 1);
+      peers.get(a)!.push(b);
+      peers.get(b)!.push(a);
     }
+    for (const [sid, list] of peers) {
+      const msg = list.sort().map((o) => ({ sid: o, username: this.sim.players.get(o)?.username ?? "?" }));
+      const json = JSON.stringify(msg);
+      if (this.voiceSent.get(sid) === json) continue;
+      this.voiceSent.set(sid, json);
+      this.clients.find((c) => c.sessionId === sid)?.send("voicepeers", msg);
+    }
+    for (const sid of this.voiceSent.keys()) if (!this.voiceOn.has(sid)) this.voiceSent.delete(sid);
   }
 
   onDispose() {

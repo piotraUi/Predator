@@ -1292,3 +1292,4 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
   cursor: pointer; touch-action: manipulation;
 }
 .exit-seat.hidden { display: none; }
+.voice-check { font-size: 13px; display: flex; gap: 6px; align-items: center; }

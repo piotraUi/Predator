@@ -689,6 +689,18 @@ export function playScreen(
     // czat głosowy ze znajomymi (tylko w grze na serwerze)
     if (!params.offline) {
       const voice = new VoiceChat(r, init.you);
+      // głos cichnie z odległością, a przy nicku mówiącej osoby pokazuje się 🔊
+      voice.volumeFor = (sid) => {
+        const rm = remotes.get(sid);
+        if (!rm) return 1;
+        const d = Math.hypot(rm.tx - body.x, rm.ty - body.y, rm.tz - body.z);
+        return d < 25 ? 1 : Math.max(0.08, 1 - (d - 25) / 140);
+      };
+      voice.onSpeaking = (sid, on) => {
+        const rm = remotes.get(sid);
+        const t = rm?.tag.children[0] as TextBlock | undefined;
+        if (rm && t) t.text = (on ? "🔊 " : "") + rm.username;
+      };
       topbar.insertBefore(voice.button, topbar.querySelector(".hud-title"));
       wrap.append(voice.panel);
       cleanups.push(() => voice.dispose());
