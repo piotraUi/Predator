@@ -44,6 +44,7 @@ function worldInfo(w: WorldListRow): WorldInfo {
     hasThumbnail: !!w.has_thumb,
     likes: w.likes,
     dislikes: w.dislikes,
+    ...(w.genre ? { genre: w.genre } : {}),
   };
 }
 
@@ -147,14 +148,20 @@ api.post("/buy", requireAuth, (req, res) => {
 
 // ---------- Gry (światy) ----------
 
-/** Lista opublikowanych gier: ?q=szukaj&sort=popular|rating|visits|new */
+/** Lista opublikowanych gier: ?q=szukaj&genre=kategoria&sort=popular|rating|liked|visits|new */
 api.get("/worlds", requireAuth, (req, res) => {
   const q = String(req.query.q ?? "").trim().slice(0, 40);
-  const list = worlds.published(q).map(worldInfo);
+  const genre = String(req.query.genre ?? "").slice(0, 20);
+  const list = worlds.published(q.replace(/[%_]/g, ""), genre).map(worldInfo);
+  const popularity = (w: WorldInfo) => w.visits + w.likes * 20 - w.dislikes * 10;
   const rating = (w: WorldInfo) => (w.likes + 1) / (w.likes + w.dislikes + 2); // wygładzone, żeby 1 głos nie dawał 100%
   switch (req.query.sort) {
     case "popular":
-      list.sort((a, b) => b.playing - a.playing || b.visits - a.visits);
+      // najpierw ile osób gra teraz, potem popularność: wizyty i łapki (w dół odejmują)
+      list.sort((a, b) => b.playing - a.playing || popularity(b) - popularity(a));
+      break;
+    case "liked":
+      list.sort((a, b) => b.likes - a.likes || rating(b) - rating(a));
       break;
     case "rating":
       list.sort((a, b) => rating(b) - rating(a) || b.visits - a.visits);

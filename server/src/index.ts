@@ -104,6 +104,12 @@ const versions: Record<string, string> = (() => {
     return {};
   }
 })();
+/** kategorie przykładowych gier */
+const DEMO_GENRES: Record<string, string> = {
+  "Tor przeszkód": "obby", Arena: "fight", "Predator City": "roleplay", "Ludzik 4": "platform",
+  "Pizzeria Tycoon": "tycoon", Chowany: "minigames", "Wyścigi": "race", "Wieża Piekieł": "obby",
+  "Tacos World": "adventure", "Tunnel Escape": "horror", "Spelling Bee": "puzzle",
+};
 // konto Predator: zawsze jest, ma swój wygląd, wszystkie przedmioty i jest adminem
 const owner = setupPredatorAccount();
 for (const [name, description, make, thumb] of demos) {
@@ -145,6 +151,13 @@ for (const [name, description, make, thumb] of demos) {
   if (row) {
     const raw = JSON.parse(row.data) as WorldData;
     if (raw.badges === undefined) worlds.setData(id, { ...raw, badges: [welcomeBadge()] });
+  }
+  // kategoria przykładowej gry (raz - potem decyduje twórca)
+  const genre = DEMO_GENRES[name];
+  const cur = worlds.byId(id);
+  if (genre && cur && !cur.genre) {
+    const raw = JSON.parse(cur.data) as WorldData;
+    if (!raw.genre) worlds.setData(id, { ...raw, genre });
   }
   // gotowa miniaturka do menu (dopóki twórca nie zapisze własnej ze Studia)
   const file = path.join(config.assetsDir, "thumbs", thumb + ".jpg");

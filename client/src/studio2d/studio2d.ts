@@ -17,7 +17,7 @@ import { LUA_HELP_2D, openScriptEditor } from "../studio/scriptEditor.ts";
 import type { StudioFile } from "../studio/studio.ts";
 import { ask, h, isCompact, isTouch, logo, modal, toast } from "../ui/dom.ts";
 import { badgeEditor } from "../studio/badgeEditor.ts";
-import { productEditor } from "../studio/productEditor.ts";
+import { genreSelect, productEditor } from "../studio/productEditor.ts";
 import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
 import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
 import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
@@ -1265,6 +1265,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       });
       const badges = badgeEditor(data.badges);
       const products = productEditor(data.products);
+      const genreSel = genreSelect(data.genre);
       const close = modal(
         "Ustawienia gry",
         h(
@@ -1272,6 +1273,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           { class: "form" },
           h("label", null, "Nazwa", name),
           h("label", null, "Opis", desc),
+          h("label", null, "Kategoria (gracze znajdą grę w Hitach i wyszukiwarce)", genreSel),
           h("label", null, `Maks. graczy na serwer (1–${MAX_PLAYERS_LIMIT})`, maxP),
           h("div", { class: "prop-group" }, "Fizyka postaci (piksele na sekundę)"),
           h("div", { class: "grid2" }, physIn.map((p) => p.el)),
@@ -1303,6 +1305,8 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
               }
               src.published = pub.checked;
               data.badges = badges.read();
+              if (genreSel.value) data.genre = genreSel.value;
+              else delete data.genre;
               const prod = products.read();
               if (prod.length) data.products = prod;
               else delete data.products;

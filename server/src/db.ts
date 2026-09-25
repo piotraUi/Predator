@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS purchases (
 const worldCols = (db.prepare("PRAGMA table_info(worlds)").all() as { name: string }[]).map((c) => c.name);
 if (!worldCols.includes("thumbnail")) db.exec("ALTER TABLE worlds ADD COLUMN thumbnail TEXT");
 const userCols = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
+if (!worldCols.includes("genre")) db.exec("ALTER TABLE worlds ADD COLUMN genre TEXT NOT NULL DEFAULT ''");
 if (!userCols.includes("banned")) db.exec("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0");
 
 export interface UserRow {
@@ -145,12 +146,13 @@ export interface WorldListRow {
   created_at: number;
   updated_at: number;
   has_thumb: number;
+  genre: string;
   likes: number;
   dislikes: number;
 }
 
 const LIST_COLS = `w.id, w.owner_id, u.username AS owner_name, w.name, w.description, w.max_players, w.published, w.visits,
-  w.created_at, w.updated_at, (w.thumbnail IS NOT NULL) AS has_thumb,
+  w.created_at, w.updated_at, w.genre, (w.thumbnail IS NOT NULL) AS has_thumb,
   (SELECT COUNT(*) FROM votes v WHERE v.world_id = w.id AND v.value = 1) AS likes,
   (SELECT COUNT(*) FROM votes v WHERE v.world_id = w.id AND v.value = -1) AS dislikes`;
 
@@ -165,6 +167,7 @@ export interface WorldRow {
   visits: number;
   created_at: number;
   updated_at: number;
+  genre?: string;
 }
 
 export const today = () => new Date().toISOString().slice(0, 10);
@@ -247,14 +250,16 @@ export const sessions = {
 
 export const worlds = {
   byId: (id: number) => db.prepare("SELECT * FROM worlds WHERE id = ?").get(id) as WorldRow | undefined,
-  published: (q = "") =>
+  /** opublikowane gry: szukanie po nazwie, twórcy i opisie, opcjonalnie tylko z jednej kategorii */
+  published: (q = "", genre = "") =>
     db
       .prepare(
         `SELECT ${LIST_COLS} FROM worlds w JOIN users u ON u.id = w.owner_id
-         WHERE w.published = 1 AND (? = '' OR w.name LIKE '%' || ? || '%' OR u.username LIKE '%' || ? || '%')
+         WHERE w.published = 1 AND (? = '' OR w.genre = ?)
+           AND (? = '' OR w.name LIKE '%' || ? || '%' OR u.username LIKE '%' || ? || '%' OR w.description LIKE '%' || ? || '%')
          ORDER BY w.visits DESC, w.updated_at DESC LIMIT 200`,
       )
-      .all(q, q, q) as unknown as WorldListRow[],
+      .all(genre, genre, q, q, q, q) as unknown as WorldListRow[],
   byOwner: (ownerId: number) =>
     db
       .prepare(`SELECT ${LIST_COLS} FROM worlds w JOIN users u ON u.id = w.owner_id WHERE w.owner_id = ? ORDER BY w.updated_at DESC`)
@@ -269,15 +274,15 @@ export const worlds = {
     const now = Date.now();
     const r = db
       .prepare(
-        "INSERT INTO worlds (owner_id, name, max_players, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO worlds (owner_id, name, max_players, data, genre, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(ownerId, name, maxPlayers, JSON.stringify(data), now, now);
+      .run(ownerId, name, maxPlayers, JSON.stringify(data), data.genre ?? "", now, now);
     return worlds.byId(Number(r.lastInsertRowid))!;
   },
   update(id: number, f: { name: string; description: string; maxPlayers: number; published: boolean; data: WorldData }) {
     db.prepare(
-      "UPDATE worlds SET name = ?, description = ?, max_players = ?, published = ?, data = ?, updated_at = ? WHERE id = ?",
-    ).run(f.name, f.description, f.maxPlayers, f.published ? 1 : 0, JSON.stringify(f.data), Date.now(), id);
+      "UPDATE worlds SET name = ?, description = ?, max_players = ?, published = ?, data = ?, genre = ?, updated_at = ? WHERE id = ?",
+    ).run(f.name, f.description, f.maxPlayers, f.published ? 1 : 0, JSON.stringify(f.data), f.data.genre ?? "", Date.now(), id);
   },
   remove: (id: number) => db.prepare("DELETE FROM worlds WHERE id = ?").run(id),
   /** przekazanie gry innemu kontu (np. prawdziwemu twórcy) */
@@ -290,7 +295,7 @@ export const worlds = {
       .prepare(`SELECT ${LIST_COLS} FROM worlds w JOIN users u ON u.id = w.owner_id WHERE w.name LIKE ? OR u.username LIKE ? ORDER BY w.updated_at DESC LIMIT ?`)
       .all(`%${q}%`, `%${q}%`, limit) as unknown as WorldListRow[],
   /** podmiana samych danych gry (bez zmiany daty aktualizacji) */
-  setData: (id: number, data: WorldData) => db.prepare("UPDATE worlds SET data = ? WHERE id = ?").run(JSON.stringify(data), id),
+  setData: (id: number, data: WorldData) => db.prepare("UPDATE worlds SET data = ?, genre = ? WHERE id = ?").run(JSON.stringify(data), data.genre ?? "", id),
   setPublished: (id: number, published: boolean) => db.prepare("UPDATE worlds SET published = ? WHERE id = ?").run(published ? 1 : 0, id),
 };
 

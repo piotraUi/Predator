@@ -30,7 +30,7 @@ import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
 import { badgeEditor } from "./badgeEditor.ts";
-import { productEditor } from "./productEditor.ts";
+import { genreSelect, productEditor } from "./productEditor.ts";
 import { soundsLightEditor } from "./soundsEditor.ts";
 import { SKYBOXES } from "../../../shared/skybox.ts";
 import { skyPreview } from "../engine/skybox.ts";
@@ -1448,6 +1448,7 @@ export function studioScreen(
       );
       const badges = badgeEditor(data.badges);
       const products = productEditor(data.products);
+      const genreSel = genreSelect(data.genre);
       const audioLight = soundsLightEditor(data);
       const close = modal(
         "Ustawienia gry",
@@ -1456,6 +1457,7 @@ export function studioScreen(
           { class: "form" },
           h("label", null, "Nazwa", name),
           h("label", null, "Opis", desc),
+          h("label", null, "Kategoria (gracze znajdą grę w Hitach i wyszukiwarce)", genreSel),
           h("label", null, `Maks. graczy na serwer (1–${MAX_PLAYERS_LIMIT})`, maxP),
           h("div", { class: "prop" }, h("span", null, "Niebo (podgląd od razu w Studio)"), skyGrid),
           h("label", null, "Kolor nieba (gdy wybrane „Kolor”)", sky),
@@ -1484,6 +1486,8 @@ export function studioScreen(
               for (const k of ["sounds", "music", "light"] as const) delete data[k];
               Object.assign(data, JSON.parse(JSON.stringify(al)));
               data.badges = badges.read();
+              if (genreSel.value) data.genre = genreSel.value;
+              else delete data.genre;
               const prod = products.read();
               if (prod.length) data.products = prod;
               else delete data.products;

@@ -1256,3 +1256,14 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
 .shop-prompt-actions { display: flex; gap: 8px; margin-top: 6px; }
 .product-edit-cut { font-size: 11px; color: var(--good); }
 .pv-badge-ic.shop { filter: none; background: rgba(127,127,127,.18); }
+
+/* ---------- kategorie gier ---------- */
+.pv-genres { margin-bottom: 10px; }
+.pv-genres .pv-chip { font-size: 13px; padding: 7px 13px; }
+.pv-cat-title { margin-top: 26px; }
+.pv-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.pv-cat { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: none; border-radius: 14px; background: var(--bg2); color: var(--text); font-weight: 700; font-size: 14px; text-align: left; cursor: pointer; }
+.pv-cat:hover { filter: brightness(0.95); }
+.pv-cat-ic { font-size: 24px; }
+.pv-genre-tag { align-self: flex-start; margin: 6px 0 2px; border: none; border-radius: 999px; padding: 4px 12px; background: var(--bg2); color: var(--text); font-weight: 700; font-size: 13px; cursor: pointer; }
+.pv-sort { flex: none; max-width: 190px; }

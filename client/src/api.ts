@@ -125,8 +125,8 @@ export const api = {
   catalog: () => req<CatalogItem[]>("GET", "/catalog"),
   saveAvatar: (a: Partial<PublicUser["avatar"]>) => req<{ user: PublicUser }>("PUT", "/avatar", a),
   buy: (itemId: string) => req<{ user: PublicUser }>("POST", "/buy", { itemId }),
-  worlds: (sort: "popular" | "rating" | "visits" | "new" | "" = "", q = "") =>
-    req<WorldInfo[]>("GET", `/worlds?sort=${sort}&q=${encodeURIComponent(q)}`),
+  worlds: (sort: "popular" | "rating" | "liked" | "visits" | "new" | "" = "", q = "", genre = "") =>
+    req<WorldInfo[]>("GET", `/worlds?sort=${sort}&q=${encodeURIComponent(q)}&genre=${encodeURIComponent(genre)}`),
   worldInfo: (id: number) => req<WorldInfo>("GET", `/worlds/${id}/info`),
   vote: (id: number, value: number) => req<WorldInfo>("POST", `/worlds/${id}/vote`, { value }),
   myWorlds: () => req<WorldInfo[]>("GET", "/worlds/mine"),

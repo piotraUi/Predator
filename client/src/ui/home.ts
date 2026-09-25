@@ -1,6 +1,6 @@
 // Menu główne w stylu aplikacji mobilnej: górny pasek, znajomi, polecane gry, Hity, Awatar, Czat.
 // Na telefonie dolny pasek zakładek, na komputerze boczne menu. Bez silnika 3D (awatar wczytuje się osobno).
-import { DEFAULT_MAX_PLAYERS, worldRating, type ChatMessage, type FriendInfo, type WorldInfo } from "../../../shared/types.ts";
+import { DEFAULT_MAX_PLAYERS, findGenre, GENRES, worldRating, type ChatMessage, type FriendInfo, type WorldInfo } from "../../../shared/types.ts";
 import { GAME_EXT, parseGameFile } from "../../../shared/gamefile.ts";
 import { api, setToken, thumbnailUrl } from "../api.ts";
 import { session } from "../state.ts";
@@ -14,7 +14,7 @@ import { groupsView, groupView, privateServersSection, profileView, reportDialog
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 type Route =
   | { v: "home" }
-  | { v: "charts"; sort?: Sort }
+  | { v: "charts"; sort?: Sort; genre?: string }
   | { v: "avatar" }
   | { v: "chat"; with?: number }
   | { v: "friends" }
@@ -26,7 +26,7 @@ type Route =
   | { v: "groups" }
   | { v: "group"; id: number }
   | { v: "trades" };
-type Sort = "popular" | "rating" | "visits" | "new";
+type Sort = "popular" | "rating" | "liked" | "visits" | "new";
 type Cleanup = void | (() => void);
 export type Ctx = { go: Go; nav: (r: Route, replace?: boolean) => void; back: () => void; refreshBadges: () => void };
 
@@ -176,7 +176,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
       r.v === "home"
         ? homeView(view, ctx)
         : r.v === "charts"
-          ? chartsView(view, ctx, r.sort ?? "popular")
+          ? chartsView(view, ctx, r.sort ?? "popular", r.genre ?? "")
           : r.v === "avatar"
             ? avatarView(view)
             : r.v === "chat"
@@ -417,6 +417,14 @@ function homeView(el: HTMLElement, ctx: Ctx): Cleanup {
     friendsRow,
     sectionHead("Polecane dla ciebie", () => ctx.nav({ v: "charts" })),
     games,
+    h("h2", { class: "pv-cat-title" }, "Kategorie"),
+    h(
+      "div",
+      { class: "pv-cats" },
+      GENRES.map((g) =>
+        h("button", { class: "pv-cat", onClick: () => ctx.nav({ v: "charts", genre: g.id }) }, h("span", { class: "pv-cat-ic" }, g.icon), h("span", null, g.label)),
+      ),
+    ),
   );
 
   const addBtn = h(
@@ -455,28 +463,45 @@ function homeView(el: HTMLElement, ctx: Ctx): Cleanup {
 const SORTS: [Sort, string][] = [
   ["popular", "Popularne teraz"],
   ["rating", "Najlepiej oceniane"],
+  ["liked", "Najwięcej łapek"],
   ["visits", "Najczęściej odwiedzane"],
   ["new", "Nowe i zaktualizowane"],
 ];
 
-function chartsView(el: HTMLElement, ctx: Ctx, sort: Sort) {
+/** rząd kategorii (przewijany w bok) - "" = wszystkie */
+function genreChips(active: string, pick: (id: string) => void) {
+  return h(
+    "div",
+    { class: "pv-chips pv-genres" },
+    h("button", { class: "pv-chip " + (active === "" ? "active" : ""), onClick: () => pick("") }, "Wszystkie"),
+    GENRES.map((g) => h("button", { class: "pv-chip " + (g.id === active ? "active" : ""), onClick: () => pick(g.id) }, `${g.icon} ${g.label}`)),
+  );
+}
+
+function chartsView(el: HTMLElement, ctx: Ctx, sort: Sort, genre: string) {
   const chips = h("div", { class: "pv-chips" });
+  const genres = h("div");
+  const title = h("h1");
   const out = h("div");
-  const load = async (s: Sort) => {
-    sort = s;
+  let seq = 0;
+  const load = async () => {
+    const my = ++seq;
+    const g = findGenre(genre);
+    title.textContent = g ? `${g.icon} ${g.label}` : "Hity";
     chips.replaceChildren(
-      ...SORTS.map(([id, label]) => h("button", { class: "pv-chip " + (id === s ? "active" : ""), onClick: () => load(id) }, label)),
+      ...SORTS.map(([id, label]) => h("button", { class: "pv-chip " + (id === sort ? "active" : ""), onClick: () => ((sort = id), load()) }, label)),
     );
+    genres.replaceChildren(genreChips(genre, (id) => ((genre = id), load())));
     out.replaceChildren(loading());
     try {
-      const list = await api.worlds(s);
-      if (sort === s) out.replaceChildren(gameGrid(list, ctx, "Pusto - nikt jeszcze nie opublikował gry."));
+      const list = await api.worlds(sort, "", genre);
+      if (my === seq) out.replaceChildren(gameGrid(list, ctx, genre ? "W tej kategorii nie ma jeszcze gier - stwórz pierwszą!" : "Pusto - nikt jeszcze nie opublikował gry."));
     } catch (e) {
-      out.replaceChildren(errorBox(e, () => load(s)));
+      if (my === seq) out.replaceChildren(errorBox(e, load));
     }
   };
-  el.append(h("h1", null, "Hity"), chips, out);
-  load(sort);
+  el.append(title, genres, chips, out);
+  load();
 }
 
 // =====================================================================
@@ -484,16 +509,20 @@ function chartsView(el: HTMLElement, ctx: Ctx, sort: Sort) {
 // =====================================================================
 
 function searchView(el: HTMLElement, ctx: Ctx, q: string): Cleanup {
-  const input = h("input", { type: "search", placeholder: "Szukaj gier", value: q, maxLength: 40 });
+  const input = h("input", { type: "search", placeholder: "Szukaj gier (nazwa, twórca, opis)", value: q, maxLength: 40 });
   const out = h("div");
+  const genres = h("div");
+  const sortSel = h("select", { class: "pv-sort" }, SORTS.map(([id, label]) => h("option", { value: id }, label)));
+  let genre = "";
   let timer = 0;
   let seq = 0;
   const run = async () => {
     const my = ++seq;
     const text = input.value.trim();
+    genres.replaceChildren(genreChips(genre, (id) => ((genre = id), run())));
     out.replaceChildren(loading());
     try {
-      const list = await api.worlds("popular", text);
+      const list = await api.worlds(sortSel.value as Sort, text, genre);
       if (my === seq) out.replaceChildren(gameGrid(list, ctx, text ? `Brak gier dla „${text}”` : "Brak gier"));
     } catch (e) {
       if (my === seq) out.replaceChildren(errorBox(e, run));
@@ -509,9 +538,12 @@ function searchView(el: HTMLElement, ctx: Ctx, q: string): Cleanup {
       { class: "pv-search-page" },
       h("button", { class: "pv-icon-btn", title: "Wróć", onClick: () => ctx.back() }, icon("back")),
       h("label", { class: "pv-search" }, icon("search", 18), input),
+      sortSel,
     ),
+    genres,
     out,
   );
+  sortSel.addEventListener("change", () => run());
   run();
   if (!q) setTimeout(() => input.focus(), 50);
   return () => clearTimeout(timer);
@@ -592,6 +624,9 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
           "Twórca: ",
           h("a", { href: "#", class: "pv-link", onClick: (e: Event) => (e.preventDefault(), ctx.nav({ v: "profile", name: w.ownerName })) }, w.ownerName),
         ),
+        findGenre(w.genre)
+          ? h("button", { class: "pv-genre-tag", onClick: () => ctx.nav({ v: "charts", genre: w.genre }) }, `${findGenre(w.genre)!.icon} ${findGenre(w.genre)!.label}`)
+          : null,
         h(
           "button",
           {

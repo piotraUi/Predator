@@ -153,6 +153,8 @@ export interface WorldData {
   playerCharacter?: string;
   /** odznaki (nagrody) do zdobycia w tej grze */
   badges?: BadgeDef[];
+  /** kategoria gry (GENRES) - do wyszukiwania i list */
+  genre?: string;
   /** sklep gry: rzeczy do kupienia za monety Predatora (skrypt: promptPurchase / onPurchase) */
   products?: ProductDef[];
   /** dźwięki gry 3D (skrypty: playSound, setMusic) */
@@ -201,6 +203,23 @@ export interface BadgeDef {
 }
 export const MAX_BADGE_REWARD = 25;
 
+/** Kategorie gier */
+export const GENRES: { id: string; label: string; icon: string }[] = [
+  { id: "obby", label: "Tor przeszkód", icon: "🏃" },
+  { id: "tycoon", label: "Tycoon", icon: "💰" },
+  { id: "horror", label: "Horror", icon: "👻" },
+  { id: "adventure", label: "Przygoda", icon: "🗺️" },
+  { id: "roleplay", label: "Miasto i RP", icon: "🏙️" },
+  { id: "fight", label: "Walka", icon: "⚔️" },
+  { id: "race", label: "Wyścigi", icon: "🏎️" },
+  { id: "platform", label: "Platformówki 2D", icon: "🕹️" },
+  { id: "minigames", label: "Minigry", icon: "🎲" },
+  { id: "puzzle", label: "Łamigłówki i nauka", icon: "🧩" },
+  { id: "hangout", label: "Spotkania", icon: "💬" },
+  { id: "other", label: "Inne", icon: "✨" },
+];
+export const findGenre = (id: string | undefined) => GENRES.find((g) => g.id === id);
+
 /** Produkt w sklepie gry */
 export interface ProductDef {
   id: string;
@@ -231,6 +250,8 @@ export interface WorldInfo {
   hasThumbnail: boolean;
   likes: number;
   dislikes: number;
+  /** kategoria gry (id z GENRES) */
+  genre?: string;
   /** głos zalogowanego gracza: 1, -1 albo 0 */
   myVote?: number;
   /** odznaki gry (na stronie gry) */

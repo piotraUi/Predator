@@ -1,5 +1,5 @@
 // Edytor sklepu gry (w Ustawieniach gry) - wspólny dla Studia 3D i 2D.
-import { CREATOR_SHARE, MAX_PRODUCT_PRICE, creatorCut, type ProductDef } from "../../../shared/types.ts";
+import { CREATOR_SHARE, GENRES, MAX_PRODUCT_PRICE, creatorCut, type ProductDef } from "../../../shared/types.ts";
 import { h } from "../ui/dom.ts";
 
 const ICONS = ["🛍️", "👑", "⭐", "💎", "🪙", "⚡", "🚀", "🗡️", "🛡️", "🎁", "🍕", "🐶", "🦄", "🔑", "❤️", "🏎️"];
@@ -76,3 +76,13 @@ const usage = (p: ProductDef) =>
   p.kind === "pass"
     ? `promptPurchase(player, "${p.name || "Nazwa"}")  ·  ownsProduct(player, "${p.name || "Nazwa"}")`
     : `promptPurchase(player, "${p.name || "Nazwa"}")  ·  onPurchase(function(player, name) … end)`;
+
+/** wybór kategorii gry (Ustawienia gry) */
+export function genreSelect(value: string | undefined) {
+  return h(
+    "select",
+    null,
+    h("option", { value: "" }, "— bez kategorii —"),
+    GENRES.map((g) => h("option", { value: g.id, selected: g.id === value }, `${g.icon} ${g.label}`)),
+  );
+}

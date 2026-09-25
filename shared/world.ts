@@ -22,7 +22,7 @@ import type {
   WorldLight,
   WorldSound,
 } from "./types.ts";
-import { JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
+import { findGenre, JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
 
 export const MAX_PARTS = 5000;
 export const MAX_SCRIPTS = 50;
@@ -289,6 +289,7 @@ export function sanitizeWorld(input: unknown): WorldData {
     ...(typeof w.skybox === "string" && findSkybox(w.skybox) ? { skybox: findSkybox(w.skybox)!.id } : {}),
     gravity: num(w.gravity, 10, 500, 196.2),
     badges: sanitizeBadges(w.badges),
+    ...(typeof w.genre === "string" && findGenre(w.genre) ? { genre: w.genre } : {}),
     ...(Array.isArray(w.products) && w.products.length ? { products: sanitizeProducts(w.products) } : {}),
     ...sanitizeAudioLight(w),
     ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),
