@@ -7,7 +7,7 @@ import { GAME_PROTOCOL, type BadgeDef } from "../../../shared/types.ts";
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
-import { alerts, badges, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
+import { alerts, badges, gameData, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
 import { presence } from "../presence.ts";
 import { areFriends, mutes, privateServers, type PrivateServerRow } from "../social.ts";
 import { PAID_EMOTES } from "../../../shared/catalog.ts";
@@ -58,6 +58,11 @@ export class WorldRoom extends Room {
           const def = this.badgeDefs.find((b) => b.name === name || b.id === name);
           const j = this.joinedAt.get(sid);
           if (def && j) this.giveBadge(sid, j.userId, def);
+        },
+        // postęp graczy w tej grze zapisywany w bazie
+        storage: {
+          load: (userId) => (userId > 0 ? (gameData.load(world.id, userId) as Record<string, never>) : {}),
+          save: (userId, d) => userId > 0 && gameData.save(world.id, userId, d),
         },
       },
       { id: world.id, name: world.name, ownerName: users.byId(world.owner_id)?.username ?? "?" },

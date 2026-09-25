@@ -3,6 +3,9 @@ import type { WorldScript } from "../../../shared/types.ts";
 import { ask, h, toast } from "../ui/dom.ts";
 
 export const LUA_HELP: [string, string][] = [
+  ['saveData(player, "monety", 10)', "zapisz postęp gracza (zostaje po wyjściu z gry): liczba, tekst albo true/false"],
+  ['loadData(player, "monety", 0)', "wczytaj zapis gracza (0 = gdy jeszcze nic nie ma)"],
+  ['deleteData(player, "monety")', "usuń zapis"],
   ["onPlayerJoin(function(player) ... end)", "gdy gracz dołączy"],
   ["onPlayerLeave(function(player) ... end)", "gdy gracz wyjdzie"],
   ['onTouch("Nazwa", function(player) ... end)', "gdy gracz dotknie klocka o tej nazwie"],
@@ -60,6 +63,9 @@ export const LUA_HELP: [string, string][] = [
 ];
 
 export const LUA_HELP_2D: [string, string][] = [
+  ['saveData(player, "monety", 10)', "zapisz postęp gracza (zostaje po wyjściu z gry): liczba, tekst albo true/false"],
+  ['loadData(player, "monety", 0)', "wczytaj zapis gracza (0 = gdy jeszcze nic nie ma)"],
+  ['deleteData(player, "monety")', "usuń zapis"],
   ['onTouch("Obiekt", function(player) ... end)', "gdy gracz dotknie obiektu (nazwa obiektu albo instancji)"],
   ["onLevelEnter(function(player, level) ... end)", "gdy gracz wejdzie na poziom"],
   ["onPlayerJoin(function(player) ... end)", "gdy gracz dołączy"],

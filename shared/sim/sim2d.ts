@@ -8,6 +8,7 @@ import type { ChatMsg, WorldData } from "../types.ts";
 import type { Character2D, Enemy2D, Inst2D, InstState2D, Level2D, NetPlayer2D, Obj2D, World2D } from "../types2d.ts";
 import { instBox, levelByName, newId2d, overlaps, type Box } from "../world2d.ts";
 import type { SimInfo, SimTransport, SimUser } from "./gameSim.ts";
+import { PlayerDataStore } from "./playerData.ts";
 
 const LIMIT = 1_000_000;
 /** dalej niż tyle na jedną wiadomość = teleport (nie sprawdzamy dotknięć po drodze) */
@@ -113,6 +114,8 @@ export class Sim2D {
   private chars = new Map<string, Character2D>();
   private levels = new Map<string, LevelState>();
   private lua: LuaEngine | null = null;
+  /** zapisany postęp graczy (saveData / loadData) */
+  private dataStore: PlayerDataStore;
   private logs: { text: string; error: boolean }[] = [];
   private lastTick = Date.now();
   private scoresDirty = false;
@@ -123,6 +126,7 @@ export class Sim2D {
     private info: SimInfo,
   ) {
     this.w = data.world2d!;
+    this.dataStore = new PlayerDataStore(t.storage, (text, error) => this.log(text, error));
     for (const o of this.w.objects) this.objs.set(o.id, o);
     for (const c of this.w.characters) this.chars.set(c.id, c);
     this.startScripts();
@@ -286,6 +290,7 @@ export class Sim2D {
     this.t.send(sid, "init2d", init);
     for (const l of this.logs) this.t.send(sid, "log", l);
     this.systemChat(`${user.username} dołącza do gry`);
+    this.dataStore.attach(sid, user.userId);
     this.lua?.playerJoined(sid);
     this.lua?.fire("level", sid, s.level.name);
     this.scoresDirty = true;
@@ -299,6 +304,7 @@ export class Sim2D {
     if (s) s.playersDirty = true;
     this.systemChat(`${p.username} wychodzi z gry`);
     this.lua?.playerLeft(sid);
+    this.dataStore.detach(sid);
     this.scoresDirty = true;
   }
 
@@ -730,6 +736,7 @@ export class Sim2D {
       this.log("Nie udało się uruchomić Lua: " + (e as Error).message, true);
       return;
     }
+    this.dataStore.register(this.lua);
     const S = (v: LuaValue) => (typeof v === "string" ? v : v === null || v === undefined ? "" : String(v));
     const N = (v: LuaValue, def = 0) => (typeof v === "number" && Number.isFinite(v) ? v : def);
     this.lua.defineFunctions({

@@ -89,6 +89,15 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS alerts_user ON alerts(user_id, read);
 CREATE INDEX IF NOT EXISTS messages_pair ON messages(from_id, to_id, id);
+
+-- zapisany postęp graczy w grach (saveData / loadData w skryptach)
+CREATE TABLE IF NOT EXISTS game_data (
+  world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (world_id, user_id)
+);
 `);
 
 // migracje starszych baz
@@ -384,4 +393,22 @@ export const friends = {
     db
       .prepare("DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)")
       .run(a, b, b, a),
+};
+
+/** Zapis postępu graczy w grze (saveData / loadData) */
+export const gameData = {
+  load(worldId: number, userId: number): unknown {
+    const row = db.prepare("SELECT data FROM game_data WHERE world_id = ? AND user_id = ?").get(worldId, userId) as { data: string } | undefined;
+    if (!row) return {};
+    try {
+      return JSON.parse(row.data);
+    } catch {
+      return {};
+    }
+  },
+  save(worldId: number, userId: number, data: unknown) {
+    db.prepare(
+      "INSERT INTO game_data (world_id, user_id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(world_id, user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+    ).run(worldId, userId, JSON.stringify(data), Date.now());
+  },
 };

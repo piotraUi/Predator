@@ -45,6 +45,12 @@ export type LuaValue = string | number | boolean | null | undefined | LuaValue[]
 export type LuaFn = (...args: LuaValue[]) => LuaValue | void;
 
 /** 1000 instrukcji * 300 = 300 tys. instrukcji na jedno wywołanie */
+/** liczby całkowite jako integer Lua - żeby "1" nie wypisywało się jako "1.0" */
+function pushNum(L: unknown, v: number) {
+  if (Number.isInteger(v) && Math.abs(v) < 2 ** 31) lua.lua_pushinteger(L, v);
+  else lua.lua_pushnumber(L, v);
+}
+
 const HOOK_EVERY = 1000;
 const MAX_HOOKS = 300;
 
@@ -405,7 +411,7 @@ export class LuaEngine {
           return lauxlib.luaL_error(L, to_luastring(name + ": " + ((e as Error).message ?? e)));
         }
         const push = (v: LuaValue | void) => {
-          if (typeof v === "number") lua.lua_pushnumber(L, v);
+          if (typeof v === "number") pushNum(L, v);
           else if (typeof v === "string") lua.lua_pushstring(L, to_luastring(v));
           else if (typeof v === "boolean") lua.lua_pushboolean(L, v);
           else lua.lua_pushnil(L);
@@ -443,7 +449,7 @@ export class LuaEngine {
       return undefined;
     }
     for (const a of args) {
-      if (typeof a === "number") lua.lua_pushnumber(L, a);
+      if (typeof a === "number") pushNum(L, a);
       else lua.lua_pushstring(L, to_luastring(a));
     }
     if (lua.lua_pcall(L, args.length, 1, 0) !== lua.LUA_OK) {

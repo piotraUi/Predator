@@ -136,3 +136,30 @@ test("setSkybox: gotowe niebo dla wszystkich i dla jednego gracza", () => {
   r.done();
   assert.equal(r.errors.length, 1, "nieznane niebo = błąd w konsoli");
 });
+
+test("saveData / loadData: postęp gracza zostaje po wyjściu z gry", () => {
+  const disk = new Map<number, Record<string, unknown>>();
+  const storage = { load: (u: number) => (disk.get(u) ?? {}) as Record<string, never>, save: (u: number, d: Record<string, unknown>) => void disk.set(u, structuredClone(d)) };
+  const make = () => {
+    const data = { ...MINIGAMES[0].make(), scripts: [] as WorldData["scripts"] };
+    data.scripts = [{
+      id: "s", name: "Zapis", type: "lua", enabled: true,
+      source: `onPlayerJoin(function(p)
+  local n = loadData(p, "wejscia", 0) + 1
+  saveData(p, "wejscia", n)
+  saveData(p, "nick", playerName(p))
+  tell(p, "wejscie " .. n)
+end)`,
+    }];
+    return data;
+  };
+  const said: string[] = [];
+  for (let round = 1; round <= 3; round++) {
+    const sim = new GameSim(make(), { send: (_s, type, m) => type === "chat" && said.push((m as { text: string }).text), broadcast: () => {}, storage }, { id: 1, name: "t", ownerName: "t" });
+    sim.join("a", { userId: 7, username: "Ania", avatar: DEFAULT_AVATAR, isOwner: false });
+    sim.leave("a");
+    sim.dispose();
+  }
+  assert.deepEqual(said.filter((t) => t.startsWith("wejscie")), ["wejscie 1", "wejscie 2", "wejscie 3"]);
+  assert.deepEqual(disk.get(7), { wejscia: 3, nick: "Ania" });
+});

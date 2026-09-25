@@ -2,6 +2,7 @@
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
 import { Sim2D } from "../../../shared/sim/sim2d.ts";
+import { browserStorage } from "../../../shared/sim/playerData.ts";
 import type { Avatar, WorldData } from "../../../shared/types.ts";
 
 export interface GameConnection {
@@ -35,6 +36,8 @@ export class LocalRoom implements GameConnection {
         broadcast: (type, msg, except) => except !== this.sid && this.deliver(type, msg),
         // test w Studio: odznaka tylko się pokazuje, nic nie jest zapisywane
         badge: (_sid, name) => this.testBadge(copy, name),
+        // zapisy saveData w teście - w przeglądarce (osobno dla każdej gry)
+        storage: browserStorage(name),
       },
       { id: 0, name, ownerName: user.username },
     );

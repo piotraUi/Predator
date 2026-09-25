@@ -217,6 +217,17 @@ g.forBlock["d2_level"] = () => [`(player and getLevel(player) or "")`, Order.ATO
 g.forBlock["d2_background"] = (b) => `setBackground(${q(b.getFieldValue("COLOR"))})\n`;
 g.forBlock["d2_sound"] = (b) => (b.getFieldValue("WHO") === "all" ? `playSound(${fld(b, "NAME")})\n` : ifp(`playSound(${fld(b, "NAME")}, player)`));
 
+// ---------- zapis postępu (wspólne dla 3D i 2D) ----------
+const SAVE = 95;
+Blockly.common.defineBlocksWithJsonArray([
+  { type: "p_save", message0: "zapisz graczowi %1 = %2", args0: [{ type: "field_input", name: "KEY", text: "monety" }, { type: "input_value", name: "VAL" }], previousStatement: null, nextStatement: null, colour: SAVE, tooltip: "Zostaje zapisane po wyjściu z gry - przy następnym wejściu wczytasz to bloczkiem 'zapisane'" },
+  { type: "p_load", message0: "zapisane gracza %1 (gdy brak: %2)", args0: [{ type: "field_input", name: "KEY", text: "monety" }, { type: "input_value", name: "DEF" }], inputsInline: true, output: null, colour: SAVE },
+  { type: "p_delete_data", message0: "usuń zapis gracza %1", args0: [{ type: "field_input", name: "KEY", text: "monety" }], previousStatement: null, nextStatement: null, colour: SAVE },
+]);
+g.forBlock["p_save"] = (b) => `if player then saveData(player, ${q(String(b.getFieldValue("KEY") ?? ""))}, ${val(b, "VAL", "0")}) end\n`;
+g.forBlock["p_load"] = (b) => [`(player and loadData(player, ${q(String(b.getFieldValue("KEY") ?? ""))}, ${val(b, "DEF", "0")}) or ${val(b, "DEF", "0")})`, Order.ATOMIC];
+g.forBlock["p_delete_data"] = (b) => `if player then deleteData(player, ${q(String(b.getFieldValue("KEY") ?? ""))}) end\n`;
+
 const block = (type: string, extra: Record<string, unknown> = {}) => ({ kind: "block", type, ...extra });
 const numShadow = (n: number) => ({ shadow: { type: "math_number", fields: { NUM: n } } });
 const textShadow = (t: string) => ({ shadow: { type: "text", fields: { TEXT: t } } });
@@ -303,6 +314,15 @@ const TOOLBOX = {
 
 /** wspólne kategorie: logika, pętle, matematyka, tekst, zmienne */
 const COMMON = TOOLBOX.contents.slice(-5);
+const SAVE_CATEGORY = {
+  kind: "category", name: "Zapis postępu", colour: SAVE,
+  contents: [
+    block("p_save", { inputs: { VAL: { block: { type: "p_score" } } } }),
+    block("p_load", { inputs: { DEF: numShadow(0) } }),
+    block("p_delete_data"),
+  ],
+};
+TOOLBOX.contents.splice(TOOLBOX.contents.length - 5, 0, SAVE_CATEGORY);
 const TOOLBOX_2D = {
   kind: "categoryToolbox",
   contents: [
@@ -355,6 +375,7 @@ const TOOLBOX_2D = {
       kind: "category", name: "Postać i kamera", colour: 290,
       contents: [block("d2_character"), block("d2_player_anim"), block("d2_reset_anims"), block("d2_camera", { inputs: { X: numShadow(0), Y: numShadow(0) } }), block("d2_camera_free")],
     },
+    SAVE_CATEGORY,
     ...COMMON,
   ],
 };
