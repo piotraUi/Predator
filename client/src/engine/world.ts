@@ -24,6 +24,8 @@ import { buildToolModel } from "./toolModels.ts";
 import { hexColor } from "./color.ts";
 import { findSkybox, type SkyboxDef } from "../../../shared/skybox.ts";
 import { SkyDome } from "./skybox.ts";
+import { TerrainView } from "./terrain.ts";
+import type { TerrainGrid } from "../../../shared/terrain.ts";
 
 export function createEngine(canvas: HTMLCanvasElement) {
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true, antialias: true });
@@ -216,6 +218,11 @@ export class WorldView {
   /** w edytorze klocek NPC jest widoczny (półprzezroczysty), w grze - tylko postać */
   private editor: boolean;
   shadows: ShadowGenerator | null = null;
+  /** teren (siatka wysokości) */
+  readonly terrain: TerrainView;
+  setTerrain(grid: TerrainGrid | null) {
+    this.terrain.set(grid);
+  }
   /** siatka klocka została zbudowana od nowa (np. woda po zmianie rozmiaru) - Studio podpina do niej gizmo */
   onMeshRebuilt?: (id: string) => void;
   sun: DirectionalLight;
@@ -254,6 +261,7 @@ export class WorldView {
     }
     this.skyColor = opts.skyColor ?? "#8ec8ff";
     this.setSkybox(opts.skybox);
+    this.terrain = new TerrainView(scene, this.materials, this.shadows);
     // NPC się animują i płynnie dochodzą do nowej pozycji (skrypty przesuwają je skokami)
     scene.onBeforeRenderObservable.add(() => {
       const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.1);

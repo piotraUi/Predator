@@ -4,6 +4,7 @@
 import { filterChat } from "../chatFilter.ts";
 import { findSkybox, SKYBOXES } from "../skybox.ts";
 import { GameShop } from "./shop.ts";
+import { TerrainGrid } from "../terrain.ts";
 import { PlayerDataStore, type GameStorage } from "./playerData.ts";
 import { CollisionWorld, rayBox, raycastParts } from "../physics.ts";
 import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
@@ -85,6 +86,7 @@ export class GameSim {
     for (const p of data.parts) this.partsById.set(p.id, p);
     for (const tool of data.tools) this.toolsById.set(tool.id, tool);
     this.collisions = new CollisionWorld(data.parts);
+    this.collisions.terrain = TerrainGrid.decode(data.terrain);
     this.dataStore = new PlayerDataStore(t.storage, (text, error) => this.log(text, error));
     this.shop = new GameShop(data.products ?? [], (sid, type, msg) => this.t.send(sid, type, msg));
     this.sky = data.skyColor;

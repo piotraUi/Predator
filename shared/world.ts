@@ -1,5 +1,6 @@
 // Szablony światów i walidacja danych świata.
 import { sanitizeWorld2D } from "./world2d.ts";
+import { sanitizeTerrain } from "./terrain.ts";
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
 import { DEFAULT_AVATAR } from "./catalog.ts";
 import { findSkybox } from "./skybox.ts";
@@ -300,6 +301,10 @@ export function sanitizeWorld(input: unknown): WorldData {
     gravity: num(w.gravity, 10, 500, 196.2),
     badges: sanitizeBadges(w.badges),
     ...(typeof w.genre === "string" && findGenre(w.genre) ? { genre: w.genre } : {}),
+    ...(w.terrain && w.mode !== "2d" ? (() => {
+      const terrain = sanitizeTerrain(w.terrain);
+      return terrain ? { terrain } : {};
+    })() : {}),
     ...(Array.isArray(w.products) && w.products.length ? { products: sanitizeProducts(w.products) } : {}),
     ...sanitizeAudioLight(w),
     ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),

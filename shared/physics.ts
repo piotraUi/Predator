@@ -9,6 +9,13 @@
 // "w środku" klocka. Do tego: wchodzenie na stopnie, trzymanie się ziemi przy schodzeniu z ramp
 // i dzielenie szybkiego ruchu na małe kroki (brak przelatywania przez cienkie klocki).
 import type { Part } from "./types.ts";
+import type { TerrainGrid } from "./terrain.ts";
+
+/** "klocek" zwracany, gdy gracz stoi na terenie albo promień trafił w teren */
+export const TERRAIN_PART: Part = {
+  id: "__terrain", name: "Teren", shape: "box", kind: "normal", x: 0, y: 0, z: 0, sx: 1, sy: 1, sz: 1, ry: 0,
+  color: "#5b9a3c", transparency: 0, collide: true, material: "plastic",
+};
 
 export const PLAYER_RADIUS = 0.9;
 export const PLAYER_HEIGHT = 5.2;
@@ -141,6 +148,8 @@ function normal(b: Box, x: number, y: number, z: number): [number, number, numbe
 
 /** Siatka przestrzenna do szybkiego wyszukiwania klocków w pobliżu. */
 export class CollisionWorld {
+  /** teren (siatka wysokości) - osobno od klocków */
+  terrain: TerrainGrid | null = null;
   private boxes = new Map<string, Box>();
   private grid = new Map<string, Set<Box>>();
   private big: Set<Box> = new Set(); // bardzo duże klocki (np. podłoże) poza siatką
@@ -227,7 +236,7 @@ export const SWIM_SPEED = 16;
  * Woda nie ma kolizji - to "strefa", w której działa pływanie.
  */
 export function waterAt(world: CollisionWorld, x: number, y: number, z: number): number | null {
-  let top: number | null = null;
+  let top: number | null = world.terrain?.waterAt(x, y, z) ?? null;
   for (const b of world.query(x, x, z, z)) {
     if (b.part.kind !== "water") continue;
     if (y < b.minY || y > b.maxY || x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
@@ -243,10 +252,39 @@ interface Contacts {
   ceiling: boolean;
 }
 
+/** odległość kuli od powierzchni terenu (w przybliżeniu - wzdłuż normalnej) i normalna */
+function terrainDist(t: TerrainGrid, x: number, y: number, z: number): { d: number; n: [number, number, number] } | null {
+  const h = t.heightAt(x, z);
+  if (!Number.isFinite(h)) return null;
+  const [gx, gz] = t.slopeAt(x, z);
+  const l = Math.sqrt(1 + gx * gx + gz * gz);
+  const n: [number, number, number] = [-gx / l, 1 / l, -gz / l];
+  return { d: (y - h) / l, n };
+}
+
 /** Wypycha kapsułę z klocków. Podłogi wypychają pionowo (brak zsuwania się z krawędzi). */
-function resolve(solids: Box[], body: Body, c: Contacts) {
+function resolve(solids: Box[], body: Body, c: Contacts, terrain: TerrainGrid | null = null) {
   for (let iter = 0; iter < 4; iter++) {
     let moved = false;
+    if (terrain)
+      for (const h of SPHERES) {
+        const td = terrainDist(terrain, body.x, body.y + h, body.z);
+        if (!td || td.d >= PLAYER_RADIUS - 1e-4) continue;
+        const pen = Math.min(PLAYER_RADIUS - td.d, PLAYER_RADIUS * 3);
+        const [nx, ny, nz] = td.n;
+        if (ny > GROUND_NY) {
+          // zbocze, po którym da się chodzić - tylko w górę
+          body.y += pen / ny;
+          c.ground = TERRAIN_PART;
+        } else {
+          // stroma skała - działa jak ściana
+          body.x += nx * pen;
+          body.y += ny * pen;
+          body.z += nz * pen;
+          c.wall = true;
+        }
+        moved = true;
+      }
     for (const h of SPHERES) {
       for (const b of solids) {
         const cx = body.x;
@@ -279,7 +317,12 @@ function resolve(solids: Box[], body: Body, c: Contacts) {
   }
 }
 
-function penetrates(solids: Box[], x: number, y: number, z: number): boolean {
+function penetrates(solids: Box[], x: number, y: number, z: number, terrain: TerrainGrid | null = null): boolean {
+  if (terrain)
+    for (const h of SPHERES) {
+      const td = terrainDist(terrain, x, y + h, z);
+      if (td && td.d < PLAYER_RADIUS - EPS) return true;
+    }
   for (const h of SPHERES)
     for (const b of solids) {
       const cy = y + h;
@@ -292,22 +335,29 @@ function penetrates(solids: Box[], x: number, y: number, z: number): boolean {
 }
 
 /** Największe opuszczenie w dół (do maxDrop), przy którym gracz nie wchodzi w klocki */
-function freeDrop(solids: Box[], body: Body, maxDrop: number): number {
-  if (!penetrates(solids, body.x, body.y - maxDrop, body.z)) return maxDrop;
+function freeDrop(solids: Box[], body: Body, maxDrop: number, terrain: TerrainGrid | null = null): number {
+  if (!penetrates(solids, body.x, body.y - maxDrop, body.z, terrain)) return maxDrop;
   let lo = 0;
   let hi = maxDrop;
   for (let i = 0; i < 8; i++) {
     const mid = (lo + hi) / 2;
-    if (penetrates(solids, body.x, body.y - mid, body.z)) hi = mid;
+    if (penetrates(solids, body.x, body.y - mid, body.z, terrain)) hi = mid;
     else lo = mid;
   }
   return lo;
 }
 
 /** Klocek pod stopami (do ruchomych platform i trampolin) */
-function groundUnder(solids: Box[], body: Body): Part | null {
+function groundUnder(solids: Box[], body: Body, terrain: TerrainGrid | null = null): Part | null {
   let best: Part | null = null;
   let bestD = 0.15;
+  if (terrain) {
+    const td = terrainDist(terrain, body.x, body.y + PLAYER_RADIUS, body.z);
+    if (td && td.d - PLAYER_RADIUS < bestD) {
+      bestD = td.d - PLAYER_RADIUS;
+      best = TERRAIN_PART;
+    }
+  }
   for (const b of solids) {
     const d = sdf(b, body.x, body.y + PLAYER_RADIUS, body.z) - PLAYER_RADIUS;
     if (d < bestD) {
@@ -358,6 +408,7 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
     body.z - pad + Math.min(0, tz), body.z + pad + Math.max(0, tz),
   );
   const solids = [...near].filter((b) => b.part.collide);
+  const terr = world.terrain;
 
   const wasGrounded = body.onGround;
   body.onGround = false;
@@ -372,7 +423,7 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
     body.y += ty / n;
     body.z += wz;
     const sc: Contacts = { ground: null, wall: false, ceiling: false };
-    resolve(solids, body, sc);
+    resolve(solids, body, sc, terr);
     if (sc.ground) {
       c.ground = sc.ground;
       body.onGround = true;
@@ -387,13 +438,19 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
         const sx = px + wx;
         const sz = pz + wz;
         const up = body.y + STEP_HEIGHT;
-        if (!penetrates(solids, sx, up, sz)) {
+        if (!penetrates(solids, sx, up, sz, terr)) {
           const saved = { x: body.x, y: body.y, z: body.z };
           body.x = sx;
           body.z = sz;
           body.y = up;
-          const drop = freeDrop(solids, body, STEP_HEIGHT + 0.05);
-          if (drop <= STEP_HEIGHT) {
+          const drop = freeDrop(solids, body, STEP_HEIGHT + 0.05, terr);
+          // na stromy teren nie wchodzi się "po stopniach" (skała to ściana)
+          const steep = (() => {
+            if (!terr || drop > STEP_HEIGHT) return false;
+            const td = terrainDist(terr, body.x, body.y - drop + PLAYER_RADIUS, body.z);
+            return !!td && td.d - PLAYER_RADIUS < 0.25 && td.n[1] < GROUND_NY;
+          })();
+          if (drop <= STEP_HEIGHT && !steep) {
             body.y -= drop;
             body.onGround = true;
             if (body.vy < 0) body.vy = 0;
@@ -405,7 +462,7 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
 
   // schodzenie z ramp i schodów - trzymamy się ziemi zamiast "odlatywać"
   if (!body.onGround && wasGrounded && body.vy <= 0) {
-    const drop = freeDrop(solids, body, SNAP_DOWN);
+    const drop = freeDrop(solids, body, SNAP_DOWN, terr);
     if (drop < SNAP_DOWN) {
       body.y -= drop;
       body.onGround = true;
@@ -413,7 +470,7 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
     }
   }
 
-  const landedOn = body.onGround ? (c.ground ?? groundUnder(solids, body)) : null;
+  const landedOn = body.onGround ? (c.ground ?? groundUnder(solids, body, terr)) : null;
 
   // czego dotyka gracz (także klocki bez kolizji - strefy, lawa, pola z narzędziami)
   const touched: Part[] = [];
@@ -502,6 +559,8 @@ export function raycastParts(
   const ez = oz + dz * maxDist;
   const candidates = world.query(Math.min(ox, ex), Math.max(ox, ex), Math.min(oz, ez), Math.max(oz, ez));
   let best: { dist: number; part: Part } | null = null;
+  const tHit = world.terrain?.raycast(ox, oy, oz, dx, dy, dz, maxDist) ?? null;
+  if (tHit !== null) best = { dist: tHit, part: TERRAIN_PART };
   for (const b of candidates) {
     if (!b.part.collide || b.part.transparency >= 0.999) continue;
     // klocek, w którym promień się zaczyna, pomijamy (np. kamera w środku NPC)

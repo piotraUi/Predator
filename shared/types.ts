@@ -163,6 +163,8 @@ export interface WorldData {
   badges?: BadgeDef[];
   /** kategoria gry (GENRES) - do wyszukiwania i list */
   genre?: string;
+  /** teren malowany w Studiu (wzgórza, kolory, woda) */
+  terrain?: Terrain;
   /** sklep gry: rzeczy do kupienia za monety Predatora (skrypt: promptPurchase / onPurchase) */
   products?: ProductDef[];
   /** dźwięki gry 3D (skrypty: playSound, setMusic) */
@@ -210,6 +212,20 @@ export interface BadgeDef {
   reward: number;
 }
 export const MAX_BADGE_REWARD = 25;
+
+/** Teren: siatka n x n kratek o boku cell, środek w (x, z). Dane w base64 (shared/terrain.ts). */
+export interface Terrain {
+  n: number;
+  cell: number;
+  x: number;
+  z: number;
+  /** wysokości wierzchołków (Int16, dziesiąte części jednostki) */
+  h: string;
+  /** materiał kratek (Uint8) */
+  m: string;
+  /** poziom wody w kratkach (Int16, -32768 = brak) */
+  w?: string;
+}
 
 /** Kategorie gier */
 export const GENRES: { id: string; label: string; icon: string }[] = [

@@ -21,6 +21,7 @@ import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { gameShop } from "./gameShop.ts";
+import { TerrainGrid } from "../../../shared/terrain.ts";
 import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride } from "./vehicles.ts";
 import { openInviteFriends } from "./inviteFriends.ts";
 import { VoiceChat } from "./voice.ts";
@@ -182,6 +183,10 @@ export function playScreen(
       m.doNotSyncBoundingInfo = true;
     }
     const collisions = new CollisionWorld(init.world.parts);
+    // teren z Studia: rysowanie i kolizje
+    const terrain = TerrainGrid.decode(init.world.terrain);
+    collisions.terrain = terrain;
+    world.setTerrain(terrain);
     const gravity = init.world.gravity;
     const toolsById = new Map<string, ToolDef>(init.world.tools.map((t) => [t.id, t]));
     const toolDefs = (ids: string[]) => ids.map((id) => toolsById.get(id)).filter((t): t is ToolDef => !!t);

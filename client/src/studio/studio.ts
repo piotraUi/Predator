@@ -31,6 +31,8 @@ import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
 import { badgeEditor } from "./badgeEditor.ts";
+import { terrainTool } from "./terrainTool.ts";
+import { TerrainGrid } from "../../../shared/terrain.ts";
 import { genreSelect, productEditor } from "./productEditor.ts";
 import { soundsLightEditor } from "./soundsEditor.ts";
 import { SKYBOXES } from "../../../shared/skybox.ts";
@@ -159,6 +161,7 @@ export function studioScreen(
     view.setTools(data.tools);
     view.setCharacters(data.characters, data.animations);
     view.load(data.parts);
+    view.setTerrain(TerrainGrid.decode(data.terrain));
 
     // ---------- kamera ----------
     const camera = new ArcRotateCamera("cam", -Math.PI / 2 + 0.6, 1.0, 60, new Vector3(0, 0, 0), scene);
@@ -442,7 +445,8 @@ export function studioScreen(
     }
 
     // ---------- zmiany i cofanie ----------
-    const snapshot = () => JSON.stringify(data.parts);
+    // cofanie obejmuje klocki i teren
+    const snapshot = () => JSON.stringify({ parts: data.parts, terrain: data.terrain ?? null });
     function pushUndo() {
       undo.push(snapshot());
       if (undo.length > 60) undo.shift();
@@ -450,7 +454,12 @@ export function studioScreen(
     }
     function restore(json: string) {
       const selId = selected?.id;
-      data.parts = JSON.parse(json);
+      const snap = JSON.parse(json) as { parts: Part[]; terrain: WorldData["terrain"] | null };
+      data.parts = snap.parts;
+      const terrainChanged = JSON.stringify(snap.terrain ?? null) !== JSON.stringify(data.terrain ?? null);
+      if (snap.terrain) data.terrain = snap.terrain;
+      else delete data.terrain;
+      if (terrainChanged) terrainPanel.reload();
       view.clear();
       view.load(data.parts);
       select(data.parts.find((p) => p.id === selId) ?? null);
@@ -556,7 +565,16 @@ export function studioScreen(
     }
 
     function renderToolbox() {
+      const clip = readClip();
       toolboxBody.replaceChildren(
+        clip
+          ? h(
+              "button",
+              { class: "btn small clip-paste", title: "Ctrl+V", onClick: () => (paste(), isCompact() && closePanels()) },
+              `📥 Wklej: ${clip.name}`,
+              clip.from && clip.from !== meta.name ? h("span", { class: "muted" }, ` (z „${clip.from}”)`) : "",
+            )
+          : "",
         ...TOOLBOX_CATS.flatMap((cat) => [
           h("div", { class: "tbx-cat" }, cat),
           h(
@@ -632,6 +650,94 @@ export function studioScreen(
       renderScripts();
       changed();
       select(copies[members.indexOf(old)] ?? copies[0]);
+    }
+
+    // ---------- schowek: kopiowanie klocków i modeli między grami ----------
+    const CLIP_KEY = "predator.clipboard";
+    interface Clip {
+      v: 1;
+      from: string;
+      name: string;
+      parts: Part[];
+      behaviors: string[];
+      tools: ToolDef[];
+      characters: CharacterDef[];
+      animations: AnimDef[];
+    }
+    const readClip = (): Clip | null => {
+      try {
+        const c = JSON.parse(localStorage.getItem(CLIP_KEY) ?? "null") as Clip | null;
+        return c && c.v === 1 && Array.isArray(c.parts) && c.parts.length ? c : null;
+      } catch {
+        return null;
+      }
+    };
+    /** kopiuje zaznaczony klocek / model razem z narzędziami, postaciami, animacjami i zachowaniami */
+    function copySelection() {
+      if (!selected) return toast("Najpierw zaznacz klocek albo model", "info");
+      const members = groupOf(selected);
+      const toolIds = new Set(members.map((m) => m.toolId).filter(Boolean));
+      const charIds = new Set(members.map((m) => m.characterId).filter(Boolean));
+      const animIds = new Set(members.map((m) => m.animId).filter(Boolean));
+      const clip: Clip = {
+        v: 1,
+        from: meta.name,
+        name: selected.name,
+        parts: structuredClone(members),
+        behaviors: behaviorsOf(data.scripts, selected.name).map((sc) => behaviorIdOf(sc)).filter((x): x is string => !!x),
+        tools: data.tools.filter((t) => toolIds.has(t.id)),
+        characters: data.characters.filter((c) => charIds.has(c.id)),
+        animations: data.animations.filter((a) => animIds.has(a.id)),
+      };
+      try {
+        localStorage.setItem(CLIP_KEY, JSON.stringify(clip));
+      } catch {
+        return toast("Za duży model, żeby go skopiować", "error");
+      }
+      renderToolbox();
+      toast(`📋 Skopiowano: ${selected.name}${members.length > 1 ? ` (${members.length} klocków)` : ""}. Wklej w dowolnej grze: Ctrl+V`, "good");
+    }
+    /** wkleja ze schowka przed kamerą (także model skopiowany w innej grze) */
+    function paste() {
+      const clip = readClip();
+      if (!clip) return toast("Schowek jest pusty - skopiuj coś (Ctrl+C)", "info");
+      if (data.parts.length + clip.parts.length > MAX_PARTS) return toast(`Maksymalnie ${MAX_PARTS} klocków`, "error");
+      pushUndo();
+      // środek modelu -> punkt przed kamerą, na tym, co jest pod spodem
+      const cx = clip.parts.reduce((a, p) => a + p.x, 0) / clip.parts.length;
+      const cz = clip.parts.reduce((a, p) => a + p.z, 0) / clip.parts.length;
+      const minY = Math.min(...clip.parts.map((p) => p.y - p.sy / 2));
+      const defs = clip.parts.map((p) => ({ ...p, x: p.x - cx, z: p.z - cz }));
+      const { x: ox, z: oz } = freeSpot(defs, camera.target.x, camera.target.z);
+      const hit = scene.pickWithRay(new Ray(new Vector3(ox, 1000, oz), new Vector3(0, -1, 0), 2000), (mm: AbstractMesh) => !!mm.metadata?.partId);
+      const base = hit?.pickedPoint ? hit.pickedPoint.y : 0;
+      const name = uniqueName(clip.name);
+      const group = clip.parts.length > 1 ? newId() : undefined;
+      // narzędzia, postacie i animacje, których ta gra jeszcze nie ma
+      for (const t of clip.tools) if (!data.tools.some((x) => x.id === t.id)) data.tools.push(t);
+      for (const c of clip.characters) if (!data.characters.some((x) => x.id === c.id)) data.characters.push(c);
+      for (const a of clip.animations) if (!data.animations.some((x) => x.id === a.id)) data.animations.push(a);
+      const made = defs.map((d) => {
+        const p: Part = { ...d, id: newId(), name, x: round(ox + d.x), y: round(base + (d.y - minY)), z: round(oz + d.z) };
+        if (group) p.group = group;
+        else delete p.group;
+        data.parts.push(p);
+        view.add(p);
+        return p;
+      });
+      for (const id of clip.behaviors) {
+        const b = BEHAVIORS.find((x) => x.id === id);
+        if (b?.lua) data.scripts.push(behaviorScript(b, name));
+      }
+      view.setTools(data.tools);
+      view.setCharacters(data.characters, data.animations);
+      renderScripts();
+      renderTools();
+      renderCharacters();
+      renderAnimations();
+      changed();
+      select(made[0]);
+      toast(`📥 Wklejono: ${name}${clip.from && clip.from !== meta.name ? ` (z gry „${clip.from}”)` : ""}`, "good");
     }
 
     function remove() {
@@ -878,9 +984,13 @@ export function studioScreen(
     explorerSearch.addEventListener("input", () => renderExplorer());
     const panelSection = (title: string, actions: Node | null, body: HTMLElement, hint?: string) =>
       h("div", { class: "ltab-page" }, h("div", { class: "panel-title" }, title, actions ?? ""), hint ? h("p", { class: "panel-hint" }, hint) : "", body);
+    // teren malowany pędzlem
+    const terrainPanel = terrainTool({ scene, canvas, camera, view, data, pushUndo, changed });
+    cleanups.push(() => terrainPanel.dispose());
     const LEFT_TABS: { id: string; icon: string; label: string; page: HTMLElement }[] = [
       { id: "toolbox", icon: "🧱", label: "Zestaw", page: panelSection("Zestaw - kliknij, żeby wstawić", null, toolboxBody) },
       { id: "objects", icon: "📋", label: "Obiekty", page: h("div", { class: "ltab-page" }, h("div", { class: "panel-title" }, "Obiekty w grze"), explorerSearch, explorer) },
+      { id: "terrain", icon: "🏔", label: "Teren", page: terrainPanel.page },
       {
         id: "scripts",
         icon: "📜",
@@ -936,6 +1046,7 @@ export function studioScreen(
     const leftPanel = h("aside", { class: "studio-panel left" }, leftTabs, leftPages);
     function showLeftTab(id: string) {
       const t = LEFT_TABS.find((x) => x.id === id) ?? LEFT_TABS[0];
+      if (t.id !== "terrain") terrainPanel.deactivate();
       leftPages.replaceChildren(t.page);
       for (const b of leftTabs.querySelectorAll<HTMLElement>(".ltab")) b.classList.toggle("active", b.dataset.ltab === t.id);
       // na telefonie panel jest wysuwany
@@ -1102,6 +1213,12 @@ export function studioScreen(
               h("button", { class: "btn small", onClick: () => ungroup(p) }, "Rozdziel na klocki"),
             )
           : "",
+        h(
+          "div",
+          { class: "prop-actions" },
+          h("button", { class: "btn small", title: "Ctrl+C - potem wklej w tej albo innej grze (Ctrl+V)", onClick: () => copySelection() }, "📋 Kopiuj"),
+          readClip() ? h("button", { class: "btn small", title: "Ctrl+V", onClick: () => paste() }, "📥 Wklej") : "",
+        ),
         field(
           members.length > 1 ? "Nazwa modelu" : "Nazwa",
           h("input", {
@@ -1628,6 +1745,8 @@ export function studioScreen(
       else if (ctrl && e.key === "z") (e.preventDefault(), doUndo());
       else if (ctrl && e.key === "y") (e.preventDefault(), doRedo());
       else if (ctrl && e.key === "d") (e.preventDefault(), duplicate());
+      else if (ctrl && e.key === "c") (e.preventDefault(), copySelection());
+      else if (ctrl && e.key === "v") (e.preventDefault(), paste());
       else if (e.key === "Delete" || e.key === "Backspace") remove();
       else if (e.key === "1") setTool("select");
       else if (e.key === "2") setTool("move");
