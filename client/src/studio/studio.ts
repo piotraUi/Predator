@@ -1468,16 +1468,15 @@ export function studioScreen(
       gizmos.dispose();
     });
 
-    // WASD przesuwa kamerę, Q/E w dół/górę
+    // WASD przesuwa kamerę (W = do przodu, tam gdzie patrzysz), Q/E w dół/górę
     scene.onBeforeRenderObservable.add(() => {
       if (keys.size === 0) return;
       const dt = engine.getDeltaTime() / 1000;
       const speed = Math.max(20, camera.radius) * dt;
-      const fx = camera.target.x - camera.position.x;
-      const fz = camera.target.z - camera.position.z;
-      const l = Math.hypot(fx, fz) || 1;
-      const f = new Vector3(fx / l, 0, fz / l);
-      const r = new Vector3(f.z, 0, -f.x);
+      // W/S lecą dokładnie tam, gdzie patrzy kamera (też w górę i w dół), jak w Roblox Studio
+      const f = camera.target.subtract(camera.position).normalize();
+      const l = Math.hypot(f.x, f.z) || 1;
+      const r = new Vector3(f.z / l, 0, -f.x / l);
       const move = Vector3.Zero();
       if (keys.has("KeyW")) move.addInPlace(f);
       if (keys.has("KeyS")) move.subtractInPlace(f);
