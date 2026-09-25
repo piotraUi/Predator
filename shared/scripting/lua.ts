@@ -281,7 +281,8 @@ export class LuaEngine {
       return 0;
     });
     def("teleport", (L) => {
-      h.teleport(this.str(L, 1), lauxlib.luaL_checknumber(L, 2), lauxlib.luaL_checknumber(L, 3), lauxlib.luaL_checknumber(L, 4));
+      // z jest opcjonalne - w grach 2D teleport(player, x, y)
+      h.teleport(this.str(L, 1), lauxlib.luaL_checknumber(L, 2), lauxlib.luaL_checknumber(L, 3), lauxlib.luaL_optnumber(L, 4, 0));
       return 0;
     });
     def("playerName", (L) => {

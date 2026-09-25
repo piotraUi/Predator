@@ -371,7 +371,16 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       { id: "levels", icon: "🗺️", label: "Poziomy", page: page(title("Poziomy", small("+ Nowy", () => addLevel())), levelsList) },
       { id: "chars", icon: "🧍", label: "Postacie", page: page(title("Postacie", small("+ Nowa", () => editCharacter(null))), h("p", { class: "panel-hint" }, "Postać gracza: obrazki z obiektu i nazwy animacji (chodzenie, skok...)."), charsList) },
       { id: "sounds", icon: "🔊", label: "Dźwięki", page: page(title("Dźwięki", small("+ Dodaj", () => addSounds())), soundsList) },
-      { id: "scripts", icon: "📜", label: "Skrypty", page: page(title("Skrypty Lua", small("+ Lua", () => addScript())), scriptsList) },
+      {
+        id: "scripts",
+        icon: "📜",
+        label: "Skrypty",
+        page: page(
+          title("Skrypty", small("+ Bloczki", () => addScript("blocks"), "Programowanie bloczkami jak w Scratchu"), small("+ Lua", () => addScript("lua"))),
+          h("p", { class: "panel-hint" }, "Najłatwiej: Bloczki - układasz je jak w Scratchu. Lua = pisanie kodu."),
+          scriptsList,
+        ),
+      },
     ];
     const leftTabs = h(
       "div",
@@ -546,7 +555,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
                 s.enabled = (e.target as HTMLInputElement).checked;
               },
             }),
-            h("button", { class: "script-open", onClick: () => editScript(s) }, "📜 " + s.name),
+            h("button", { class: "script-open", onClick: () => editScript(s) }, (s.type === "blocks" ? "🧩 " : "📜 ") + s.name),
             h(
               "button",
               {
@@ -1174,13 +1183,34 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     }
 
     // ---------- skrypty ----------
-    function addScript() {
+    function addScript(type: "lua" | "blocks" = "lua") {
       remember();
       const s: WorldScript = {
         id: newId2d(),
-        name: "Skrypt " + (data.scripts.length + 1),
-        type: "lua",
-        source: '-- Przykład: gdy gracz dotknie obiektu "Meta"\nonTouch("Meta", function(player)\n  say(playerName(player) .. " dotarł do mety!")\nend)\n',
+        name: (type === "lua" ? "Skrypt " : "Bloczki ") + (data.scripts.length + 1),
+        type,
+        source:
+          type === "lua"
+            ? '-- Przykład: gdy gracz dotknie obiektu "Meta"\nonTouch("Meta", function(player)\n  say(playerName(player) .. " dotarł do mety!")\nend)\n'
+            : "",
+        // bloczki: gotowy przykład na start (gdy gracz dotknie Mety - napis dla wszystkich)
+        blocks:
+          type === "blocks"
+            ? {
+                blocks: {
+                  languageVersion: 0,
+                  blocks: [
+                    {
+                      type: "d2_on_touch",
+                      x: 40,
+                      y: 40,
+                      fields: { OBJ: "Meta" },
+                      inputs: { DO: { block: { type: "p_say", inputs: { TEXT: { shadow: { type: "text", fields: { TEXT: "Ktoś dotarł do mety!" } } } } } } },
+                    },
+                  ],
+                },
+              }
+            : undefined,
         enabled: true,
       };
       data.scripts.push(s);
@@ -1196,6 +1226,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           renderScripts();
         },
         LUA_HELP_2D,
+        "2d",
       );
     }
 

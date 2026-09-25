@@ -4,6 +4,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { parseGameFile } from "../gamefile.ts";
 import { Sim2D } from "./sim2d.ts";
+import { emptyWorld } from "../world.ts";
+import { emptyWorld2D } from "../world2d.ts";
 
 // testy uruchamiane z folderu server/ albo z głównego
 const file = [path.resolve("games", "Ludzik 4.pgame"), path.resolve("..", "games", "Ludzik 4.pgame")].find((f) => fs.existsSync(f)) ?? "";
@@ -120,4 +122,57 @@ test("Ludzik 4: potwór ginie na płonącej platformie i wraca po chwili", { ski
     Date.now = realNow;
     sim.dispose();
   }
+});
+
+
+test("bloczki 2D: kod wygenerowany ze wszystkich bloczków działa w silniku", () => {
+  // kod skopiowany z edytora bloczków (Studio 2D -> + Bloczki, wszystkie bloczki 2D)
+  const lua = `onPlayerJoin(function(player)
+  if player then teleport(player, 100, 100) end
+  if player then setLevel(player, 'Poziom 1') end
+  if player then jump(player) end
+  if player then setSpeed(player, 300) end
+  if player then setJump(player, 500) end
+  if player then autoWalk(player, 0) end
+  if player then setForce(player, 0) end
+  if player then hidePlayer(player, false) end
+  if player then setPlayerAnimation(player, 'walk', 'Walk') end
+  if player then resetPlayerAnimations(player) end
+  if player then lockCamera(player, 0, 0) end
+  if player then unlockCamera(player) end
+  if player then awardBadge(player, 'Witaj w grze!') end
+  if player then setCharacter(player, 'Gracz') end
+  if player then addCoins(player, 2) end
+  if player then setCoins(player, 5) end
+  if player then showFor(player, 'Moneta') end
+  hideObject('Kolce')
+  showObject('Kolce')
+  setAnimation('Gracz', 'Walk')
+  setText('Licznik monet', tostring((player and getCoins(player) or 0)))
+  createObject('Moneta', 300, 100, player and getLevel(player) or nil)
+  deleteObject('Moneta')
+  say(countObjects('Kolce', player and getLevel(player) or nil))
+  say((player and getLevel(player) or ""))
+  setBackground('#0b1026')
+  if player then restartLevel(getLevel(player)) end
+end)
+
+onLevelEnter(function(player, level)
+  if level == 'Poziom 1' then
+    playSound('nie-ma')
+  end
+end)
+`;
+  const data = { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: emptyWorld2D(), scripts: [{ id: "b", name: "Bloczki", type: "blocks" as const, source: lua, enabled: true }] };
+  const sent: { sid: string; type: string; msg: unknown }[] = [];
+  const sim = new Sim2D(data, { send: (sid, type, msg) => sent.push({ sid, type, msg }), broadcast: (type, msg) => sent.push({ sid: "*", type, msg }) }, { id: 1, name: "t", ownerName: "t" });
+  sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: true });
+  for (let i = 0; i < 10; i++) sim.tick();
+  const errors = sent.filter((m) => m.type === "log" && (m.msg as { error: boolean }).error).map((m) => (m.msg as { text: string }).text);
+  // jedyne błędy: dźwięk, którego celowo nie ma (gracz wchodzi na poziom kilka razy)
+  assert.ok(errors.length >= 1);
+  for (const e of errors) assert.match(e, /nie ma dźwięku/);
+  assert.ok(sent.some((m) => m.type === "background"));
+  assert.ok(sent.some((m) => m.type === "create"));
+  sim.dispose();
 });

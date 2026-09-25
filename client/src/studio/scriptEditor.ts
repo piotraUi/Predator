@@ -98,7 +98,7 @@ export const LUA_HELP_2D: [string, string][] = [
   ['print("tekst")', "wypisz w konsoli"],
 ];
 
-export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void, helpList: [string, string][] = LUA_HELP) {
+export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void, helpList: [string, string][] = LUA_HELP, mode: "3d" | "2d" = "3d") {
   const nameInput = h("input", { class: "script-name", value: script.name, maxLength: 40 });
   let dirty = false;
   const markDirty = () => (dirty = true);
@@ -193,7 +193,7 @@ export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) =
     import("./blocks.ts")
       .then(({ createBlocksEditor }) => {
         loading.remove();
-        editor = createBlocksEditor(wsDiv, script.blocks);
+        editor = createBlocksEditor(wsDiv, script.blocks, mode);
         const upd = () => (preview.textContent = editor!.getLua());
         upd();
         editor.onChange(() => {

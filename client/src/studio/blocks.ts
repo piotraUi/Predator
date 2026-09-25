@@ -142,6 +142,81 @@ g.forBlock["p_message"] = () => [`(message or "")`, Order.ATOMIC];
 g.forBlock["p_score"] = () => [`(player and getScore(player) or 0)`, Order.ATOMIC];
 g.forBlock["p_player_count"] = () => [`#getPlayers()`, Order.UNARY];
 
+// ---------- bloczki gier 2D ----------
+const D2 = 175;
+const D2OBJ = 30;
+const objField = (name = "OBJ", text = "Moneta") => ({ type: "field_input", name, text });
+const BG_COLORS: [string, string][] = [
+  ["niebo", "#87ceeb"], ["noc", "#0b1026"], ["zachód", "#ff9a5a"], ["jaskinia", "#2a2230"], ["las", "#5c8a4a"], ["czarny", "#000000"], ["biały", "#ffffff"],
+];
+Blockly.common.defineBlocksWithJsonArray([
+  { type: "d2_on_touch", message0: "gdy gracz dotknie obiektu %1 %2 %3", args0: [objField("OBJ", "Moneta"), { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT, tooltip: "Nazwa obiektu z zakładki Obiekty (albo nazwa postawionej instancji)" },
+  { type: "d2_on_level", message0: "gdy gracz wejdzie na poziom %1 %2 %3", args0: [objField("LEVEL", "Poziom 1"), { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT },
+  // gracz
+  { type: "d2_teleport", message0: "przenieś gracza do x %1 y %2", args0: [{ type: "input_value", name: "X", check: "Number" }, { type: "input_value", name: "Y", check: "Number" }], inputsInline: true, previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_set_level", message0: "przenieś gracza na poziom %1", args0: [objField("LEVEL", "Poziom 2")], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_jump", message0: "gracz podskakuje", previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_set_speed", message0: "ustaw prędkość biegu gracza na %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Normalnie ok. 200" },
+  { type: "d2_set_jump", message0: "ustaw siłę skoku gracza na %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Normalnie ok. 400-500" },
+  { type: "d2_auto_walk", message0: "gracz sam idzie %1", args0: [{ type: "field_dropdown", name: "DIR", options: [["w prawo", "1"], ["w lewo", "-1"], ["stop", "0"]] }], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_force", message0: "pchaj gracza w prawo z siłą %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Jak jazda na desce; 0 = koniec" },
+  { type: "d2_hide_player", message0: "%1 gracza", args0: [{ type: "field_dropdown", name: "MODE", options: [["schowaj", "true"], ["pokaż", "false"]] }], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Np. gdy przejdzie przez drzwi" },
+  { type: "d2_player_anim", message0: "zmień animację gracza %1 na %2", args0: [{ type: "field_dropdown", name: "KIND", options: [["stanie", "idle"], ["chodzenie", "walk"], ["skok", "jump"], ["spadanie", "fall"], ["wspinanie", "climb"]] }, objField("ANIM", "Bieg")], previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_reset_anims", message0: "przywróć animacje gracza", previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_camera", message0: "zatrzymaj kamerę gracza w x %1 y %2", args0: [{ type: "input_value", name: "X", check: "Number" }, { type: "input_value", name: "Y", check: "Number" }], inputsInline: true, previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_camera_free", message0: "kamera znowu idzie za graczem", previousStatement: null, nextStatement: null, colour: PLAYER },
+  { type: "d2_badge", message0: "daj graczowi odznakę %1", args0: [objField("NAME", "Mistrz")], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Nazwa odznaki z Ustawień gry → Odznaki" },
+  { type: "d2_character", message0: "zmień postać gracza na %1", args0: [objField("CHAR", "Pies")], previousStatement: null, nextStatement: null, colour: PLAYER, tooltip: "Nazwa z zakładki Postacie (pusta = wybrana przez gracza)" },
+  // monety
+  { type: "d2_add_coins", message0: "dodaj graczowi %1 monet", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: 45 },
+  { type: "d2_set_coins", message0: "ustaw monety gracza na %1", args0: [{ type: "input_value", name: "N", check: "Number" }], previousStatement: null, nextStatement: null, colour: 45 },
+  { type: "d2_coins", message0: "monety gracza", output: "Number", colour: 45 },
+  { type: "d2_show_for", message0: "przywróć graczowi zebrane %1", args0: [objField("OBJ", "Moneta")], previousStatement: null, nextStatement: null, colour: 45, tooltip: "Zebrane monety / rzeczy znowu są widoczne dla tego gracza" },
+  // obiekty i poziom
+  { type: "d2_visible", message0: "%1 obiekt %2", args0: [{ type: "field_dropdown", name: "MODE", options: [["schowaj", "hide"], ["pokaż", "show"]] }, objField("OBJ", "Most")], previousStatement: null, nextStatement: null, colour: D2OBJ },
+  { type: "d2_set_anim", message0: "animacja obiektu %1 na %2", args0: [objField("OBJ", "Drzwi"), objField("ANIM", "Otwarte")], previousStatement: null, nextStatement: null, colour: D2OBJ },
+  { type: "d2_set_text", message0: "zmień napis %1 na %2", args0: [objField("OBJ", "Napis"), { type: "input_value", name: "TEXT" }], previousStatement: null, nextStatement: null, colour: D2OBJ },
+  { type: "d2_create", message0: "stwórz %1 w x %2 y %3", args0: [objField("OBJ", "Potwór"), { type: "input_value", name: "X", check: "Number" }, { type: "input_value", name: "Y", check: "Number" }], inputsInline: true, previousStatement: null, nextStatement: null, colour: D2OBJ },
+  { type: "d2_delete", message0: "usuń wszystkie %1", args0: [objField("OBJ", "Potwór")], previousStatement: null, nextStatement: null, colour: D2OBJ },
+  { type: "d2_count", message0: "ile jest %1 na poziomie gracza", args0: [objField("OBJ", "Moneta")], output: "Number", colour: D2OBJ },
+  { type: "d2_restart", message0: "zacznij poziom gracza od nowa", previousStatement: null, nextStatement: null, colour: D2 },
+  { type: "d2_level", message0: "poziom gracza", output: "String", colour: D2 },
+  { type: "d2_background", message0: "zmień tło na %1", args0: [{ type: "field_dropdown", name: "COLOR", options: BG_COLORS }], previousStatement: null, nextStatement: null, colour: D2 },
+  { type: "d2_sound", message0: "zagraj dźwięk %1 %2", args0: [objField("NAME", "skok.mp3"), { type: "field_dropdown", name: "WHO", options: [["graczowi", "p"], ["wszystkim", "all"]] }], previousStatement: null, nextStatement: null, colour: D2, tooltip: "Nazwa dźwięku z zakładki Dźwięki" },
+]);
+const fld = (b: Blockly.Block, name: string) => q(String(b.getFieldValue(name) ?? ""));
+const ifp = (code: string) => `if player then ${code} end\n`;
+g.forBlock["d2_on_touch"] = (b) => `onTouch(${fld(b, "OBJ")}, function(player)\n${stmts(b)}end)\n`;
+g.forBlock["d2_on_level"] = (b) => `onLevelEnter(function(player, level)\n  if level == ${fld(b, "LEVEL")} then\n${g.prefixLines(stmts(b), "  ")}  end\nend)\n`;
+g.forBlock["d2_teleport"] = (b) => ifp(`teleport(player, ${val(b, "X", "0")}, ${val(b, "Y", "0")})`);
+g.forBlock["d2_set_level"] = (b) => ifp(`setLevel(player, ${fld(b, "LEVEL")})`);
+g.forBlock["d2_jump"] = () => ifp("jump(player)");
+g.forBlock["d2_set_speed"] = (b) => ifp(`setSpeed(player, ${val(b, "N", "200")})`);
+g.forBlock["d2_set_jump"] = (b) => ifp(`setJump(player, ${val(b, "N", "450")})`);
+g.forBlock["d2_auto_walk"] = (b) => ifp(`autoWalk(player, ${Number(b.getFieldValue("DIR")) || 0})`);
+g.forBlock["d2_force"] = (b) => ifp(`setForce(player, ${val(b, "N", "0")})`);
+g.forBlock["d2_hide_player"] = (b) => ifp(`hidePlayer(player, ${b.getFieldValue("MODE") === "true" ? "true" : "false"})`);
+g.forBlock["d2_player_anim"] = (b) => ifp(`setPlayerAnimation(player, ${fld(b, "KIND")}, ${fld(b, "ANIM")})`);
+g.forBlock["d2_reset_anims"] = () => ifp("resetPlayerAnimations(player)");
+g.forBlock["d2_camera"] = (b) => ifp(`lockCamera(player, ${val(b, "X", "0")}, ${val(b, "Y", "0")})`);
+g.forBlock["d2_camera_free"] = () => ifp("unlockCamera(player)");
+g.forBlock["d2_badge"] = (b) => ifp(`awardBadge(player, ${fld(b, "NAME")})`);
+g.forBlock["d2_character"] = (b) => ifp(`setCharacter(player, ${fld(b, "CHAR")})`);
+g.forBlock["d2_add_coins"] = (b) => ifp(`addCoins(player, ${val(b, "N", "1")})`);
+g.forBlock["d2_set_coins"] = (b) => ifp(`setCoins(player, ${val(b, "N", "0")})`);
+g.forBlock["d2_coins"] = () => [`(player and getCoins(player) or 0)`, Order.ATOMIC];
+g.forBlock["d2_show_for"] = (b) => ifp(`showFor(player, ${fld(b, "OBJ")})`);
+g.forBlock["d2_visible"] = (b) => `${b.getFieldValue("MODE") === "show" ? "showObject" : "hideObject"}(${fld(b, "OBJ")})\n`;
+g.forBlock["d2_set_anim"] = (b) => `setAnimation(${fld(b, "OBJ")}, ${fld(b, "ANIM")})\n`;
+g.forBlock["d2_set_text"] = (b) => `setText(${fld(b, "OBJ")}, tostring(${val(b, "TEXT", '""')}))\n`;
+g.forBlock["d2_create"] = (b) => `createObject(${fld(b, "OBJ")}, ${val(b, "X", "0")}, ${val(b, "Y", "0")}, player and getLevel(player) or nil)\n`;
+g.forBlock["d2_delete"] = (b) => `deleteObject(${fld(b, "OBJ")})\n`;
+g.forBlock["d2_count"] = (b) => [`countObjects(${fld(b, "OBJ")}, player and getLevel(player) or nil)`, Order.HIGH];
+g.forBlock["d2_restart"] = () => ifp("restartLevel(getLevel(player))");
+g.forBlock["d2_level"] = () => [`(player and getLevel(player) or "")`, Order.ATOMIC];
+g.forBlock["d2_background"] = (b) => `setBackground(${q(b.getFieldValue("COLOR"))})\n`;
+g.forBlock["d2_sound"] = (b) => (b.getFieldValue("WHO") === "all" ? `playSound(${fld(b, "NAME")})\n` : ifp(`playSound(${fld(b, "NAME")}, player)`));
+
 const block = (type: string, extra: Record<string, unknown> = {}) => ({ kind: "block", type, ...extra });
 const numShadow = (n: number) => ({ shadow: { type: "math_number", fields: { NUM: n } } });
 const textShadow = (t: string) => ({ shadow: { type: "text", fields: { TEXT: t } } });
@@ -226,6 +301,64 @@ const TOOLBOX = {
   ],
 };
 
+/** wspólne kategorie: logika, pętle, matematyka, tekst, zmienne */
+const COMMON = TOOLBOX.contents.slice(-5);
+const TOOLBOX_2D = {
+  kind: "categoryToolbox",
+  contents: [
+    {
+      kind: "category", name: "Zdarzenia", colour: EVENT,
+      contents: ["p_on_start", "p_on_join", "p_on_leave", "d2_on_touch", "d2_on_level", "p_on_chat", "p_on_died", "p_every", "p_after"].map((t) => block(t)),
+    },
+    {
+      kind: "category", name: "Ogólne", colour: VALUE,
+      contents: [
+        block("p_say", { inputs: { TEXT: textShadow("Cześć!") } }),
+        block("p_wait", { inputs: { SEC: numShadow(1) } }),
+        block("d2_sound"),
+        block("d2_background"),
+        block("p_print", { inputs: { TEXT: textShadow("test") } }),
+      ],
+    },
+    {
+      kind: "category", name: "Gracz", colour: PLAYER,
+      contents: [
+        block("p_tell", { inputs: { TEXT: textShadow("Hej!") } }),
+        block("p_kill"),
+        block("d2_jump"),
+        block("d2_teleport", { inputs: { X: numShadow(100), Y: numShadow(100) } }),
+        block("d2_set_level"),
+        block("d2_set_speed", { inputs: { N: numShadow(400) } }),
+        block("d2_set_jump", { inputs: { N: numShadow(600) } }),
+        block("d2_auto_walk"),
+        block("d2_force", { inputs: { N: numShadow(500) } }),
+        block("d2_hide_player"),
+        block("p_add_score", { inputs: { N: numShadow(1) } }),
+        block("d2_badge"),
+        block("p_player_name"), block("p_message"), block("p_score"), block("p_player_count"), block("d2_level"),
+      ],
+    },
+    {
+      kind: "category", name: "Monety", colour: 45,
+      contents: [block("d2_add_coins", { inputs: { N: numShadow(1) } }), block("d2_set_coins", { inputs: { N: numShadow(0) } }), block("d2_coins"), block("d2_show_for")],
+    },
+    {
+      kind: "category", name: "Obiekty i poziom", colour: D2OBJ,
+      contents: [
+        block("d2_visible"), block("d2_set_anim"),
+        block("d2_set_text", { inputs: { TEXT: textShadow("Brawo!") } }),
+        block("d2_create", { inputs: { X: numShadow(200), Y: numShadow(100) } }),
+        block("d2_delete"), block("d2_count"), block("d2_restart"),
+      ],
+    },
+    {
+      kind: "category", name: "Postać i kamera", colour: 290,
+      contents: [block("d2_character"), block("d2_player_anim"), block("d2_reset_anims"), block("d2_camera", { inputs: { X: numShadow(0), Y: numShadow(0) } }), block("d2_camera_free")],
+    },
+    ...COMMON,
+  ],
+};
+
 export interface BlocksEditor {
   getState(): unknown;
   getLua(): string;
@@ -234,9 +367,9 @@ export interface BlocksEditor {
   dispose(): void;
 }
 
-export function createBlocksEditor(container: HTMLElement, state: unknown): BlocksEditor {
+export function createBlocksEditor(container: HTMLElement, state: unknown, mode: "3d" | "2d" = "3d"): BlocksEditor {
   const ws = Blockly.inject(container, {
-    toolbox: TOOLBOX,
+    toolbox: mode === "2d" ? TOOLBOX_2D : TOOLBOX,
     media: "blockly-media/", // lokalnie - działa bez internetu
     sounds: false,
     trashcan: true,
@@ -257,6 +390,12 @@ export function createBlocksEditor(container: HTMLElement, state: unknown): Bloc
       },
     }),
   });
+  // do testów: podgląd przestrzeni bloczków w konsoli (tylko z włączonym predator.debug)
+  try {
+    if (localStorage.getItem("predator.debug")) (window as unknown as { __blockly: unknown }).__blockly = { ws, Blockly, g };
+  } catch {
+    /* brak localStorage */
+  }
   if (state) {
     try {
       Blockly.serialization.workspaces.load(state as Blockly.serialization.blocks.State, ws);
