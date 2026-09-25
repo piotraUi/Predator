@@ -94,8 +94,9 @@ export class AvatarModel {
     this.body.parent = this.root;
 
     // przód i tył tułowia: lewa połowa tekstury koszulki (nadruk), boki: prawa połowa (sam wzór)
+    // wrap: boki pudełka mają teksturę pionowo (bez tego Babylon obraca ją o 90° i wzór nie pasuje)
     const front = new Vector4(0, 0, 0.5, 1), side = new Vector4(0.5, 0, 1, 1);
-    this.torso = MeshBuilder.CreateBox("torso", { width: 2, height: 2, depth: 1, faceUV: [front, front, side, side, side, side] }, scene);
+    this.torso = MeshBuilder.CreateBox("torso", { width: 2, height: 2, depth: 1, wrap: true, faceUV: [front, front, side, side, side, side] }, scene);
     this.torso.parent = this.body;
     this.torso.position.y = 3;
 
@@ -120,7 +121,13 @@ export class AvatarModel {
       const pivot = new TransformNode(name + "Pivot", scene);
       pivot.parent = this.body;
       pivot.position.set(x, y, 0);
-      const mesh = MeshBuilder.CreateBox(name, { width: 1, height: 2, depth: 1 }, scene);
+      // boki: cała tekstura rękawa / nogawki (pionowo), góra i dół: pasek z góry i z dołu tekstury
+      const full = new Vector4(0, 0, 1, 1);
+      const mesh = MeshBuilder.CreateBox(
+        name,
+        { width: 1, height: 2, depth: 1, wrap: true, faceUV: [full, full, full, full, new Vector4(0, 0.97, 1, 1), new Vector4(0, 0, 1, 0.03)] },
+        scene,
+      );
       mesh.parent = pivot;
       mesh.position.y = -1;
       return { pivot, mesh };
