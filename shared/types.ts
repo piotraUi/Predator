@@ -180,6 +180,8 @@ export interface WorldLight {
   fog: number;
   /** gracz ma latarkę */
   flashlight: boolean;
+  /** latarka co jakiś czas mruga (horror) */
+  flicker?: boolean;
 }
 export const DEFAULT_LIGHT: WorldLight = { brightness: 1, fog: 0, flashlight: false };
 

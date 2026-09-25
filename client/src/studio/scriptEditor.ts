@@ -53,6 +53,7 @@ export const LUA_HELP: [string, string][] = [
   ['setVisibleFor(player, "Moneta", false)', "pokaż / ukryj klocek tylko dla jednego gracza"],
   ["getPlayerLook(player)", "kierunek patrzenia gracza: tabela {x, z}"],
   ['setSkyFor(player, "#000000")', "kolor nieba tylko dla jednego gracza"],
+  ["flicker(player, 2)", "latarka gracza mruga przez 2 s (bez gracza = wszystkim)"],
   ['setSkybox("night")', "gotowe niebo: day, cloudy, sunset, dawn, night, aurora, space, storm, candy, hell (\"\" = zwykły kolor)"],
   ['setSkybox("space", player)', "gotowe niebo tylko dla jednego gracza"],
   ["setLight(0.2, 60, player)", "jasność i mgła (bez gracza = dla wszystkich)"],

@@ -77,3 +77,34 @@ test("Spelling Bee: okienko ze słowem, dobra i zła odpowiedź", { skip: !dir }
   r.done();
   assert.deepEqual(r.errors, []);
 });
+
+test("Tunnel Escape: groza - serce przy potworze, znikające oczy, zgaszone światło po 3. kluczu", { skip: !dir }, () => {
+  const data = load("Tunnel Escape");
+  const r = run(data);
+  r.join("a", true);
+  r.advance(1);
+  const sounds = () => r.sent.filter((m) => m.sid === "a" && m.type === "sound").map((m) => (m.msg as { name: string }).name);
+  // oczy: gracz podchodzi do zaułka z oczami - znikają tylko dla niego
+  const eye = r.part("Oczy 1-1");
+  r.sim.handle("a", "m", { x: eye.x, y: 1, z: eye.z, ry: 0, a: "idle" });
+  r.advance(0.5);
+  assert.ok(r.sent.some((m) => m.sid === "a" && m.type === "part" && (m.msg as { transparency?: number }[]).some((p) => p.transparency === 1)), "oczy zniknęły");
+  assert.ok(sounds().includes("szept"));
+  assert.ok(r.sent.some((m) => m.sid === "a" && m.type === "flicker"));
+  // serce bije, kiedy potwór jest blisko
+  const monster = r.part("Potwór 1");
+  r.sim.handle("a", "m", { x: monster.x + 20, y: 1, z: monster.z, ry: 0, a: "idle" });
+  r.advance(0.6);
+  assert.ok(sounds().some((s) => s === "serce" || s === "serce2"), "bicie serca: " + sounds().join(","));
+  // trzeci klucz: ciemność i ryk
+  for (const k of ["Klucz 1-1", "Klucz 1-2", "Klucz 1-3"]) {
+    r.touch("a", k);
+    r.advance(0.2);
+  }
+  assert.ok(r.sent.some((m) => m.sid === "a" && m.type === "light" && (m.msg as { brightness?: number }).brightness === 0.02), "zgaszone światło");
+  assert.ok(sounds().includes("drone"));
+  r.advance(3);
+  assert.ok(r.sent.some((m) => m.sid === "a" && m.type === "light" && (m.msg as { brightness?: number }).brightness === 0.08), "światło wraca");
+  r.done();
+  assert.deepEqual(r.errors, []);
+});

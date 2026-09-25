@@ -639,6 +639,8 @@ export class GameSim {
         if (target === undefined || target === null || target === "") this.skybox = id;
         to(target, "skybox", id);
       },
+      // latarka mruga (horror): flicker(player, sekundy) albo flicker(nil, sekundy) dla wszystkich
+      flicker: (target, secs) => to(target, "flicker", typeof secs === "number" ? Math.min(10, Math.max(0.1, secs)) : 1),
       setSkyFor: (sid, color) => {
         if (typeof color === "string" && COLOR_RE.test(color)) to(sid, "sky", color);
       },

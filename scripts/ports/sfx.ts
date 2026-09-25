@@ -49,6 +49,12 @@ export function synth(tones: Tone[]): string {
       out[start + i] += sample(t.wave, phase) * env * t.vol;
     }
   }
+  return wav(out);
+}
+
+/** zapis próbek jako WAV (data URL) */
+function wav(out: Float32Array): string {
+  const n = out.length;
   const pcm = Buffer.alloc(44 + n * 2);
   pcm.write("RIFF", 0);
   pcm.writeUInt32LE(36 + n * 2, 4);
@@ -115,4 +121,77 @@ export const SFX = {
     { wave: "square", from: 140, to: 110, dur: 0.45, vol: 0.35 },
     { wave: "saw", from: 147, to: 116, dur: 0.45, vol: 0.25 },
   ]),
+};
+
+// ---------- dźwięki do horroru (Tunnel Escape) ----------
+
+/** własny dźwięk z funkcji próbki (t = sekundy) */
+function custom(dur: number, f: (t: number, rnd: () => number) => number): string {
+  const n = Math.ceil(dur * RATE);
+  const out = new Float32Array(n);
+  let seed = 12345;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < n; i++) out[i] = f(i / RATE, rnd);
+  return wav(out);
+}
+/** filtr dolnoprzepustowy do szumu (miękki, "daleki" dźwięk) */
+function lowNoise(k: number) {
+  let y = 0;
+  return (rnd: () => number) => (y += (rnd() * 2 - 1 - y) * k);
+}
+const thump = (t: number, at: number, f: number, len: number) => {
+  const d = t - at;
+  if (d < 0 || d > len) return 0;
+  return Math.sin(d * f * Math.PI * 2) * Math.exp(-d * 9) * Math.min(1, d * 200);
+};
+
+export const HORROR = {
+  /** bicie serca: lub-dub */
+  heartbeat: (fast = false) => {
+    const gap = fast ? 0.42 : 0.62;
+    return custom(fast ? 0.9 : 1.2, (t) => (thump(t, 0, 55, 0.35) + 0.8 * thump(t, 0.18, 48, 0.35) + (fast ? thump(t, gap, 55, 0.35) + 0.8 * thump(t, gap + 0.18, 48, 0.35) : 0)) * 0.9);
+  },
+  /** szept - szum, który "mówi" (drgająca głośność) */
+  whisper: () => {
+    const hiss = lowNoise(0.55);
+    return custom(2.2, (t, rnd) => {
+      const syll = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * 4.3) * Math.sin(t * Math.PI * 2 * 1.1);
+      const env = Math.sin(Math.min(1, t / 2.2) * Math.PI);
+      return hiss(rnd) * syll * env * 0.45;
+    });
+  },
+  /** kroki gdzieś w tunelu */
+  steps: () => {
+    const n = lowNoise(0.08);
+    return custom(2.4, (t, rnd) => {
+      let v = 0;
+      for (let k = 0; k < 5; k++) {
+        const d = t - k * 0.46;
+        if (d >= 0 && d < 0.18) v += Math.exp(-d * 30) * (0.6 + 0.4 * Math.sin(d * 90 * Math.PI * 2));
+      }
+      return n(rnd) * v * 1.4;
+    });
+  },
+  /** łomot metalu w oddali */
+  bang: () => {
+    const n = lowNoise(0.2);
+    return custom(1.6, (t, rnd) => {
+      const e = Math.exp(-t * 4);
+      return (n(rnd) * 0.8 + Math.sin(t * 97 * Math.PI * 2) * 0.3 + Math.sin(t * 143 * Math.PI * 2) * 0.2) * e * Math.min(1, t * 300);
+    });
+  },
+  /** skrzypienie (jak stare drzwi) */
+  creak: () =>
+    custom(1.8, (t) => {
+      const f = 180 + 60 * Math.sin(t * 3) + 25 * Math.sin(t * 37);
+      const e = Math.sin(Math.min(1, t / 1.8) * Math.PI);
+      const saw = 2 * ((t * f) % 1) - 1;
+      return saw * e * 0.22 * (0.6 + 0.4 * Math.sin(t * Math.PI * 2 * 23));
+    }),
+  /** niski, narastający dźwięk przy zgaszeniu światła */
+  drone: () =>
+    custom(3, (t) => {
+      const e = Math.min(1, t / 0.4) * Math.max(0, 1 - (t - 2.2) / 0.8);
+      return (Math.sin(t * 41 * Math.PI * 2) * 0.5 + Math.sin(t * 43.5 * Math.PI * 2) * 0.5 + Math.sin(t * 82 * Math.PI * 2) * 0.2) * e * 0.5;
+    }),
 };

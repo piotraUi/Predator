@@ -29,9 +29,9 @@ import { createEngine, WorldView } from "../engine/world.ts";
 import { session } from "../state.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
 import { hexColor } from "../engine/world.ts";
-import { GAME_INPUTS, pointerButtons, robloxCamera } from "../engine/camera.ts";
+import { GAME_INPUTS, lookRadPerPx, pointerButtons, robloxCamera, setCameraFirstPerson } from "../engine/camera.ts";
 import { Hotbar } from "./hotbar.ts";
-import { openSettings } from "../settings.ts";
+import { openSettings, settings } from "../settings.ts";
 
 interface Remote {
   model: AvatarModel;
@@ -202,6 +202,43 @@ export function playScreen(
     // odległość kamery wybrana przez gracza (kółko / szczypanie) - kolizja może ją chwilowo skrócić
     let wantRadius = camera.radius;
     let setRadius = camera.radius;
+
+    // ---------- pierwsza osoba ----------
+    // włącza się po mocnym przybliżeniu kamery; kamera jest w oczach, patrząc w dół widać swoje ciało
+    const FP_ENTER = 2;
+    const FP_EXIT_RADIUS = 5;
+    let fp = false;
+    const crosshair = h("div", { class: "fp-cross hidden" });
+    wrap.append(crosshair);
+    const touchDevice = matchMedia("(pointer: coarse)").matches;
+    function setFirstPersonMode(on: boolean) {
+      fp = on;
+      crosshair.classList.toggle("hidden", !on);
+      setCameraFirstPerson(camera, on);
+      // w pierwszej osobie widać bliskie rzeczy (własne ręce) i można patrzeć prawie pionowo w dół i w górę
+      camera.minZ = on ? 0.05 : 0.2;
+      camera.lowerBetaLimit = on ? 0.05 : 0.15;
+      camera.upperBetaLimit = on ? Math.PI * 0.94 : Math.PI * 0.7;
+      if (!on && document.pointerLockElement === canvas) document.exitPointerLock();
+    }
+    // komputer: w pierwszej osobie myszka jest złapana (jak w Robloxie) - kliknij, żeby rozglądać się bez prawego przycisku
+    const onFpDown = () => {
+      if (fp && !touchDevice && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
+    };
+    const onFpMove = (e: PointerEvent | MouseEvent) => {
+      if (!fp || document.pointerLockElement !== canvas) return;
+      const k = lookRadPerPx();
+      camera.alpha -= e.movementX * k;
+      const b = camera.beta - e.movementY * k * (settings.invertY ? -1 : 1);
+      camera.beta = Math.min(camera.upperBetaLimit ?? Math.PI, Math.max(camera.lowerBetaLimit ?? 0, b));
+    };
+    canvas.addEventListener("pointerdown", onFpDown);
+    document.addEventListener("mousemove", onFpMove);
+    cleanups.push(() => {
+      canvas.removeEventListener("pointerdown", onFpDown);
+      document.removeEventListener("mousemove", onFpMove);
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+    });
 
     // ---------- gracz ----------
     const local = new AvatarModel(scene, me.avatar, world.shadows);
@@ -415,6 +452,10 @@ export function playScreen(
       const glow = new PointLight("glow", Vector3.Zero(), scene);
       glow.intensity = 0.45;
       glow.range = 18;
+      // mruganie: samo z siebie co jakiś czas (light.flicker) albo na polecenie skryptu (flicker)
+      let nextFlicker = performance.now() + 8000 + Math.random() * 12000;
+      let flickerUntil = 0;
+      r.onMessage("flicker", (secs: number) => (flickerUntil = performance.now() + Math.min(10, Math.max(0.1, Number(secs) || 1)) * 1000));
       scene.onBeforeRenderObservable.add(() => {
         const head = new Vector3(body.x, body.y + 4.4, body.z);
         const dir = camera.target.subtract(camera.position);
@@ -422,6 +463,15 @@ export function playScreen(
         torch.position.copyFrom(head);
         torch.direction = dir.normalize();
         glow.position.copyFrom(head);
+        const now = performance.now();
+        if (light.flicker && now > nextFlicker) {
+          flickerUntil = now + 400 + Math.random() * 900;
+          nextFlicker = now + 7000 + Math.random() * 16000;
+        }
+        // w czasie mrugania światło gaśnie i zapala się nierówno
+        const k = now < flickerUntil ? (Math.random() < 0.45 ? 0.03 : 0.35 + Math.random() * 0.6) : 1;
+        torch.intensity = 2.6 * k;
+        glow.intensity = 0.45 * k;
       });
     }
 
@@ -823,7 +873,11 @@ export function playScreen(
       if (body.y < -150 && !dead) die();
 
       // obrót postaci w stronę ruchu (w pierwszej osobie - w stronę kamery)
-      const firstPerson = camera.radius < 1.5;
+      // oddalenie (kółko / szczypanie) w pierwszej osobie od razu wraca do zwykłej kamery
+      if (fp && camera.radius > setRadius + 0.01) wantRadius = camera.radius = FP_EXIT_RADIUS;
+      else if (Math.abs(camera.radius - setRadius) > 0.001) wantRadius = camera.radius;
+      const firstPerson = wantRadius <= FP_ENTER && !dead;
+      if (firstPerson !== fp) setFirstPersonMode(firstPerson);
       if (firstPerson) ry = Math.atan2(-fwdX, -fwdZ);
       else if (moving) {
         const target = Math.atan2(-mx, -mz);
@@ -845,17 +899,28 @@ export function playScreen(
       local.root.rotation.y = ry;
       local.anim = anim;
       local.update(dt);
-      local.setVisible(!firstPerson);
+      local.setFirstPerson(firstPerson);
 
       // kamera za graczem
       const head = new Vector3(body.x, body.y + 4.6, body.z);
-      // kamera sztywno za graczem, bez opóźnienia
-      camera.target.copyFrom(head);
-      // kolizja kamery: jeśli ściana zasłania gracza, kamera się przysuwa
-      if (Math.abs(camera.radius - setRadius) > 0.001) wantRadius = camera.radius;
-      const off = camera.position.subtract(camera.target).normalize();
-      const block = raycastParts(collisions, camera.target.x, camera.target.y, camera.target.z, off.x, off.y, off.z, wantRadius);
-      camera.radius = block ? Math.max(camera.lowerRadiusLimit ?? 0.5, block.dist - 0.6) : wantRadius;
+      if (firstPerson) {
+        // oczy przed twarzą; im bardziej patrzymy w dół, tym bardziej wychylamy się do przodu -
+        // wtedy widać brzuch i nogi, a nie tylko górę koszulki tuż pod nosem
+        const a = camera.alpha, b = camera.beta;
+        const dir = new Vector3(Math.cos(a) * Math.sin(b), Math.cos(b), Math.sin(a) * Math.sin(b));
+        const down = Math.max(0, dir.y);
+        const lean = 0.4 + down * 0.75;
+        const eye = new Vector3(body.x + fwdX * lean, body.y + 4.7 - down * 0.3, body.z + fwdZ * lean);
+        camera.radius = wantRadius;
+        camera.target.copyFrom(eye.subtract(dir.scale(camera.radius)));
+      } else {
+        // kamera sztywno za graczem, bez opóźnienia
+        camera.target.copyFrom(head);
+        // kolizja kamery: jeśli ściana zasłania gracza, kamera się przysuwa
+        const off = camera.position.subtract(camera.target).normalize();
+        const block = raycastParts(collisions, camera.target.x, camera.target.y, camera.target.z, off.x, off.y, off.z, wantRadius);
+        camera.radius = block ? Math.max(camera.lowerRadiusLimit ?? 0.5, block.dist - 0.6) : wantRadius;
+      }
       setRadius = camera.radius;
       world.followShadows(head);
 

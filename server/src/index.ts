@@ -3,6 +3,7 @@ import { Server } from "colyseus";
 import compression from "compression";
 import cors from "cors";
 import express from "express";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -82,10 +83,23 @@ if (fs.existsSync(path.join(config.gamesDir, "Ludzik 4.pgame")))
   ]);
 for (const m of MINIGAMES) demos.push([m.name, m.description, m.make, m.thumb]);
 // gry przeniesione z paczki GamesToadd (npm run port-games)
+/** skrót pliku gry - gdy się zmieni (nowa wersja), gra na koncie Predator jest podmieniana */
+const fileHashes = new Map<string, string>();
 for (const [file, thumb] of [["Tacos World", "tacos"], ["Tunnel Escape", "tunnel"], ["Spelling Bee", "spelling"]]) {
   const f = path.join(config.gamesDir, file + ".pgame");
-  if (fs.existsSync(f)) demos.push([file, parseGameFile(fs.readFileSync(f, "utf8")).description, fromFile(file + ".pgame"), thumb]);
+  if (!fs.existsSync(f)) continue;
+  const text = fs.readFileSync(f, "utf8");
+  fileHashes.set(file, crypto.createHash("sha1").update(text).digest("hex"));
+  demos.push([file, parseGameFile(text).description, fromFile(file + ".pgame"), thumb]);
 }
+const versionsFile = path.join(config.dataDir, "demo-versions.json");
+const versions: Record<string, string> = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(versionsFile, "utf8"));
+  } catch {
+    return {};
+  }
+})();
 // konto Predator: zawsze jest, ma swój wygląd, wszystkie przedmioty i jest adminem
 const owner = setupPredatorAccount();
 for (const [name, description, make, thumb] of demos) {
@@ -108,6 +122,19 @@ for (const [name, description, make, thumb] of demos) {
     const angles = cur && upgradeAngles(cur, fresh);
     if (angles) (cur = angles), console.log("Ludzik 4: latarnie w Level 1 Cz2 stoją pionowo");
     if (cur && (chars || angles)) worlds.setData(id, sanitizeWorld(cur));
+  }
+  // nowa wersja gry z pliku (np. straszniejszy Tunnel Escape) - podmieniamy, póki gra jest na koncie Predator
+  const hash = fileHashes.get(name);
+  if (hash && versions[name] !== hash) {
+    const r = worlds.byId(id);
+    if (r && r.owner_id === owner.id) {
+      const fresh = make();
+      const badges = fresh.badges?.length ? fresh.badges : [welcomeBadge()];
+      worlds.setData(id, sanitizeWorld({ ...fresh, badges }));
+      console.log(`Zaktualizowano grę '${name}' do nowej wersji`);
+    }
+    versions[name] = hash;
+    fs.writeFileSync(versionsFile, JSON.stringify(versions, null, 2));
   }
   // starsze zapisy przykładowych gier dostają odznakę za wejście (raz - potem decyduje twórca)
   const row = worlds.byId(id);

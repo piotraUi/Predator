@@ -1166,3 +1166,7 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
 .sky-tile canvas, .sky-plain { width: 100%; aspect-ratio: 2; border-radius: 6px; display: block; }
 .sky-tile.on { border-color: var(--accent); }
 .sky-tile:hover { border-color: var(--blue); }
+
+/* pierwsza osoba: kropka celownika na środku */
+.fp-cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 1.5px #0008; pointer-events: none; z-index: 4; }

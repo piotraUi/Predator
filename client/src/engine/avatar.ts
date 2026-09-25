@@ -381,6 +381,18 @@ export class AvatarModel {
     this.root.setEnabled(v);
   }
 
+  /**
+   * Pierwsza osoba: chowamy głowę (z twarzą, czapką i dodatkami na głowie), a reszta ciała zostaje -
+   * patrząc w dół widać swój tułów, ręce i nogi. Model .glb nie ma osobnej głowy, więc chowamy go całego.
+   */
+  setFirstPerson(on: boolean) {
+    if (this.firstPerson === on) return;
+    this.firstPerson = on;
+    this.head.setEnabled(!on);
+    this.model?.root.setEnabled(!on);
+  }
+  private firstPerson = false;
+
   /** Zakłada narzędzie do prawej ręki (albo chowa, gdy null) */
   setTool(def: Pick<ToolDef, "model" | "color"> | null) {
     this.tool?.root.dispose();

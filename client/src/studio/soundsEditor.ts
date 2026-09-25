@@ -78,6 +78,7 @@ export function soundsLightEditor(data: WorldData) {
   const bright = h("input", { type: "range", min: "0.02", max: "1.5", step: "0.02", value: String(light.brightness) });
   const fog = h("input", { type: "number", min: "0", max: "2000", step: "5", value: String(light.fog) });
   const torch = h("input", { type: "checkbox", checked: light.flashlight });
+  const flick = h("input", { type: "checkbox", checked: !!light.flicker });
 
   return {
     el: h(
@@ -91,12 +92,14 @@ export function soundsLightEditor(data: WorldData) {
       h("label", null, "Jasność (1 = zwykła, mało = ciemno jak w horrorze)", bright),
       h("label", null, "Mgła - odległość (0 = bez mgły)", fog),
       h("label", { class: "check" }, torch, h("span", null, "🔦 Gracz ma latarkę")),
+      h("label", { class: "check" }, flick, h("span", null, "⚡ Latarka czasem mruga (horror)")),
     ),
     read(): Pick<WorldData, "sounds" | "music" | "light"> {
       const l: WorldLight = {
         brightness: Math.min(1.5, Math.max(0.02, Number(bright.value) || 1)),
         fog: Math.min(2000, Math.max(0, Number(fog.value) || 0)),
         flashlight: torch.checked,
+        ...(torch.checked && flick.checked ? { flicker: true } : {}),
       };
       preview?.pause();
       return {

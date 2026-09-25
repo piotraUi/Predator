@@ -40,9 +40,20 @@ export function robloxCamera(camera: ArcRotateCamera, inputs: MapEntry[]) {
 /** przy inertia = 0 obrót to dokładnie przesunięcie / czułość; suwak z ustawień to mnożnik */
 function applySensitivity(camera: ArcRotateCamera, degPerPx: number) {
   const base = 180 / Math.PI / (degPerPx * settings.sensitivity);
-  camera.angularSensibilityX = base;
-  camera.angularSensibilityY = settings.invertY ? -base : base;
+  // w pierwszej osobie kamera stoi w oczach - przeciągnięcie ma obracać głową, a nie krążyć wokół postaci
+  const fp = firstPersonCams.has(camera) ? -1 : 1;
+  camera.angularSensibilityX = base * fp;
+  camera.angularSensibilityY = (settings.invertY ? -base : base) * fp;
 }
+
+const firstPersonCams = new WeakSet<ArcRotateCamera>();
+/** Pierwsza osoba: odwraca kierunki obrotu (palec / prawy przycisk w prawo = głowa w prawo) */
+export function setCameraFirstPerson(camera: ArcRotateCamera, on: boolean) {
+  if (on) firstPersonCams.add(camera);
+  else firstPersonCams.delete(camera);
+  applySensitivity(camera, lastDegPerPx.get(camera) ?? MOUSE_DEG_PER_PX);
+}
+const lastDegPerPx = new WeakMap<ArcRotateCamera, number>();
 
 /** Stopnie obrotu na piksel dla trybu rozglądania w Studio (z uwzględnieniem ustawień) */
 export function lookRadPerPx() {
@@ -65,6 +76,7 @@ export function pointerButtons(
     const mouse = e.pointerType === "mouse";
     ptr.buttons = mouse ? mouseButtons : [0];
     lastDeg = mouse ? MOUSE_DEG_PER_PX : TOUCH_DEG_PER_PX;
+    lastDegPerPx.set(camera, lastDeg);
     applySensitivity(camera, lastDeg);
   };
   // suwak w ustawieniach działa od razu

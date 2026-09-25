@@ -427,6 +427,7 @@ export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, 
   if (w.light && typeof w.light === "object") {
     const l = w.light as Record<string, unknown>;
     const light: WorldLight = { brightness: num(l.brightness, 0.02, 1.5, 1), fog: num(l.fog, 0, 2000, 0), flashlight: l.flashlight === true };
+    if (l.flicker === true && light.flashlight) light.flicker = true;
     if (light.brightness !== 1 || light.fog || light.flashlight) out.light = light;
   }
   return out;

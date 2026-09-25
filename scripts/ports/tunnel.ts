@@ -3,11 +3,14 @@
 import type { Accessory, CharacterDef, Part, WorldData } from "../../shared/types.ts";
 import { makePart, makeTool, newId, spawnPart, welcomeBadge } from "../../shared/world.ts";
 import { DEFAULT_AVATAR } from "../../shared/catalog.ts";
-import { SFX } from "./sfx.ts";
+import { HORROR, SFX } from "./sfx.ts";
 import { badge, rng, script, sound } from "./util.ts";
 
 const C = 8; // rozmiar komórki labiryntu (w oryginale 2 - gracz Predatora jest większy)
 const H = 12; // wysokość ścian
+// ciemność i mgła (horror); skrypt przywraca je po zgaszeniu światła
+const LIGHT = 0.08;
+const FOG = 55;
 
 /** labirynt jak w oryginale: DFS po nieparzystych polach + trochę losowych przejść */
 function makeMaze(w: number, h: number, r: () => number) {
@@ -57,6 +60,8 @@ interface LevelOut {
   speed: number;
   keys: string[];
   ammo: string[];
+  /** czerwone oczy w ciemnych ślepych zaułkach - znikają, gdy się podejdzie */
+  eyes: { name: string; x: number; z: number }[];
 }
 
 export function tunnelEscape(): WorldData {
@@ -115,6 +120,73 @@ export function tunnelEscape(): WorldData {
         x = e + 1;
       }
     }
+    // ---------- groza: krew, zadrapania, czerwone lampki, oczy w ciemności ----------
+    const isPath = (x: number, z: number) => x >= 0 && z >= 0 && x < n && z < n && g[z][x] === 0;
+    const DIR4: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const faces: { x: number; z: number; dx: number; dz: number }[] = [];
+    for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) if (isPath(x, z)) for (const [dx, dz] of DIR4) if (!isPath(x + dx, z + dz)) faces.push({ x, z, dx, dz });
+    faces.sort(() => r() - 0.5);
+    /** płaska rzecz na ścianie: u = przesunięcie wzdłuż ściany */
+    const onWall = (f: (typeof faces)[number], u: number, y: number, w: number, hgt: number, color: string, name: string) => {
+      const px = cx(f.x) + f.dx * (C / 2 - 0.06) + (f.dz !== 0 ? u : 0);
+      const pz = cz(f.z) + f.dz * (C / 2 - 0.06) + (f.dx !== 0 ? u : 0);
+      box({ name, x: px, y, z: pz, sx: f.dx !== 0 ? 0.08 : w, sy: hgt, sz: f.dz !== 0 ? 0.08 : w, color, collide: false });
+    };
+    const BLOOD = ["#4a0000", "#5c0505", "#3a0000", "#610a0a"];
+    const blood = faces.splice(0, n >= 30 ? 55 : 35);
+    for (const f of blood) {
+      const col = BLOOD[Math.floor(r() * BLOOD.length)];
+      const y = 1.5 + r() * 5;
+      const u = (r() - 0.5) * 3;
+      onWall(f, u, y, 1.2 + r() * 2.4, 0.8 + r() * 1.8, col, "Krew");
+      // strużki spływające w dół
+      for (let k = 0; k < 1 + Math.floor(r() * 3); k++) {
+        const len = 1 + r() * 3;
+        onWall(f, u + (r() - 0.5) * 1.6, y - len / 2, 0.18 + r() * 0.15, len, col, "Krew");
+      }
+    }
+    for (const f of faces.splice(0, 14)) {
+      // zadrapania pazurami - cztery równoległe rysy
+      const y = 2.5 + r() * 4;
+      const u = (r() - 0.5) * 3;
+      for (let k = 0; k < 4; k++) onWall(f, u + k * 0.38, y - k * 0.15, 0.1, 2.4, "#0d0d0d", "Zadrapanie");
+    }
+    for (let i = 0; i < (n >= 30 ? 26 : 16); i++) {
+      // kałuże
+      let x = 0, z = 0;
+      do ((x = Math.floor(r() * n)), (z = Math.floor(r() * n)));
+      while (!isPath(x, z));
+      const s = 1.5 + r() * 2.5;
+      box({ name: "Kałuża", shape: "cylinder", x: cx(x) + (r() - 0.5) * 3, y: 0.03, z: cz(z) + (r() - 0.5) * 3, sx: s, sy: 0.04, sz: s * (0.6 + r() * 0.5), color: "#3a0000", collide: false });
+    }
+    for (let i = 0; i < (n >= 30 ? 16 : 10); i++) {
+      // awaryjne czerwone lampki pod sufitem
+      let x = 0, z = 0;
+      do ((x = Math.floor(r() * n)), (z = Math.floor(r() * n)));
+      while (!isPath(x, z));
+      box({ name: "Lampka", x: cx(x), y: H - 0.25, z: cz(z), sx: 0.8, sy: 0.25, sz: 0.8, color: "#ff1a1a", material: "neon", collide: false });
+    }
+    // oczy w ślepych zaułkach (pole z trzema ścianami) - patrzą w stronę wyjścia z zaułka
+    const eyes: { name: string; x: number; z: number }[] = [];
+    const deadEnds: [number, number, number, number][] = [];
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) {
+        if (!isPath(x, z) || (x === 1 && z === 1)) continue;
+        const open = DIR4.filter(([dx, dz]) => isPath(x + dx, z + dz));
+        if (open.length === 1) deadEnds.push([x, z, open[0][0], open[0][1]]);
+      }
+    deadEnds.sort(() => r() - 0.5);
+    deadEnds.slice(0, n >= 30 ? 9 : 6).forEach(([x, z, ox2, oz2], i) => {
+      const name = `Oczy ${L}-${i + 1}`;
+      // tuż przy tylnej ścianie zaułka
+      const bx = cx(x) - ox2 * (C / 2 - 0.4), bz = cz(z) - oz2 * (C / 2 - 0.4);
+      const y = 3.6 + r() * 1.5;
+      for (const side of [-0.45, 0.45]) {
+        box({ name, shape: "sphere", x: bx + (oz2 !== 0 ? side : 0), y, z: bz + (ox2 !== 0 ? side : 0), sx: 0.35, sy: 0.22, sz: 0.35, color: "#ff0000", material: "neon", collide: false });
+      }
+      eyes.push({ name, x: bx, z: bz });
+    });
+
     // wolne pola (bez startu i wyjścia) w losowej kolejności
     const start: [number, number] = [1, 1];
     const exit: [number, number] = [n - 2, n - 2];
@@ -167,6 +239,7 @@ export function tunnelEscape(): WorldData {
       speed: spec.speed,
       keys,
       ammo,
+      eyes,
     });
   });
 
@@ -178,6 +251,7 @@ export function tunnelEscape(): WorldData {
     monster = "${L.monster}", home = { ${L.monsterCell.join(", ")} },
     keys = { ${L.keys.map((k) => `"${k}"`).join(", ")} },
     ammo = { ${L.ammo.map((k) => `"${k}"`).join(", ")} },
+    eyes = { ${L.eyes.map((e) => `{ name = "${e.name}", x = ${e.x.toFixed(1)}, z = ${e.z.toFixed(1)} }`).join(", ")} },
     rows = {
 ${L.rows.map((row) => `      "${row}",`).join("\n")}
     },
@@ -257,6 +331,9 @@ local function clearLine(L, x1, z1, x2, z2)
 end
 
 -- ---------- gracze ----------
+-- (zdefiniowane niżej, przy potworach)
+local jumpScare
+local nextScare, heartAt, eyesGone = {}, {}, {}
 local level, keys, got, ammo, gotAmmo, lastRun, dead = {}, {}, {}, {}, {}, {}, {}
 
 local function resetItems(p)
@@ -289,6 +366,7 @@ end)
 
 onPlayerLeave(function(p)
   level[p], keys[p], got[p], ammo[p], gotAmmo[p], lastRun[p], dead[p] = nil, nil, nil, nil, nil, nil, nil
+  nextScare[p], heartAt[p] = nil, nil
 end)
 
 onRespawn(function(p)
@@ -311,6 +389,7 @@ for li, L in ipairs(LV) do
         tell(p, "🔑 Klucz! Zostało jeszcze: " .. left)
       else
         tell(p, "🔑 Masz wszystkie klucze! Znajdź zielone wyjście.")
+        jumpScare(p, li)
       end
     end)
   end
@@ -377,6 +456,91 @@ local function caught(p)
   say("💀 Potwór złapał " .. playerName(p) .. "!")
   kill(p)
 end
+
+-- ---------- groza ----------
+local LIGHT, FOG = ${LIGHT}, ${FOG}
+local WHISPERS = {
+  "...słyszysz, jak ktoś szepcze twoje imię...",
+  "...coś oddycha tuż za tobą...",
+  "Nie odwracaj się.",
+  "...kroki. Ale to nie twoje kroki...",
+  "Ktoś tu był przed tobą. Nie wyszedł.",
+  "...zimny powiew na karku...",
+  "Na ścianie ktoś wydrapał: NIE UFAJ ŚWIATŁU",
+  "...tam w ciemności coś się poruszyło...",
+}
+local SCARES = { "szept", "kroki", "lomot", "skrzyp", "szept", "kroki" }
+-- po trzecim kluczu: światło gaśnie, coś ryczy, a potwór jest nagle bliżej
+jumpScare = function(p, li)
+  local m = M[li]
+  setLight(0.02, 16, p)
+  flicker(p, 2.5)
+  playSound(p, "drone")
+  tell(p, "...światło gaśnie...")
+  after(1.2, function() playSound(p, "potwor") end)
+  after(2.6, function()
+    setLight(LIGHT, FOG, p)
+    if not m.alive then return end
+    -- potwór przenosi się kilka pól od gracza (nie za blisko)
+    local px, _, pz = getPlayerPosition(p)
+    if not px then return end
+    local L = m.L
+    local cx, cz = toCell(L, px, pz)
+    local best
+    for _ = 1, 60 do
+      local x, z = cx + math.random(-7, 7), cz + math.random(-7, 7)
+      local d = math.abs(x - cx) + math.abs(z - cz)
+      if isPath(L, x, z) and d >= 5 and d <= 8 then best = { x, z } break end
+    end
+    if best then
+      m.x, m.z = toWorld(L, best[1], best[2])
+      m.next = nil
+      tell(p, "😱 ON WIE, GDZIE JESTEŚ.")
+    end
+  end)
+end
+
+every(0.3, function()
+  local now = time()
+  for _, p in ipairs(getPlayers()) do
+    local px, py, pz = getPlayerPosition(p)
+    if px and not dead[p] and py < H then
+      local lv = level[p] or 1
+      -- bicie serca, gdy potwór jest blisko (szybsze, im bliżej)
+      local m = M[lv]
+      if m and m.alive then
+        local d = math.sqrt((px - m.x) ^ 2 + (pz - m.z) ^ 2)
+        local gap = d < 14 and 0.9 or 1.4
+        if d < 32 and now - (heartAt[p] or 0) > gap then
+          heartAt[p] = now
+          playSound(p, d < 14 and "serce2" or "serce")
+        end
+      end
+      -- czerwone oczy w zaułkach znikają, kiedy podejdziesz (i coś szepcze)
+      for _, e in ipairs(LV[lv].eyes) do
+        local key = p .. e.name
+        if not eyesGone[key] and (px - e.x) ^ 2 + (pz - e.z) ^ 2 < 13 * 13 then
+          eyesGone[key] = true
+          setVisibleFor(p, e.name, false)
+          playSound(p, "szept")
+          flicker(p, 0.6)
+          after(40, function()
+            eyesGone[key] = nil
+            setVisibleFor(p, e.name, true)
+          end)
+        end
+      end
+      -- dźwięki z ciemności i szepty co jakiś czas
+      if not nextScare[p] then nextScare[p] = now + math.random(10, 20) end
+      if now > nextScare[p] then
+        nextScare[p] = now + math.random(14, 32)
+        playSound(p, SCARES[math.random(#SCARES)])
+        if math.random() < 0.45 then tell(p, WHISPERS[math.random(#WHISPERS)]) end
+        if math.random() < 0.35 then flicker(p, 0.8 + math.random() * 1.2) end
+      end
+    end
+  end
+end)
 
 local tick = 0
 every(0.1, function()
@@ -508,9 +672,16 @@ end)
       sound("strzal", SFX.shot(), 0.6),
       sound("trafienie", SFX.hit(), 0.8),
       sound("wygrana", SFX.win(), 0.7),
+      sound("serce", HORROR.heartbeat(), 0.9),
+      sound("serce2", HORROR.heartbeat(true), 1),
+      sound("szept", HORROR.whisper(), 0.8),
+      sound("kroki", HORROR.steps(), 0.7),
+      sound("lomot", HORROR.bang(), 0.6),
+      sound("skrzyp", HORROR.creak(), 0.5),
+      sound("drone", HORROR.drone(), 0.9),
     ],
     music: "ambient",
-    light: { brightness: 0.13, fog: 75, flashlight: true },
+    light: { brightness: LIGHT, fog: FOG, flashlight: true, flicker: true },
   };
 }
 
