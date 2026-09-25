@@ -8,7 +8,8 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { WorldData } from "../../shared/types.ts";
-import { demoArena, demoObby, welcomeBadge } from "../../shared/world.ts";
+import { demoArena, demoObby, sanitizeWorld, welcomeBadge } from "../../shared/world.ts";
+import { upgradeLudzikCharacters } from "../../shared/import/upgrades.ts";
 import { demoCity } from "../../shared/demos/city.ts";
 import { MINIGAMES } from "../../shared/demos/minigames.ts";
 import { api } from "./api.ts";
@@ -96,6 +97,15 @@ for (const [name, description, make, thumb] of demos) {
     id = worlds.create(owner.id, name, data, 30).id;
     worlds.update(id, { name, description, maxPlayers: 30, published: true, data });
     console.log(`Utworzono przykładową grę '${name}'`);
+  }
+  // Ludzik 4 zapisany starszą wersją serwera: wybór postaci na mapie multiplayer
+  if (name === "Ludzik 4") {
+    const r = worlds.byId(id);
+    const up = r ? upgradeLudzikCharacters(JSON.parse(r.data) as WorldData, make()) : null;
+    if (up) {
+      worlds.setData(id, sanitizeWorld(up));
+      console.log("Ludzik 4: dodano wybór postaci na mapie multiplayer");
+    }
   }
   // starsze zapisy przykładowych gier dostają odznakę za wejście (raz - potem decyduje twórca)
   const row = worlds.byId(id);

@@ -122,6 +122,10 @@ function sanitizeLevel(raw: unknown, objIds: Set<string>, charIds: Set<string>, 
   if (l.ambient !== undefined && l.ambient !== null) out.ambient = color(l.ambient, "#202040");
   if (l.restartOnDeath === true) out.restartOnDeath = true;
   if (typeof l.character === "string" && charIds.has(l.character)) out.character = l.character;
+  if (Array.isArray(l.characters)) {
+    const list = [...new Set(l.characters.filter((c): c is string => typeof c === "string" && charIds.has(c)))].slice(0, 20);
+    if (list.length) out.characters = list;
+  }
   if (l.stackPlayers === true) out.stackPlayers = true;
   if (l.selectable === true) out.selectable = true;
   return out;

@@ -120,6 +120,8 @@ export interface Level2D {
   restartOnDeath?: boolean;
   /** wszyscy gracze na tym poziomie wyglądają jak ta postać */
   character?: string;
+  /** postacie do wyboru tylko na tym poziomie (np. mniejsze na mapę multiplayer) - zamiast ogólnej listy */
+  characters?: string[];
   /** gracze mogą stawać sobie na głowach */
   stackPlayers?: boolean;
   /** można go wybrać z menu gry (inaczej trzeba do niego dojść) */

@@ -68,6 +68,9 @@ export function modal(title: string, body: Node, actions: { label: string; kind?
 export const logo = (studio = false, cls = "logo-img") =>
   h("img", { class: cls, src: import.meta.env.BASE_URL + (studio ? "logo-studio.png" : "logo.png"), alt: studio ? "Predator Studio" : "Predator", draggable: false });
 
+/** mały ekran (telefon pionowo albo poziomo) - Studio ma wtedy wysuwane panele */
+export const COMPACT_Q = "(max-width: 760px), (max-height: 520px)";
+export const isCompact = () => matchMedia(COMPACT_Q).matches;
 export const isTouch = () => matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
 
 export function initials(name: string) {

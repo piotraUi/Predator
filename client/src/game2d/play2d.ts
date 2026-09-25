@@ -267,7 +267,10 @@ export function play2dScreen(
     );
   }
   function renderMenu() {
-    const selectable = w.characters.filter((c) => !c.npc);
+    // poziom może mieć własną listę postaci (np. mapa multiplayer)
+    const selectable = level.characters?.length
+      ? level.characters.map((id) => chars.get(id)).filter((c): c is Character2D => !!c)
+      : w.characters.filter((c) => !c.npc);
     menu.replaceChildren(
       h("h3", null, init.info.name),
       h("p", { class: "muted" }, "Twórca: " + init.info.ownerName),

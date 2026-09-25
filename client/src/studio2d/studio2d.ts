@@ -15,7 +15,7 @@ import { session } from "../state.ts";
 import { openSettings } from "../settings.ts";
 import { LUA_HELP_2D, openScriptEditor } from "../studio/scriptEditor.ts";
 import type { StudioFile } from "../studio/studio.ts";
-import { ask, h, logo, modal, toast } from "../ui/dom.ts";
+import { ask, h, isCompact, isTouch, logo, modal, toast } from "../ui/dom.ts";
 import { badgeEditor } from "../studio/badgeEditor.ts";
 import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
 
@@ -370,7 +370,9 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       title("Skrypty Lua", small("+ Lua", () => addScript())),
       scriptsList,
     );
-    const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości"), props);
+    const closeBtn = () => h("button", { class: "panel-close", title: "Zamknij", onClick: () => closePanels() }, "✕");
+    leftPanel.prepend(h("div", { class: "panel-title m-only" }, "Poziomy i obiekty", closeBtn()));
+    const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości", closeBtn()), props);
     const mobileTabs = h(
       "div",
       { class: "studio-mtabs" },
@@ -382,7 +384,41 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       leftPanel.classList.remove("open");
       rightPanel.classList.remove("open");
       if (open) p.classList.add("open");
+      syncMobileTabs();
     }
+    function closePanels() {
+      leftPanel.classList.remove("open");
+      rightPanel.classList.remove("open");
+      syncMobileTabs();
+    }
+    function syncMobileTabs() {
+      const [a, b] = mobileTabs.children;
+      a.classList.toggle("on", leftPanel.classList.contains("open"));
+      b.classList.toggle("on", rightPanel.classList.contains("open"));
+    }
+    // stuknięcie w planszę zamyka wysunięty panel (telefon)
+    canvas.addEventListener("pointerdown", () => isCompact() && closePanels(), true);
+
+    // pływający pasek pod palec (telefon)
+    const fabBtn = (icon: string, label: string, onClick: () => void, cls = "") =>
+      h("button", { class: cls, title: label, onClick: (e: Event) => (e.stopPropagation(), onClick()) }, icon, h("small", null, label));
+    const fab = {
+      add: fabBtn("＋", "Obiekt", () => togglePanel(leftPanel), "accent"),
+      stop: fabBtn("✋", "Koniec", () => setBrush(null)),
+      dup: fabBtn("⧉", "Kopia", () => duplicate()),
+      del: fabBtn("🗑", "Usuń", () => removeSelected()),
+      up: fabBtn("⬆", "Wyżej", () => zOrder(1)),
+      down: fabBtn("⬇", "Niżej", () => zOrder(-1)),
+      props: fabBtn("🔧", "Cechy", () => togglePanel(rightPanel)),
+      undo: fabBtn("↶", "Cofnij", () => doUndo()),
+    };
+    const fabBar = h("div", { class: "studio-fab" }, fab.add, fab.stop, h("div", { class: "fab-sep" }), fab.dup, fab.del, fab.up, fab.down, fab.props, h("div", { class: "fab-sep" }), fab.undo);
+    function updateFab() {
+      fab.stop.classList.toggle("hidden", !brush);
+      fab.stop.classList.toggle("on", !!brush);
+      for (const b of [fab.dup, fab.del, fab.up, fab.down]) (b as HTMLButtonElement).disabled = !selected;
+    }
+    viewport.append(fabBar);
     el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
 
     // ---------- listy ----------
@@ -523,6 +559,12 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       brushInfo.textContent = o ? "Stawiasz: " + o.name + " (Esc = koniec)" : "";
       canvas.style.cursor = o ? "copy" : "";
       renderObjects();
+      updateFab();
+      // na telefonie od razu pokazujemy planszę, żeby stuknięciem stawiać obiekt
+      if (o && isCompact()) {
+        closePanels();
+        toast("Stuknij planszę, żeby postawić: " + o.name + ". ✋ = koniec");
+      }
     }
 
     function switchLevel(l: Level2D) {
@@ -600,6 +642,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     const pair = (a: HTMLElement, b: HTMLElement) => h("div", { class: "xy" }, a, b);
 
     function renderProps() {
+      updateFab();
       if (selected) return renderInstProps(selected);
       if (editObj) return renderObjProps(editObj);
       renderLevelProps();
@@ -624,6 +667,20 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           "Postać na tym poziomie",
           selectIn([["", "Wybrana przez gracza"], ...w.characters.map((c): [string, string] => [c.id, c.name])], l.character ?? "", (v) => (l.character = v || undefined)),
         ),
+        l.character
+          ? ""
+          : h(
+              "div",
+              { class: "prop" },
+              h("span", null, "Postacie do wyboru na tym poziomie (nic = te same co w całej grze)"),
+              ...w.characters.map((c) =>
+                checkIn(c.name, !!l.characters?.includes(c.id), (v) => {
+                  const list = (l.characters ?? []).filter((x) => x !== c.id);
+                  if (v) list.push(c.id);
+                  l.characters = list.length ? list : undefined;
+                }),
+              ),
+            ),
         h(
           "button",
           {
@@ -1212,7 +1269,8 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         ctx.setLineDash([]);
       }
     }
-    const HANDLE = 5;
+    // uchwyty rozmiaru większe pod palec
+    const HANDLE = isTouch() ? 9 : 5;
     const handles = (r: { x: number; y: number; w: number; h: number }): [number, number][] => [
       [r.x, r.y],
       [r.x + r.w, r.y],

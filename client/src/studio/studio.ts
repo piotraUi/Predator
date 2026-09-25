@@ -18,7 +18,7 @@ import { desktop, pickDataUrl, pickFile, saveTextFile } from "../files.ts";
 import { session } from "../state.ts";
 import { fileNameFor, GAME_EXT, makeGameFile, parseGameFile, type GameMeta } from "../../../shared/gamefile.ts";
 import { createEngine, WorldView } from "../engine/world.ts";
-import { ask, h, logo, modal, toast } from "../ui/dom.ts";
+import { ask, h, isCompact, isTouch, logo, modal, toast } from "../ui/dom.ts";
 import { openScriptEditor } from "./scriptEditor.ts";
 import { openToolEditor } from "./toolEditor.ts";
 import { openCharacterEditor } from "./characterEditor.ts";
@@ -180,8 +180,9 @@ export function studioScreen(
       const dir = (a: number, b: number) => new Vector3(Math.cos(a) * Math.sin(b), Math.cos(b), Math.sin(a) * Math.sin(b));
       const eye = camera.target.add(dir(camera.alpha, camera.beta).scale(r));
       const k = lookRadPerPx();
-      camera.alpha += e.movementX * k;
-      camera.beta = Math.min(Math.PI - 0.05, Math.max(0.05, camera.beta + e.movementY * k * (settings.invertY ? -1 : 1)));
+      // mysz w prawo = obrót w prawo, mysz w górę = patrzymy w górę (jak w Roblox Studio)
+      camera.alpha -= e.movementX * k;
+      camera.beta = Math.min(Math.PI - 0.05, Math.max(0.05, camera.beta - e.movementY * k * (settings.invertY ? -1 : 1)));
       // punkt, na który patrzymy, przesuwa się tak, żeby kamera została w miejscu
       camera.target = eye.subtract(dir(camera.alpha, camera.beta).scale(r));
     };
@@ -301,7 +302,16 @@ export function studioScreen(
     /** podpowiedź na dole widoku - co teraz można zrobić */
     function updateHint() {
       const k = (key: string, text: string) => [h("kbd", null, key), " " + text];
-      const parts: (string | Node)[][] = !selected
+      const touch = isTouch();
+      const parts: (string | Node)[][] = touch
+        ? !selected
+          ? [["👆 Stuknij klocek albo ", h("b", null, "＋"), " dodaj model"], ["☝ 1 palec: obrót"], ["✌ 2 palce: przesuń i zoom"]]
+          : tool === "scale"
+            ? [["⤡ Ciągnij kwadraciki, żeby zmienić rozmiar"]]
+            : tool === "move"
+              ? [["✥ Ciągnij kolorowe strzałki"]]
+              : [["👆 Wybrano: ", h("b", null, selected.name)]]
+        : !selected
         ? [
             ["👆 Kliknij klocek, żeby go wybrać, albo ", h("b", null, "＋ Dodaj"), " gotowy model"],
             k("Prawy przycisk", "rozglądanie"),
@@ -314,6 +324,7 @@ export function studioScreen(
             ? [["⤡ Ciągnij kwadraciki, żeby zmienić rozmiar"], k("2", "przesuwanie"), k("Ctrl+Z", "cofnij")]
             : [["👆 Wybrano: ", h("b", null, selected.name)], k("2", "przesuń"), k("3", "skaluj"), k("R", "obróć")];
       hintBar.replaceChildren(...parts.map((x) => h("span", null, ...x)));
+      updateFab();
     }
 
     function setTool(t: Tool) {
@@ -448,10 +459,10 @@ export function studioScreen(
             "div",
             { class: "tbx-grid" },
             TOOLBOX.filter((m) => m.cat === cat).map((m) =>
-              h("button", { class: "tbx-item", title: m.name, onClick: () => addModel(m) }, h("span", { class: "tbx-ic" }, m.icon), h("span", { class: "tbx-name" }, m.name)),
+              h("button", { class: "tbx-item", title: m.name, onClick: () => (addModel(m), isCompact() && closePanels()) }, h("span", { class: "tbx-ic" }, m.icon), h("span", { class: "tbx-name" }, m.name)),
             ),
             cat === "Podstawowe"
-              ? h("button", { class: "tbx-item", title: "Złote pole z bronią albo narzędziem", onClick: () => addPickup() }, h("span", { class: "tbx-ic" }, "🗡️"), h("span", { class: "tbx-name" }, "Broń do podniesienia"))
+              ? h("button", { class: "tbx-item", title: "Złote pole z bronią albo narzędziem", onClick: () => (addPickup(), isCompact() && closePanels()) }, h("span", { class: "tbx-ic" }, "🗡️"), h("span", { class: "tbx-name" }, "Broń do podniesienia"))
               : "",
           ),
         ]),
@@ -811,12 +822,15 @@ export function studioScreen(
       leftPages.replaceChildren(t.page);
       for (const b of leftTabs.querySelectorAll<HTMLElement>(".ltab")) b.classList.toggle("active", b.dataset.ltab === t.id);
       // na telefonie panel jest wysuwany
-      if (matchMedia("(max-width: 760px)").matches) {
+      if (isCompact()) {
         rightPanel.classList.remove("open");
         leftPanel.classList.add("open");
+        syncMobileTabs();
       }
     }
-    const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości"), props);
+    const closeBtn = () => h("button", { class: "panel-close", title: "Zamknij", onClick: () => closePanels() }, "✕");
+    leftTabs.append(closeBtn());
+    const rightPanel = h("aside", { class: "studio-panel right" }, h("div", { class: "panel-title" }, "Właściwości", closeBtn()), props);
 
     // przełącznik paneli na telefonie
     const mobileTabs = h(
@@ -830,10 +844,58 @@ export function studioScreen(
       leftPanel.classList.remove("open");
       rightPanel.classList.remove("open");
       if (open) p.classList.add("open");
+      syncMobileTabs();
+    }
+    function closePanels() {
+      leftPanel.classList.remove("open");
+      rightPanel.classList.remove("open");
+      syncMobileTabs();
+    }
+    function syncMobileTabs() {
+      const [a, b] = mobileTabs.children;
+      a.classList.toggle("on", leftPanel.classList.contains("open"));
+      b.classList.toggle("on", rightPanel.classList.contains("open"));
+    }
+    // stuknięcie w widok zamyka wysunięty panel
+    canvas.addEventListener("pointerdown", () => isCompact() && closePanels());
+
+    // pływający pasek pod palec (telefon): najważniejsze akcje zawsze pod ręką
+    const fabBtn = (icon: string, label: string, onClick: () => void, cls = "") =>
+      h("button", { class: cls, title: label, onClick: (e: Event) => (e.stopPropagation(), onClick()) }, icon, h("small", null, label));
+    const fab = {
+      add: fabBtn("＋", "Dodaj", () => showLeftTab("toolbox"), "accent"),
+      move: fabBtn("✥", "Przesuń", () => setTool("move")),
+      scale: fabBtn("⤡", "Rozmiar", () => setTool("scale")),
+      rotate: fabBtn("⟳", "Obróć", () => rotate()),
+      dup: fabBtn("⧉", "Kopia", () => duplicate()),
+      del: fabBtn("🗑", "Usuń", () => remove()),
+      props: fabBtn("🔧", "Cechy", () => togglePanel(rightPanel)),
+      focus: fabBtn("🎯", "Pokaż", () => focus()),
+      undo: fabBtn("↶", "Cofnij", () => doUndo()),
+    };
+    const fabBar = h(
+      "div",
+      { class: "studio-fab" },
+      fab.add,
+      h("div", { class: "fab-sep" }),
+      fab.move,
+      fab.scale,
+      fab.rotate,
+      fab.dup,
+      fab.del,
+      fab.props,
+      fab.focus,
+      h("div", { class: "fab-sep" }),
+      fab.undo,
+    );
+    function updateFab() {
+      for (const b of [fab.move, fab.scale, fab.rotate, fab.dup, fab.del, fab.focus]) (b as HTMLButtonElement).disabled = !selected;
+      fab.move.classList.toggle("on", !!selected && tool === "move");
+      fab.scale.classList.toggle("on", !!selected && tool === "scale");
     }
 
     const hintBar = h("div", { class: "studio-hint" });
-    viewport.append(hintBar);
+    viewport.append(hintBar, fabBar);
     el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
     engine.resize();
 

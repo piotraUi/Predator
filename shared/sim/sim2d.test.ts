@@ -72,3 +72,28 @@ test("Ludzik 4: mapa multiplayer - przycisk otwiera bramy dla wszystkich, monety
   assert.equal(hidden.length, 1, "moneta znika także u gracza a");
   sim.dispose();
 });
+
+test("Ludzik 4: na mapie multiplayer każdy wybiera swoją postać", { skip: !hasGame }, () => {
+  const { sim, w, lvl, last } = setup();
+  const mp = lvl("Multiplayer");
+  const name = (id: string) => w.characters.find((c) => c.id === id)!.name;
+  const mpChar = (n: string) => mp.characters!.find((id) => name(id) === n)!;
+  assert.deepEqual(mp.characters!.map(name), ["Ludzik", "Pies", "Nero"]);
+  sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: false });
+  sim.join("b", { userId: 2, username: "Bartek", avatar: {} as never, isOwner: false });
+  // Bartek gra Psem w zwykłych poziomach - na mapie też dostaje Psa
+  sim.handle("b", "char", w.characters.find((c) => c.name === "Pies" && !c.npc)!.id);
+  for (const sid of ["a", "b"]) sim.handle(sid, "goto", mp.id);
+  assert.equal((last("a", "level") as { character: string }).character, mpChar("Ludzik"));
+  assert.equal((last("b", "level") as { character: string }).character, mpChar("Pies"));
+  // Ania zmienia postać na mapie na Nero
+  sim.handle("a", "char", mpChar("Nero"));
+  assert.equal((last("a", "cmd") as { character: string }).character, mpChar("Nero"));
+  sim.tick();
+  const seen = (last("b", "players") as { sid: string; character: string }[] | undefined)?.find((p) => p.sid === "a");
+  if (seen) assert.equal(seen.character, mpChar("Nero"));
+  // postać spoza listy mapy (duży Ludzik) nie zmienia wyglądu na mapie
+  sim.handle("a", "char", w.characters.find((c) => c.name === "Ludzik" && !c.npc)!.id);
+  assert.equal((last("a", "cmd") as { character: string }).character, mpChar("Nero"));
+  sim.dispose();
+});

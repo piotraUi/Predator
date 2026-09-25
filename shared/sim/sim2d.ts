@@ -66,6 +66,8 @@ interface PlayerState extends NetPlayer2D {
   lastChat: number;
   /** postać wybrana przez gracza (poziom może ją nadpisać) */
   chosen: string;
+  /** postać wybrana na poziomach z własną listą postaci (id poziomu -> postać) */
+  levelChoice: Map<string, string>;
   /** postać ustawiona skryptem */
   scripted: string | null;
   checkpoint: boolean;
@@ -184,7 +186,16 @@ export class Sim2D {
 
   private charFor(p: PlayerState): Character2D | undefined {
     const s = this.levels.get(p.level);
-    const id = p.scripted ?? s?.level.character ?? p.chosen;
+    const list = s?.level.characters;
+    // poziom z własną listą postaci: wybór gracza na tym poziomie, a na start pierwsza z listy
+    let levelPick: string | null = null;
+    if (list?.length) {
+      const own = p.levelChoice.get(p.level);
+      // bez wyboru: postać o tej samej nazwie co wybrana w grze (np. Pies -> Pies), inaczej pierwsza z listy
+      const same = this.chars.get(p.chosen)?.name;
+      levelPick = own && list.includes(own) ? own : (list.find((id) => this.chars.get(id)?.name === same) ?? list[0]);
+    }
+    const id = p.scripted ?? s?.level.character ?? levelPick ?? p.chosen;
     return this.chars.get(id) ?? this.w.characters[0];
   }
 
@@ -235,6 +246,7 @@ export class Sim2D {
       level: start.id,
       character: "",
       chosen: this.w.characters.find((c) => !c.npc)?.id ?? this.w.characters[0]?.id ?? "",
+      levelChoice: new Map(),
       scripted: null,
       x: 0,
       y: 0,
@@ -453,8 +465,11 @@ export class Sim2D {
   }
 
   private onChooseCharacter(p: PlayerState, msg: unknown) {
-    if (typeof msg !== "string" || !this.chars.has(msg) || this.chars.get(msg)?.npc) return;
-    p.chosen = msg;
+    if (typeof msg !== "string" || !this.chars.has(msg)) return;
+    const list = this.levels.get(p.level)?.level.characters;
+    if (list?.length && list.includes(msg)) p.levelChoice.set(p.level, msg);
+    else if (this.chars.get(msg)?.npc) return;
+    else p.chosen = msg;
     const ch = this.charFor(p);
     p.character = ch?.id ?? "";
     this.levelState(p.level).playersDirty = true;

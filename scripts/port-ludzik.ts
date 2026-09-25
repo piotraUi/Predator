@@ -87,6 +87,7 @@ L2.ambient = "#808080";
 Object.assign(MP, { name: "Multiplayer", zoom: 3, background: "#4a90e2", stackPlayers: true, selectable: true, killY: 1200 });
 // miejsca startu graczy 1-3 (w GDevelopie to byli gracze Player1..3)
 const mpPlayers = ["Player1", "Player2", "Player3"].map((n) => O(n, "Multiplayergame"));
+const MP_NAMES = ["Ludzik", "Pies", "Nero"];
 for (const i of [...MP.instances]) {
   const idx = mpPlayers.findIndex((o) => o.id === i.obj);
   if (idx < 0) continue;
@@ -100,19 +101,19 @@ const anims = (extra: Partial<Character2D["anims"]> = {}): Character2D["anims"] 
   idle: "Idle", walk: "Chodzenie", run: "Bieganie", jump: "Skok", fall: "Spadanie1", climb: "Wspinanie", dead: "Umieranie", up: "Gora", down: "Dol", ...extra,
 });
 const petNpc: Character2D = { id: newId2d(), name: "Pies (towarzysz)", obj: O("Player_Pies_NPC").id, w: 50, h: 50, anims: anims(), npc: true };
-const mpChar: Character2D = {
-  id: newId2d(), name: "Gracz (multiplayer)", obj: mpPlayers[0].id, w: mpPlayers[0].w, h: mpPlayers[0].h, npc: true,
-  anims: { idle: "Idle", walk: "Run", jump: "Jump", fall: "Fall", climb: "Climb", dead: "Death" },
-};
+// na mapie multiplayer każdy wybiera postać w menu (☰): gracze 1-3 z GDevelopa to Ludzik, Pies i Nero
+// (npc: true = nie ma ich na liście w zwykłych poziomach)
+const mpAnims = { idle: "Idle", walk: "Run", jump: "Jump", fall: "Fall", climb: "Climb", dead: "Death" };
+const mpChars: Character2D[] = MP_NAMES.map((name, i) => ({ id: newId2d(), name, obj: mpPlayers[i].id, w: mpPlayers[i].w, h: mpPlayers[i].h, npc: true, anims: mpAnims }));
 w.characters = [
   { id: newId2d(), name: "Ludzik i Pies", obj: ludzik.id, w: 50, h: 50, anims: anims(), companion: petNpc.id },
   { id: newId2d(), name: "Ludzik", obj: ludzik.id, w: 50, h: 50, anims: anims() },
   { id: newId2d(), name: "Pies", obj: O("Player_Pies").id, w: 50, h: 50, anims: anims() },
   { id: newId2d(), name: "Nero", obj: O("Player_Nero").id, w: 50, h: 50, anims: anims() },
   petNpc,
-  mpChar,
+  ...mpChars,
 ];
-MP.character = mpChar.id;
+MP.characters = mpChars.map((c) => c.id);
 w.startLevel = L1.id;
 
 // ---------- dźwięki ----------
