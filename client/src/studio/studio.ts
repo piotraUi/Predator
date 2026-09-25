@@ -191,6 +191,22 @@ export function studioScreen(
     const onLookUp = (e: PointerEvent) => {
       if (looking === e.pointerId) looking = null;
     };
+    // prędkość lotu kamerą (WASD) - nie zależy od przybliżenia; prawy przycisk + kółko ją zmienia (jak w Roblox Studio)
+    let flySpeed = 50;
+    const speedTip = h("div", { class: "studio-speed hidden" });
+    let speedTipTimer = 0;
+    const onWheelCapture = (e: WheelEvent) => {
+      if (looking === null) return; // bez prawego przycisku kółko przybliża
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      flySpeed = Math.min(800, Math.max(5, flySpeed * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+      speedTip.textContent = `🏃 Prędkość kamery: ${Math.round(flySpeed)}`;
+      speedTip.classList.remove("hidden");
+      clearTimeout(speedTipTimer);
+      speedTipTimer = window.setTimeout(() => speedTip.classList.add("hidden"), 1200);
+    };
+    canvas.addEventListener("wheel", onWheelCapture, { capture: true, passive: false });
+    cleanups.push(() => canvas.removeEventListener("wheel", onWheelCapture, { capture: true }));
     canvas.addEventListener("pointerdown", onLookDown);
     canvas.addEventListener("pointermove", onLookMove);
     canvas.addEventListener("pointerup", onLookUp);
@@ -334,6 +350,7 @@ export function studioScreen(
             k("Prawy przycisk", "rozglądanie"),
             k("WASD", "lot"),
             k("Kółko", "zoom"),
+            k("Prawy + kółko", "prędkość"),
           ]
         : tool === "move"
           ? [[selected.group ? "📦 Model - ciągnij strzałki, przesuwa się cały" : "✥ Ciągnij kolorowe strzałki, żeby przesunąć"], k("R", "obróć"), k("Ctrl+D", "kopia"), k("F", "pokaż"), k("Del", "usuń")]
@@ -912,7 +929,7 @@ export function studioScreen(
     }
 
     const hintBar = h("div", { class: "studio-hint" });
-    viewport.append(hintBar, fabBar);
+    viewport.append(hintBar, fabBar, speedTip);
     el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
     engine.resize();
 
@@ -1518,7 +1535,7 @@ export function studioScreen(
     scene.onBeforeRenderObservable.add(() => {
       if (keys.size === 0) return;
       const dt = engine.getDeltaTime() / 1000;
-      const speed = Math.max(20, camera.radius) * dt;
+      const speed = flySpeed * (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 2.5 : 1) * dt;
       // W/S lecą dokładnie tam, gdzie patrzy kamera (też w górę i w dół), jak w Roblox Studio
       const f = camera.target.subtract(camera.position).normalize();
       const l = Math.hypot(f.x, f.z) || 1;

@@ -6,6 +6,8 @@ const root = path.resolve(here, "../..");
 
 /** Ustawienia serwera - można zmienić zmiennymi środowiskowymi. */
 export const config = {
+  /** główny folder projektu */
+  root,
   port: Number(process.env.PORT ?? 2567),
   host: process.env.HOST ?? "0.0.0.0",
   dataDir: path.resolve(process.env.DATA_DIR ?? path.join(root, "data")),

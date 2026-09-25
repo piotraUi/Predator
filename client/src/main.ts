@@ -1,5 +1,5 @@
 import "./style.css";
-import { api, getServerUrl, getToken, needsServerAddress, setToken } from "./api.ts";
+import { api, getServerUrl, getToken, needsServerAddress, pingServer, setToken } from "./api.ts";
 import { session } from "./state.ts";
 import { authScreen } from "./ui/auth.ts";
 import { h, logo, toast } from "./ui/dom.ts";
@@ -121,6 +121,62 @@ function openGameFile(f: OpenedFile) {
 }
 desktop?.onFileOpened((f) => openGameFile(f));
 
+/** Aplikacja ma starszą wersję niż serwer - napis na górze (na razie: poproś twórcę o aktualizację) */
+function checkVersion(serverHash: string) {
+  if (!__APP_MODE__ || !serverHash || serverHash === __CLIENT_HASH__) return;
+  try {
+    if (sessionStorage.getItem("predator.updateHidden") === serverHash) return;
+  } catch {
+    /* brak */
+  }
+  document.querySelector(".update-banner")?.remove();
+  const bar = h(
+    "div",
+    { class: "update-banner" },
+    h("span", null, "🆕 Na serwerze jest nowsza wersja Predatora. Skontaktuj się z twórcą, żeby dostać aktualizację."),
+    h(
+      "button",
+      {
+        class: "icon-btn",
+        title: "Zamknij",
+        onClick: () => {
+          bar.remove();
+          try {
+            sessionStorage.setItem("predator.updateHidden", serverHash);
+          } catch {
+            /* brak */
+          }
+        },
+      },
+      "✕",
+    ),
+  );
+  document.body.append(bar);
+}
+
+/**
+ * Pilnowanie połączenia (aplikacja): gdy serwer przestanie odpowiadać, wracamy do logowania
+ * (token zostaje - po powrocie serwera gracz wchodzi sam). W czasie gry nie przeszkadzamy.
+ */
+function watchConnection() {
+  if (!needsServerAddress) return;
+  let fails = 0;
+  setInterval(async () => {
+    if (!session.user || document.body.dataset.screen !== "home") return (fails = 0);
+    const pong = await pingServer(getServerUrl(), 5000);
+    if (pong) {
+      fails = 0;
+      checkVersion(pong.hash);
+      return;
+    }
+    if (++fails < 2 || document.body.dataset.screen !== "home") return;
+    fails = 0;
+    session.clear();
+    toast("Utracono połączenie z serwerem", "error");
+    go("auth", { unreachable: true });
+  }, 10_000);
+}
+
 async function boot() {
   const loading = loadingScreen("Predator", true);
   root.append(loading.el);
@@ -130,15 +186,23 @@ async function boot() {
     if (getToken() && getServerUrl()) api.me().then(({ user }) => session.set(user)).catch(() => {});
     return;
   }
-  if (!getToken() || (needsServerAddress && !getServerUrl())) return go("auth");
+  watchConnection();
   try {
+    // aplikacja: najpierw sprawdzamy, czy serwer odpowiada (domyślnie serwer Predator)
+    if (needsServerAddress) {
+      const pong = await pingServer(getServerUrl(), 5000);
+      if (!pong) return go("auth", { unreachable: true });
+      checkVersion(pong.hash);
+    }
+    if (!getToken()) return go("auth");
     const { user } = await api.me();
     session.set(user);
     const tab = location.hash.slice(1);
     go("home", { tab });
   } catch (e) {
-    if ((e as { status?: number }).status === 401) setToken(null);
-    go("auth");
+    const status = (e as { status?: number }).status;
+    if (status === 401) setToken(null);
+    go("auth", status === 0 ? { unreachable: true } : {});
   } finally {
     loading.done();
   }

@@ -18,6 +18,7 @@ import { admin } from "./admin.ts";
 import { social } from "./socialApi.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
 import { config } from "./config.ts";
+import { sourceHash } from "../../shared/sourceHash.ts";
 import { users, worlds } from "./db.ts";
 import { WorldRoom } from "./rooms/WorldRoom.ts";
 import { GAME_CREATORS, giveGamesToCreator } from "./creators.ts";
@@ -32,6 +33,9 @@ app.use("/api/admin", admin);
 app.use("/api", api);
 app.use("/api", social);
 app.get("/health", (_req, res) => res.json({ ok: true, name: "Predator" }));
+// wersja gry na serwerze - aplikacje porównują ją ze swoją
+const SERVER_HASH = sourceHash(config.root);
+app.get("/api/version", (_req, res) => res.json({ name: "Predator", hash: SERVER_HASH }));
 // muzyka i dźwięki przykładowych gier (za duże, żeby trzymać je w danych gry)
 app.use("/game-assets", express.static(path.join(config.assetsDir, "games"), { maxAge: "7d", fallthrough: false }));
 

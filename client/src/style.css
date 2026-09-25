@@ -1224,3 +1224,16 @@ body:is([data-screen="auth"], [data-screen="offline"]) .auth .btn { white-space:
   .paint-title { display: none; }
 }
 .paint-top .muted { white-space: nowrap; }
+.studio-speed { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); padding: 8px 16px; border-radius: 12px; background: #000b;
+  color: #fff; font-weight: 700; pointer-events: none; z-index: 7; }
+
+/* logowanie: stan połączenia z serwerem, napis o nowszej wersji */
+.auth-status { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--bg3); }
+.auth-status:empty { display: none; }
+.auth-status.ok { background: #173f2a; color: #7ee2a8; }
+.auth-status.bad { background: #3f1a1d; color: #ffb3b8; }
+.auth-status.wait { color: var(--muted); }
+.update-banner { position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 500; display: flex; align-items: center; gap: 8px;
+  max-width: calc(100% - 16px); padding: 8px 8px 8px 14px; border-radius: 12px; background: #2b2150; color: #fff; font-size: 14px;
+  box-shadow: 0 8px 24px #0008; border: 1px solid #6a5acd; }
+.update-banner .icon-btn { color: #fff; }

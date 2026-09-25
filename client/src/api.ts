@@ -35,9 +35,11 @@ const write = (k: string, v: string | null) => {
 
 /** W aplikacji (exe/APK/iOS) gracz wpisuje adres serwera. W przeglądarce to adres strony. */
 export const needsServerAddress = __APP_MODE__;
+/** serwer, z którym aplikacja łączy się sama przy starcie */
+export const DEFAULT_SERVER = "http://93.105.244.219:2567";
 
 export function getServerUrl(): string {
-  if (__APP_MODE__) return read(LS_SERVER) ?? "";
+  if (__APP_MODE__) return read(LS_SERVER) || DEFAULT_SERVER;
   if (import.meta.env.DEV) return `${location.protocol}//${location.hostname}:2567`;
   return location.origin;
 }
@@ -51,6 +53,27 @@ export function setServerUrl(url: string) {
 }
 
 export const wsUrl = () => getServerUrl().replace(/^http/, "ws");
+
+/** Czy serwer odpowiada (krótki limit czasu) - zwraca jego wersję albo null */
+export async function pingServer(url = getServerUrl(), ms = 5000): Promise<{ hash: string } | null> {
+  if (!url) return null;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url + "/api/version", { signal: ctrl.signal, cache: "no-store" });
+    if (!r.ok) {
+      // starszy serwer bez /api/version - ale żyje
+      const h = await fetch(url + "/health", { signal: ctrl.signal, cache: "no-store" }).catch(() => null);
+      return h?.ok ? { hash: "" } : null;
+    }
+    const j = (await r.json()) as { hash?: string };
+    return { hash: j.hash ?? "" };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
 
 export const getToken = () => read(LS_TOKEN);
 export const setToken = (t: string | null) => write(LS_TOKEN, t);

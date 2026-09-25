@@ -550,6 +550,7 @@ export function openGuide(kind: "3d" | "2d") {
     ["Prawy przycisk myszy", "rozglądanie się"],
     ["W A S D, Q E", "lot kamerą"],
     ["Kółko myszy", "przybliżanie"],
+    ["Prawy przycisk + kółko", "prędkość lotu kamery (Shift = szybciej)"],
     ["F", "pokaż wybrany klocek"],
     ["Ctrl+D", "kopia"],
     ["Delete", "usuń"],
