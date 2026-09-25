@@ -199,6 +199,20 @@ export class LevelView {
   }
 
   private drawInst(ctx: CanvasRenderingContext2D, W: number, H: number, cam: Camera2D, i: Inst2D, t: number, editor = false, world = true) {
+    if (!i.angle) return this.drawInstFlat(ctx, W, H, cam, i, t, editor, world);
+    // obrót wokół środka obiektu (np. latarnie w GDevelopie obrócone o 90°)
+    const p = this.pos(i);
+    const r = this.rect(W, H, cam, p.x, p.y, i.w, i.h);
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((i.angle * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+    this.drawInstFlat(ctx, W, H, cam, i, t, editor, world);
+    ctx.restore();
+  }
+
+  private drawInstFlat(ctx: CanvasRenderingContext2D, W: number, H: number, cam: Camera2D, i: Inst2D, t: number, editor = false, world = true) {
     const o = this.objs.get(i.obj);
     if (!o || o.kind === "light") return;
     if (this.isHidden(i, o, editor)) return;

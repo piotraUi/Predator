@@ -276,6 +276,7 @@ export function importGDevelop(files: Map<string, Uint8Array>, opts: { scenes?: 
         id: newId2d(), obj: o.id, x: i.x - (org ? org[0] * w : 0), y: i.y - (org ? org[1] * hh : 0), w, h: hh, z: i.zOrder ?? 0, layer: layerKind(i.layer ?? ""),
       };
       if (i.flippedX) inst.flip = true;
+      if (i.angle) inst.angle = Number(i.angle);
       if (inst.layer === "bg") inst.parallax = 0;
       const key = (i.initialVariables ?? []).find((v: Json) => /^(key|klucz)$/i.test(v.name));
       if (key && Number.isFinite(Number(key.value))) inst.key = Number(key.value);

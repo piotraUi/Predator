@@ -97,3 +97,27 @@ test("Ludzik 4: na mapie multiplayer każdy wybiera swoją postać", { skip: !ha
   assert.equal((last("a", "cmd") as { character: string }).character, mpChar("Nero"));
   sim.dispose();
 });
+
+test("Ludzik 4: potwór ginie na płonącej platformie i wraca po chwili", { skip: !hasGame }, () => {
+  const { sim, w, lvl, objId, sent } = setup();
+  const l1 = lvl("Level 1");
+  const monster = l1.instances.find((i) => i.obj === objId("Potwor"))!;
+  const fire = l1.instances.find((i) => i.obj === objId("Flsmrplatforma"))!;
+  // płonąca platforma prosto pod potworem
+  Object.assign(fire, { x: monster.x - 200, y: monster.y + monster.h, w: 400, h: 20 });
+  void w;
+  const realNow = Date.now;
+  let clock = realNow();
+  Date.now = () => clock;
+  try {
+    sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: false });
+    for (let t = 0; t < 40; t++) ((clock += 50), sim.tick());
+    const last = () => sent.filter((m) => m.type === "enemies").at(-1)?.msg as { id: string; dead?: boolean }[];
+    assert.equal(last().find((e) => e.id === monster.id)?.dead, true, "potwór zginął w ogniu");
+    for (let t = 0; t < 20 * 13; t++) ((clock += 50), sim.tick());
+    assert.ok(last().some((e) => e.id === monster.id), "wrócił po chwili");
+  } finally {
+    Date.now = realNow;
+    sim.dispose();
+  }
+});

@@ -96,6 +96,7 @@ function sanitizeInst(raw: unknown, objIds: Set<string>): Inst2D | null {
   };
   if (typeof i.name === "string" && i.name.trim()) out.name = i.name.trim().slice(0, 40);
   if (i.flip === true) out.flip = true;
+  if (typeof i.angle === "number" && Number.isFinite(i.angle) && i.angle % 360 !== 0) out.angle = Math.round((((i.angle % 360) + 360) % 360) * 100) / 100;
   if (typeof i.anim === "string" && i.anim) out.anim = i.anim.slice(0, 40);
   if (i.key !== undefined) out.key = Math.round(num(i.key, -1e6, 1e6, 0));
   if (i.parallax !== undefined) out.parallax = num(i.parallax, 0, 1, 1);

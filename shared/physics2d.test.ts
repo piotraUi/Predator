@@ -70,3 +70,10 @@ test("maksymalna prędkość i duża prędkość nie przelatuje przez ścianę",
   for (let i = 0; i < 400; i++) stepBody(w, b, { ...NO_INPUT, right: true }, 1 / 20, P, 1000);
   assert.ok(b.box.x + b.box.w <= 1500.001, "zatrzymany na cienkiej ścianie");
 });
+
+test("drabina: na szczycie nie da się stać, bez wspinania spada się w dół", () => {
+  const w = new SolidWorld([solid(-100, 300, 1000, 32), solid(40, 100, 32, 200, "ladder")]);
+  const b = newBody({ x: 45, y: 40, w: 20, h: 30 });
+  run(w, b, 120);
+  assert.ok(b.box.y + b.box.h > 290, "spadł przez drabinę na ziemię: " + (b.box.y + b.box.h));
+});

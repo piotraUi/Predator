@@ -95,6 +95,8 @@ export interface Inst2D {
   /** bg = tło (rysowane pod spodem), hud = przyklejone do ekranu */
   layer: "bg" | "main" | "hud";
   flip?: boolean;
+  /** obrót w stopniach wokół środka (tylko wygląd, jak w GDevelopie) */
+  angle?: number;
   /** animacja początkowa */
   anim?: string;
   /** button / gate: klucz, który je łączy */
@@ -197,6 +199,8 @@ export interface Enemy2D {
   y: number;
   flip: boolean;
   anim?: string;
+  /** zginął (np. wszedł w ogień) - niewidoczny, wróci za chwilę */
+  dead?: boolean;
 }
 
 /** Zmiany stanu instancji na poziomie (skrypty, bramy, zebrane rzeczy) */

@@ -63,6 +63,8 @@ export function play2dScreen(
   const objs = new Map(w.objects.map((o) => [o.id, o]));
   const chars = new Map(w.characters.map((c) => [c.id, c]));
   const input = new Input(wrap);
+  // joystick jak krzyżak: pchnięcie w dół/górę nie rusza postaci w bok (patrzenie na beczce, drabiny)
+  input.joyFourWay = true;
   let disposed = false;
   let leaving = false;
   const back = () => go(params.back?.screen ?? "home", params.back?.params);
@@ -207,6 +209,8 @@ export function play2dScreen(
       v = { e, x: e.x, y: e.y, inst, obj };
       enemies.set(e.id, v);
     }
+    // wrócił po śmierci - od razu na swoim miejscu, bez przesuwania przez pół planszy
+    if (v.e.dead && !e.dead) snap = true;
     v.e = e;
     if (snap) {
       v.x = e.x;
@@ -569,6 +573,7 @@ export function play2dScreen(
       if (overlaps(box, instBox({ ...inst, x: p.x, y: p.y }, obj))) return true;
     }
     for (const v of enemies.values()) {
+      if (v.e.dead) continue;
       if (overlaps(box, instBox({ x: v.x, y: v.y, w: v.inst.w, h: v.inst.h, flip: v.e.flip }, v.obj))) return true;
     }
     return false;
@@ -736,6 +741,7 @@ export function play2dScreen(
     }
     const ents: Entity2D[] = [];
     for (const v of enemies.values()) {
+      if (v.e.dead) continue;
       ents.push({ obj: v.obj, x: v.x, y: v.y, w: v.inst.w, h: v.inst.h, flip: v.e.flip, anim: view.animOf(v.inst, v.obj)?.name ?? "", animStart: 0 });
     }
     for (const r of remotes.values()) {

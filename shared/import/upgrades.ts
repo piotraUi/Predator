@@ -55,3 +55,31 @@ export function upgradeLudzikCharacters(stored: WorldData, fresh: WorldData): Wo
   if (old && !out.levels.some((l) => l.character === old) && !list.includes(old)) out.characters = out.characters.filter((c) => c.id !== old);
   return { ...stored, world2d: out };
 }
+
+/**
+ * Obrót obiektów (np. latarnie w Level 1 Cz2 są w GDevelopie obrócone o 90°) - starsze zapisy go nie miały.
+ * Szuka tego samego obiektu w tym samym miejscu i dopisuje mu kąt. Zwraca null, gdy nic nie trzeba zmieniać.
+ */
+export function upgradeAngles(stored: WorldData, fresh: WorldData): WorldData | null {
+  const w = stored.world2d;
+  const f = fresh.world2d;
+  if (!w || !f) return null;
+  const freshObj = new Map(f.objects.map((o) => [o.id, o.name]));
+  const storedObj = new Map(w.objects.map((o) => [o.id, o.name]));
+  let out: typeof w | null = null;
+  for (const fl of f.levels) {
+    const rotated = fl.instances.filter((i) => i.angle);
+    if (!rotated.length) continue;
+    const li = w.levels.findIndex((l) => l.name === fl.name);
+    if (li < 0) continue;
+    for (const fi of rotated) {
+      const name = freshObj.get(fi.obj);
+      const lvl = (out ?? w).levels[li];
+      const idx = lvl.instances.findIndex((i) => !i.angle && storedObj.get(i.obj) === name && Math.abs(i.x - fi.x) < 0.5 && Math.abs(i.y - fi.y) < 0.5);
+      if (idx < 0) continue;
+      out ??= structuredClone(w);
+      out.levels[li].instances[idx].angle = fi.angle;
+    }
+  }
+  return out ? { ...stored, world2d: out } : null;
+}

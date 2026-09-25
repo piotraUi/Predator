@@ -73,6 +73,9 @@ interface PlayerState extends NetPlayer2D {
   checkpoint: boolean;
 }
 
+/** po ilu ms potwór, który zginął w pułapce, wraca na swoje miejsce */
+const ENEMY_RESPAWN_MS = 12_000;
+
 interface EnemyState {
   id: string;
   inst: Inst2D;
@@ -82,6 +85,8 @@ interface EnemyState {
   home: Box;
   inZone: boolean;
   lastSent: string;
+  /** zginął w pułapce - wraca na swoje miejsce po tym czasie (ms, Date.now) */
+  deadUntil: number;
 }
 
 interface LevelState {
@@ -165,7 +170,7 @@ export class Sim2D {
     if (o.solid !== "none") s.solids.add({ box, type: o.solid, obj: o.id, id: i.id });
     if (o.role === "enemy") {
       const body = newBody(box);
-      s.enemies.push({ id: i.id, inst: i, obj: o, body, flip: !!i.flip, home: { ...box }, inZone: false, lastSent: "" });
+      s.enemies.push({ id: i.id, inst: i, obj: o, body, flip: !!i.flip, home: { ...box }, inZone: false, lastSent: "", deadUntil: 0 });
     } else if (o.role !== "none" || o.kind === "sprite" || o.kind === "tiled") {
       // wszystko, czego można dotknąć (role albo skrypty onTouch)
       s.touchGrid.add({ box, type: "solid", obj: o.id, id: i.id });
@@ -383,7 +388,7 @@ export class Sim2D {
       const b = far ? box : { x: prev!.x + dx * t, y: prev!.y + dy * t, w: box.w, h: box.h };
       for (const hit of s.touchGrid.query(b)) out.add(hit.id);
       // potwory też można "dotknąć" (skrypty)
-      for (const e of s.enemies) if (overlaps(b, e.body.box)) out.add(e.id);
+      for (const e of s.enemies) if (!e.deadUntil && overlaps(b, e.body.box)) out.add(e.id);
     }
     return out;
   }
@@ -520,12 +525,27 @@ export class Sim2D {
   private enemyNet(e: EnemyState): Enemy2D {
     const [hx, , hw] = e.obj.hitbox;
     const fx = e.flip ? 1 - hx - hw : hx;
-    return { id: e.id, x: Math.round((e.body.box.x - fx * e.inst.w) * 10) / 10, y: Math.round((e.body.box.y - e.obj.hitbox[1] * e.inst.h) * 10) / 10, flip: e.flip };
+    return {
+      id: e.id,
+      x: Math.round((e.body.box.x - fx * e.inst.w) * 10) / 10,
+      y: Math.round((e.body.box.y - e.obj.hitbox[1] * e.inst.h) * 10) / 10,
+      flip: e.flip,
+      ...(e.deadUntil ? { dead: true } : {}),
+    };
   }
 
   private stepEnemies(s: LevelState, dt: number) {
     const p = this.w.physics;
+    const now = Date.now();
     for (const e of s.enemies) {
+      if (e.deadUntil) {
+        if (now < e.deadUntil) continue;
+        // wraca na swoje miejsce
+        e.deadUntil = 0;
+        e.body.box = { ...e.home };
+        e.body.vx = e.body.vy = e.body.fallV = e.body.jumpV = 0;
+        e.flip = !!e.inst.flip;
+      }
       const params = { ...p, maxSpeed: e.obj.speed ?? 100, jumpSpeed: e.obj.jump ?? 400, acceleration: 1500, deceleration: 1500, jumpSustain: 0.2, gravity: Math.max(p.gravity, 1000), maxFallSpeed: 700 };
       const b = e.body;
       // czujnik przed potworem: ściana = zawróć
@@ -537,16 +557,21 @@ export class Sim2D {
       let jump = false;
       let inZone = false;
       let hazard = false;
-      for (const t of s.touchGrid.query(b.box)) {
+      // stopy o piksel niżej: potwór stojący na płonącej platformie też jej dotyka
+      const feet = { x: b.box.x, y: b.box.y, w: b.box.w, h: b.box.h + 1 };
+      for (const t of s.touchGrid.query(feet)) {
         const o = this.objs.get(t.obj);
-        if (o?.role === "jumpzone") inZone = true;
-        if (o?.role === "hazard" && !s.inst.get(t.id)?.hidden) hazard = true;
+        if (o?.role === "jumpzone" && overlaps(b.box, t.box)) inZone = true;
+        if (o?.role === "hazard" && !s.inst.get(t.id)?.hidden && overlaps(feet, t.box)) hazard = true;
       }
       if (inZone && !e.inZone) jump = true;
       e.inZone = inZone;
       stepBody(s.solids, b, { ...NO_INPUT, left: e.flip, right: !e.flip, jump }, dt, params);
       if (jump) b.jumpWas = false;
-      if (hazard || (s.level.killY !== null && b.box.y > s.level.killY + 200)) {
+      if (hazard) {
+        // ginie w ogniu / na kolcach i wraca po chwili
+        e.deadUntil = now + ENEMY_RESPAWN_MS;
+      } else if (s.level.killY !== null && b.box.y > s.level.killY + 200) {
         b.box = { ...e.home };
         b.vx = b.vy = b.fallV = b.jumpV = 0;
         e.flip = !!e.inst.flip;

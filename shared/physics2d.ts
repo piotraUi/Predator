@@ -148,7 +148,8 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
   b.dropThrough = Math.max(0, b.dropThrough - dt);
 
   // --- drabina ---
-  const onLadderNow = overlapsType(world, b.box, "ladder");
+  // stopy na samym szczycie drabiny też się liczą (tam kończy się wspinanie)
+  const onLadderNow = overlapsType(world, { x: b.box.x, y: b.box.y, w: b.box.w, h: b.box.h + 0.5 }, "ladder");
   // stoi na szczycie drabiny i wciska "w dół" = schodzi po drabinie
   const topBelow = input.down && b.onFloor && overlapsType(world, { x: b.box.x + EPS, y: b.box.y + b.box.h, w: b.box.w - 2 * EPS, h: 2 }, "ladder");
   if (!onLadderNow && !topBelow) b.onLadder = false;
@@ -233,8 +234,8 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
     let move = dy;
     let hit: Solid | null = null;
     for (const s of world.query(sweep, tmp)) {
-      // na szczycie drabiny można stanąć (jak na platformie przenikalnej)
-      if (s.type === "ladder" && (b.onLadder || b.dropThrough > 0 || s.box.y < bottom - 1 || ladderAbove(world, s))) continue;
+      // drabina nigdy nie jest podłogą - można się po niej tylko wspinać (jak w GDevelopie)
+      if (s.type === "ladder") continue;
       if (s.type === "jumpthru" && (b.dropThrough > 0 || s.box.y < bottom - 1 || b.onLadder)) continue;
       if (s.type === "solid" && s.box.y < bottom - 1) continue; // już w środku
       const d = s.box.y - bottom;
@@ -248,6 +249,13 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
   } else if (dy < 0) {
     const sweep: Box = { x: b.box.x + EPS, y: b.box.y + dy, w: b.box.w - 2 * EPS, h: -dy };
     let move = dy;
+    if (b.onLadder) {
+      // wspinanie kończy się na szczycie drabiny (nogi zostają na drabinie) - dalej trzeba zejść w bok
+      let top = Infinity;
+      const feet = { x: b.box.x, y: b.box.y, w: b.box.w, h: b.box.h + 0.5 };
+      for (const s of world.query(feet, tmp)) if (s.type === "ladder" && overlaps(feet, s.box)) top = Math.min(top, s.box.y);
+      if (top < Infinity) move = Math.max(move, Math.min(0, top - (b.box.y + b.box.h)));
+    }
     for (const s of world.query(sweep, tmp)) {
       if (s.type !== "solid") continue;
       if (s.box.y + s.box.h > b.box.y + 1) continue; // już w środku
@@ -274,12 +282,6 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
   }
   if (!b.onFloor) b.floorObj = null;
   return jumped;
-}
-
-/** czy nad tą drabiną jest dalszy kawałek drabiny (wtedy to nie szczyt) */
-function ladderAbove(world: SolidWorld, s: Solid) {
-  for (const o of world.query({ x: s.box.x + EPS, y: s.box.y - 2, w: s.box.w - 2 * EPS, h: 2 }, [])) if (o !== s && o.type === "ladder" && o.box.y < s.box.y) return true;
-  return false;
 }
 
 function land(b: Body2D, s: Solid) {

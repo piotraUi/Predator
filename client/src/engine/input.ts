@@ -9,6 +9,8 @@ export class Input {
   enabled = true;
   private keys = new Set<string>();
   private joy = { x: 0, y: 0 };
+  /** joystick na ekranie działa jak krzyżak: liczy się tylko mocniejszy kierunek (gry 2D, jak w GDevelopie) */
+  joyFourWay = false;
   private cleanup: (() => void)[] = [];
   readonly touchUi: HTMLElement | null = null;
 
@@ -95,8 +97,13 @@ export class Input {
     const k = this.keys;
     let x = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
     let y = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
-    x += this.joy.x;
-    y += this.joy.y;
+    let jx = this.joy.x, jy = this.joy.y;
+    if (this.joyFourWay) {
+      if (Math.abs(jy) > Math.abs(jx)) jx = 0;
+      else jy = 0;
+    }
+    x += jx;
+    y += jy;
     const len = Math.hypot(x, y);
     if (len > 1) {
       x /= len;
