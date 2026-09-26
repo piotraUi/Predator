@@ -21,11 +21,17 @@ import { genreSelect, productEditor } from "../studio/productEditor.ts";
 import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
 import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
 import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
+import { Collab2D, type Change2D } from "./collab2d.ts";
+import type { Editor } from "../studio/collab.ts";
+import { openEditorsDialog } from "../studio/editorsDialog.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 
 interface Source {
   online: boolean;
+  worldId?: number;
+  /** twórca gry (współtwórca nie może publikować ani dodawać innych) */
+  owner?: boolean;
   published: boolean;
   save(meta: GameMeta, data: WorldData, published: boolean, thumbnail?: string): Promise<void>;
 }
@@ -101,6 +107,8 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         if (disposed) return;
         const src: Source = {
           online: true,
+          worldId,
+          owner: info.ownerId === session.user?.id,
           published: info.published,
           async save(meta, d, published, thumbnail) {
             const res = await api.saveWorld(worldId, { ...meta, published, data: d, thumbnail });
@@ -311,6 +319,12 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       [1, 4, 8, 16, 32].map((v) => h("option", { value: String(v), selected: v === grid }, v === 1 ? "Bez siatki" : `Siatka ${v}`)),
     );
     const brushInfo = h("span", { class: "tb-mode hidden" });
+    /** kto jeszcze edytuje + zarządzanie współtwórcami */
+    const editorsBtn = h("button", {
+      class: "tb-btn editors-btn",
+      title: "Współpraca - kto edytuje i kto może edytować",
+      onClick: () => src.worldId && openEditorsDialog(src.worldId, !!src.owner, exitScreen, "kolorowe kropki na planszy"),
+    });
     const toolbar = h(
       "div",
       { class: "studio-toolbar" },
@@ -330,6 +344,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         h("span", null, "Wyjdź"),
       ),
       saveBtn,
+      src.online ? editorsBtn : "",
       h("button", { class: "tb-btn play", onClick: () => test(), title: src.online ? "Zapisz i zagraj na serwerze" : "Zagraj bez serwera" }, "▶", h("span", null, "Testuj")),
       h("div", { class: "dd-wrap" }, h("button", { class: "tb-btn", onClick: (e: Event) => toggleMenu(fileMenu, e) }, "📁", h("span", null, "Plik")), fileMenu),
       h("span", { class: "tb-mode " + (src.online ? "on" : ""), title: src.online ? "Gra na serwerze" : "Gra z pliku - bez serwera" }, src.online ? "☁ serwer · 2D" : "📄 plik · 2D"),
@@ -1413,6 +1428,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           ctx.strokeRect(hx - HANDLE * dpr, hy - HANDLE * dpr, HANDLE * 2 * dpr, HANDLE * 2 * dpr);
         }
       }
+      drawEditors(W, H, dpr);
       // podgląd stawianego obiektu
       if (brush && hover) {
         const p = snapPt(hover.wx, hover.wy);
@@ -1422,6 +1438,46 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         ctx.setLineDash([6 * dpr, 4 * dpr]);
         ctx.strokeRect(r.x, r.y, r.w, r.h);
         ctx.setLineDash([]);
+      }
+    }
+    /** inni twórcy na tym poziomie: kropka z nickiem i ramka wokół tego, co zaznaczyli */
+    let lastFrame = performance.now();
+    function drawEditors(W: number, H: number, dpr: number) {
+      if (!collab) return;
+      const now = performance.now();
+      collab.animate((now - lastFrame) / 1000);
+      lastFrame = now;
+      for (const r of collab.remotes.values()) {
+        if (!r.seen || r.level !== level.id) continue;
+        if (r.sel) {
+          const i = level.instances.find((x) => x.id === r.sel);
+          if (i) {
+            const b = screenRect(i);
+            ctx.strokeStyle = r.color;
+            ctx.lineWidth = 2 * dpr;
+            ctx.setLineDash([5 * dpr, 3 * dpr]);
+            ctx.strokeRect(b.x - 2 * dpr, b.y - 2 * dpr, b.w + 4 * dpr, b.h + 4 * dpr);
+            ctx.setLineDash([]);
+          }
+        }
+        const x = (r.dx - cam.x) * cam.scale + W / 2;
+        const y = (r.dy - cam.y) * cam.scale + H / 2;
+        if (x < -50 * dpr || y < -50 * dpr || x > W + 50 * dpr || y > H + 50 * dpr) continue;
+        ctx.fillStyle = r.color;
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2 * dpr;
+        ctx.beginPath();
+        ctx.arc(x, y, 7 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = `bold ${12 * dpr}px system-ui`;
+        const tw = ctx.measureText(r.username).width;
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.beginPath();
+        ctx.roundRect(x + 10 * dpr, y - 22 * dpr, tw + 12 * dpr, 18 * dpr, 9 * dpr);
+        ctx.fill();
+        ctx.fillStyle = r.color;
+        ctx.fillText(r.username, x + 16 * dpr, y - 9 * dpr);
       }
     }
     // uchwyty rozmiaru większe pod palec
@@ -1678,6 +1734,50 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       window.removeEventListener("beforeunload", onBefore);
       cancelAnimationFrame(raf);
     });
+
+    // ---------- współpraca: inni twórcy tej gry na żywo ----------
+    function applyRemote(c: Change2D) {
+      for (const a of c.assets) assets.add(a);
+      const found = w.levels.find((l) => l.id === level.id);
+      if (!found) {
+        switchLevel(w.levels.find((l) => l.id === w.startLevel) ?? w.levels[0]);
+      } else {
+        if (selected && !level.instances.includes(selected)) selected = level.instances.find((i) => i.id === selected!.id) ?? null;
+        if (drag && (drag.kind === "move" || drag.kind === "resize") && !level.instances.includes(drag.inst)) drag = null;
+      }
+      if (editObj && !w.objects.includes(editObj)) editObj = objById(editObj.id) ?? null;
+      if (brush && !w.objects.includes(brush)) setBrush(objById(brush.id) ?? null);
+      view.refreshObjects();
+      view.invalidate();
+      renderLevels();
+      renderObjects();
+      renderCharacters();
+      renderSounds();
+      renderScripts();
+      // nie odświeżamy pól, w których ktoś właśnie pisze
+      if (!props.contains(document.activeElement)) renderProps();
+      updateFab();
+    }
+    let collab: Collab2D | null = null;
+    function renderEditors(list: Editor[]) {
+      editorsBtn.replaceChildren(
+        ...list.slice(0, 5).map((e) => h("span", { class: "ed-dot", style: `background:${e.color}`, title: e.username }, e.username.slice(0, 1).toUpperCase())),
+        h("span", null, list.length ? `${list.length + 1} w Studiu` : "Współpraca"),
+      );
+    }
+    renderEditors([]);
+    if (src.online && src.worldId && session.user) {
+      collab = new Collab2D({
+        worldId: src.worldId,
+        data,
+        cursor: () => ({ x: hover ? hover.wx : cam.x, y: hover ? hover.wy : cam.y, level: level.id, sel: selected?.id ?? null }),
+        onRemote: applyRemote,
+        onEditors: renderEditors,
+      });
+      cleanups.push(() => collab?.dispose());
+    }
+    if (localStorage.getItem("predator.debug"))
+      (window as unknown as { __studio2d: unknown }).__studio2d = { data, w, level: () => level, collab: () => collab, cam };
 
     renderKit();
     renderAll();

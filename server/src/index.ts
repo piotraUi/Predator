@@ -70,7 +70,7 @@ if (fs.existsSync(config.clientDist)) {
 }
 
 const server = http.createServer(app);
-const gameServer = new Server({ greet: false, transport: new WebSocketTransport({ server }) });
+const gameServer = new Server({ greet: false, transport: new WebSocketTransport({ server, maxPayload: 16 * 1024 * 1024 }) });
 gameServer.define("world", WorldRoom).filterBy(["worldId"]);
 // prywatne serwery - osobna nazwa, żeby zwykłe "Graj" nigdy do nich nie trafiło
 gameServer.define("private", WorldRoom).filterBy(["worldId", "privateCode"]);

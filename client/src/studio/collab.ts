@@ -83,11 +83,29 @@ export class Collab {
       this.room = room;
       room.onMessage("state", (m: { you: string; data: WorldData; editors: Editor[] }) => {
         this.me = m.you;
+        // stan z serwera (ktoś mógł edytować) + moje zmiany, których serwer jeszcze nie ma
+        // (np. po zerwaniu połączenia) - inaczej świeżo zrobiony teren albo klocki by zniknęły
+        const srv = m.data;
+        const pend = this.pendingChanges();
+        const merged: WorldData = { ...srv, parts: srv.parts.filter((p) => !pend.del.has(p.id)) };
+        const byId = new Map(merged.parts.map((p, i) => [p.id, i]));
+        for (const p of pend.parts) {
+          const i = byId.get(p.id);
+          if (i === undefined) merged.parts.push(p);
+          else merged.parts[i] = p;
+        }
+        const rec = merged as unknown as Record<string, unknown>;
+        for (const f of pend.fields) {
+          if (this.o.data[f] === undefined) delete rec[f];
+          else rec[f] = this.o.data[f];
+        }
+        if (JSON.stringify(merged.parts) !== JSON.stringify(this.o.data.parts) || FIELDS.some((f) => JSON.stringify(merged[f] ?? null) !== JSON.stringify(this.o.data[f] ?? null)))
+          this.o.onState(merged);
+        // uzgodnione = to, co ma serwer; różnice (moje zmiany) zaraz pójdą
+        this.sentParts = new Map(srv.parts.map((p) => [p.id, JSON.stringify(p)]));
+        this.sentFields = new Map(FIELDS.map((f) => [f, JSON.stringify(srv[f] ?? null)]));
         this.connected = true;
-        // ktoś już edytował (pokój miał zmiany) - bierzemy stan z serwera
-        if (JSON.stringify(m.data.parts) !== JSON.stringify(this.o.data.parts) || FIELDS.some((f) => JSON.stringify(m.data[f] ?? null) !== JSON.stringify(this.o.data[f] ?? null)))
-          this.o.onState(m.data);
-        this.baseline();
+        this.flush();
         for (const e of m.editors) if (e.sid !== this.me) this.addRemote(e);
         this.emitEditors(m.editors);
       });
@@ -122,6 +140,19 @@ export class Collab {
   private baseline() {
     this.sentParts = new Map(this.o.data.parts.map((p) => [p.id, JSON.stringify(p)]));
     this.sentFields = new Map(FIELDS.map((f) => [f, JSON.stringify(this.o.data[f] ?? null)]));
+  }
+
+  /** moje zmiany, których serwer jeszcze nie dostał */
+  private pendingChanges() {
+    const parts: Part[] = [];
+    const seen = new Set<string>();
+    for (const p of this.o.data.parts) {
+      seen.add(p.id);
+      if (this.sentParts.get(p.id) !== JSON.stringify(p)) parts.push(p);
+    }
+    const del = new Set([...this.sentParts.keys()].filter((id) => !seen.has(id)));
+    const fields = FIELDS.filter((f) => this.sentFields.get(f) !== JSON.stringify(this.o.data[f] ?? null));
+    return { parts, del, fields };
   }
 
   /** coś się zmieniło w Studiu - wysyłamy różnice (z małym opóźnieniem, żeby łączyć serie zmian) */

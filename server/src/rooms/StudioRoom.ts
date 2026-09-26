@@ -4,6 +4,7 @@
 import { Room, type Client } from "colyseus";
 import type { Part, WorldData } from "../../../shared/types.ts";
 import { sanitizeWorld } from "../../../shared/world.ts";
+import { applyOps2d, flatten2d } from "../../../shared/collab2d.ts";
 import { userFromToken } from "../auth.ts";
 import { canEdit, worlds, type UserRow } from "../db.ts";
 
@@ -35,11 +36,17 @@ export class StudioRoom extends Room {
     if (!w) throw new Error("Nie ma takiej gry");
     this.worldId = w.id;
     this.data = sanitizeWorld(JSON.parse(w.data));
-    if (this.data.mode === "2d") throw new Error("Wspólna edycja działa w Studiu 3D");
     this.maxClients = 11;
     this.autoDispose = true;
 
     this.onMessage("ops", (client, m: { parts?: unknown; del?: unknown; fields?: unknown }) => this.onOps(client, m));
+    this.onMessage("ops2d", (client, m: { set?: unknown }) => this.onOps2d(client, m));
+    this.onMessage("cursor2d", (client, m: { x?: unknown; y?: unknown; level?: unknown; sel?: unknown }) => {
+      const x = Number(m?.x), y = Number(m?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || typeof m.level !== "string") return;
+      const sel = typeof m.sel === "string" ? m.sel.slice(0, 40) : null;
+      this.broadcast("cursor2d", { sid: client.sessionId, x: Math.round(x), y: Math.round(y), level: m.level.slice(0, 40), sel }, { except: client });
+    });
     this.onMessage("cursor", (client, m: { p?: unknown; t?: unknown; sel?: unknown }) => {
       const nums = (v: unknown) => (Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x)) ? (v as number[]) : null);
       const p = nums(m?.p), t = nums(m?.t);
@@ -118,6 +125,26 @@ export class StudioRoom extends Room {
     if (!out.parts && !out.del && !out.fields) return;
     this.dirty = true;
     this.broadcast("ops", out, { except: client });
+  }
+
+  /** gra 2D: zmienione kawałki (obrazek, obiekt, poziom, instancja...) - klucz -> wartość albo null */
+  private onOps2d(client: Client, m: { set?: unknown }) {
+    if (this.data.mode !== "2d" || !m?.set || typeof m.set !== "object" || Array.isArray(m.set)) return;
+    const set: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(m.set as Record<string, unknown>).slice(0, 20000)) {
+      if (k.length > 200 || !/^(f:|world$|asset:|obj:|char:|level:|inst:)/.test(k)) continue;
+      if (v !== null && (typeof v !== "object" || Array.isArray(v)) && !k.startsWith("f:")) continue;
+      set[k] = v;
+    }
+    const keys = Object.keys(set);
+    if (!keys.length) return;
+    // czyścimy całą grę tak samo jak przy zapisie, a innym wysyłamy wyczyszczone kawałki
+    this.data = sanitizeWorld(applyOps2d(this.data, set));
+    const flat = flatten2d(this.data);
+    const out: Record<string, unknown> = {};
+    for (const k of keys) out[k] = flat.get(k) ?? null;
+    this.dirty = true;
+    this.broadcast("ops2d", { from: client.sessionId, set: out }, { except: client });
   }
 
   private save() {
