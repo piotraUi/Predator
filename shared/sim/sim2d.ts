@@ -73,6 +73,8 @@ interface PlayerState extends NetPlayer2D {
   /** postać ustawiona skryptem */
   scripted: string | null;
   checkpoint: boolean;
+  /** strażnik ruchu (ochrona przed oszustami) */
+  mv: { x: number; y: number; t: number; graceUntil: number; speed: number | null; jump: number | null; force: number; strikes: number[] };
 }
 
 /** po ilu ms potwór, który zginął w pułapce, wraca na swoje miejsce */
@@ -242,6 +244,7 @@ export class Sim2D {
     const sync = this.sync(p);
     p.x = sync.x;
     p.y = sync.y;
+    this.moveGrace(p, 2000);
     p.character = this.charFor(p)?.id ?? "";
     this.t.send(p.sid, "level", { ...sync, character: p.character });
     if (!silent) this.lua?.fire("level", p.sid, s.level.name);
@@ -274,6 +277,7 @@ export class Sim2D {
       petBox: null,
       lastChat: 0,
       checkpoint: false,
+      mv: { x: 0, y: 0, t: Date.now(), graceUntil: Date.now() + 3000, speed: null, jump: null, force: 0, strikes: [] },
     };
     this.players.set(sid, p);
     const s = this.levelState(start.id);
@@ -281,6 +285,7 @@ export class Sim2D {
     const sync = this.sync(p);
     p.x = sync.x;
     p.y = sync.y;
+    this.moveGrace(p, 2000);
     p.character = this.charFor(p)?.id ?? "";
     const init: Init2D = {
       you: sid,
@@ -360,6 +365,8 @@ export class Sim2D {
     const m = (msg ?? {}) as Record<string, unknown>;
     const x = finite(m.x), y = finite(m.y);
     if (x === undefined || y === undefined) return;
+    // ochrona przed oszustami: niemożliwy ruch = gracz wraca na ostatnią dobrą pozycję
+    if (!this.moveAllowed(p, x, y)) return;
     p.x = x;
     p.y = y;
     p.anim = typeof m.anim === "string" ? m.anim.slice(0, 40) : p.anim;
@@ -467,7 +474,49 @@ export class Sim2D {
     this.lua?.chat(p.sid, text);
   }
 
+  // ---------- strażnik ruchu ----------
+
+  private moveGrace(p: PlayerState, ms: number) {
+    Object.assign(p.mv, { x: p.x, y: p.y, t: Date.now(), graceUntil: Date.now() + ms });
+  }
+
+  /** prędkość w poziomie i w górę z dużym zapasem (skoki, trampoliny, siły ze skryptów) */
+  private moveAllowed(p: PlayerState, x: number, y: number): boolean {
+    const mv = p.mv;
+    const now = Date.now();
+    const accept = () => {
+      Object.assign(mv, { x, y, t: now });
+      return true;
+    };
+    if (now < mv.graceUntil) return accept();
+    const dt = Math.min(2, Math.max(0.05, (now - mv.t) / 1000));
+    const ph = this.w.physics;
+    const topDown = !!this.levels.get(p.level)?.level.topDown;
+    const speed = Math.max(mv.speed ?? ph.maxSpeed, ph.maxSpeed);
+    const allowH = (speed * 1.6 + 200 + Math.abs(mv.force)) * dt + 48;
+    const upSpeed = topDown ? speed : Math.max(mv.jump ?? ph.jumpSpeed, ph.jumpSpeed, ph.ladderSpeed) * 1.6 + 300;
+    const allowUp = upSpeed * dt + 64;
+    const dx = Math.abs(x - mv.x);
+    const up = mv.y - y; // w 2D y rośnie w dół
+    const down = y - mv.y;
+    // spadanie jest dozwolone (grawitacja), ale z góry: też chodzenie w dół
+    const allowDown = topDown ? allowUp : Infinity;
+    if (dx <= allowH && up <= allowUp && down <= allowDown) return accept();
+    const t = now;
+    mv.strikes = mv.strikes.filter((s) => t - s < 60_000);
+    mv.strikes.push(t);
+    mv.t = now;
+    // cofnięcie bez "ochrony po teleporcie" (inaczej oszust miałby chwilę swobody)
+    this.t.send(p.sid, "cmd", { teleport: { x: mv.x, y: mv.y } });
+    if (mv.strikes.length === 1) this.t.send(p.sid, "chat", { from: "", text: "⚠️ Serwer cofnął twój ruch (niemożliwy ruch)", system: true });
+    if (mv.strikes.length === 12) this.t.cheat?.(p.sid, "za szybki ruch / teleport (2D)", false);
+    if (mv.strikes.length >= 40) this.t.cheat?.(p.sid, "za szybki ruch / teleport (2D)", true);
+    return false;
+  }
+
   private onDied(p: PlayerState, msg: unknown) {
+    // po śmierci gracz wraca na checkpoint albo start
+    this.moveGrace(p, 4000);
     const m = (msg ?? {}) as Record<string, unknown>;
     const s = this.levelState(p.level);
     this.lua?.died(p.sid, "");
@@ -653,7 +702,15 @@ export class Sim2D {
   }
 
   private cmd(sid: string, c: Cmd2D) {
-    if (this.players.has(sid)) this.t.send(sid, "cmd", c);
+    const p = this.players.get(sid);
+    if (!p) return;
+    // strażnik ruchu wie o prędkości, skoku i teleportach ze skryptów
+    if (c.speed !== undefined) p.mv.speed = c.speed;
+    if (c.jumpSpeed !== undefined) p.mv.jump = c.jumpSpeed;
+    if (c.force !== undefined) p.mv.force = c.force;
+    if (c.autoWalk !== undefined) p.mv.force = Math.max(Math.abs(p.mv.force), Math.abs(c.autoWalk));
+    if (c.teleport || c.kill) Object.assign(p.mv, { graceUntil: Date.now() + 2000, t: Date.now() });
+    this.t.send(sid, "cmd", c);
   }
 
   /** instancje o nazwie (instancji albo obiektu) na poziomie (albo na wszystkich) */

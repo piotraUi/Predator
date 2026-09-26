@@ -6,7 +6,7 @@ import { findSkybox, SKYBOXES } from "../skybox.ts";
 import { GameShop } from "./shop.ts";
 import { TerrainGrid } from "../terrain.ts";
 import { PlayerDataStore, type GameStorage } from "./playerData.ts";
-import { CollisionWorld, rayBox, raycastParts } from "../physics.ts";
+import { CollisionWorld, rayBox, raycastParts, waterAt } from "../physics.ts";
 import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
 import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
@@ -25,6 +25,8 @@ export interface SimTransport {
   badge?(sid: string, name: string): void;
   /** zapis postępu graczy (saveData / loadData) */
   storage?: GameStorage;
+  /** wykryto oszukiwanie ruchem (kick = wyrzucić z gry) */
+  cheat?(sid: string, reason: string, kick: boolean): void;
 }
 
 export interface SimUser {
@@ -56,6 +58,24 @@ interface PlayerState extends NetPlayer {
   lastUse: Map<string, number>;
   /** siedzenie, na którym siedzi (id klocka) */
   seat: string | null;
+  /** strażnik ruchu: ostatnia sprawdzona pozycja, prędkość i skok ze skryptów, przyspieszenie, czas w powietrzu */
+  mv: MoveState;
+}
+
+interface MoveState {
+  x: number;
+  y: number;
+  z: number;
+  t: number;
+  walk: number;
+  jump: number;
+  boostUntil: number;
+  boostMult: number;
+  /** po teleporcie / odrodzeniu - każda pozycja jest dobra */
+  graceUntil: number;
+  airTime: number;
+  airStartY: number;
+  strikes: number[];
 }
 
 const finite = (v: unknown, min: number, max: number): number | undefined =>
@@ -121,6 +141,7 @@ export class GameSim {
       tools: this.starterTools(),
       lastUse: new Map(),
       seat: null,
+      mv: { ...spawn, t: Date.now(), walk: 16, jump: 50, boostUntil: 0, boostMult: 1, graceUntil: Date.now() + 3000, airTime: 0, airStartY: spawn.y, strikes: [] },
     };
     this.players.set(sid, p);
 
@@ -242,6 +263,8 @@ export class GameSim {
     const y = finite(v.y, -1000, LIMIT);
     const z = finite(v.z, -LIMIT, LIMIT);
     if (x === undefined || y === undefined || z === undefined) return;
+    // ochrona przed oszustami: niemożliwy ruch = gracz wraca na ostatnią dobrą pozycję
+    if (!this.moveAllowed(p, x, y, z)) return;
     p.x = x;
     p.y = y;
     p.z = z;
@@ -362,6 +385,80 @@ export class GameSim {
     this.broadcastHp(p);
   }
 
+  // ---------- strażnik ruchu (ochrona przed oszustami) ----------
+
+  /** kiedy skrypt ostatnio przesunął klocek (gracze stojący na ruchomych platformach jadą szybciej) */
+  private partMovedAt = new Map<string, number>();
+
+  /** teleport ze skryptu, odrodzenie - przez chwilę każda pozycja jest dobra */
+  private moveGrace(p: PlayerState, ms: number) {
+    Object.assign(p.mv, { x: p.x, y: p.y, z: p.z, t: Date.now(), graceUntil: Date.now() + ms, airTime: 0, airStartY: p.y });
+  }
+
+  /** czy ruch jest możliwy (prędkość, skok, latanie) - z dużym zapasem, żeby nie karać uczciwych graczy */
+  private moveAllowed(p: PlayerState, x: number, y: number, z: number): boolean {
+    const mv = p.mv;
+    const now = Date.now();
+    const accept = () => {
+      Object.assign(mv, { x, y, z, t: now });
+      return true;
+    };
+    if (p.dead || now < mv.graceUntil) return accept() && this.resetAir(p, y);
+    const dt = Math.min(2, Math.max(0.05, (now - mv.t) / 1000));
+    const seat = p.seat ? this.partsById.get(p.seat) : undefined;
+    // pod nogami: klocek / teren (albo woda, albo siedzenie)
+    const ground = raycastParts(this.collisions, x, y + 0.6, z, 0, -1, 0, 4);
+    const inWater = waterAt(this.collisions, x, y + 1.5, z) !== null;
+    const grounded = !!seat || inWater || !!ground;
+    // prędkość w poziomie
+    const speed = seat?.vehicle ? 95 : Math.max(mv.walk, 16) * (now < mv.boostUntil ? mv.boostMult : 1);
+    let allowH = (speed * 1.5 + 12) * dt + 6;
+    const movedPart = ground && ground.part.id !== "__terrain" ? this.partMovedAt.get(ground.part.id) : undefined;
+    if (movedPart && now - movedPart < 1500) allowH += 150 * dt + 20; // ruchoma platforma
+    // w górę: skok albo trampolina
+    const upSpeed = Math.max(mv.jump, this.hasBounce ? 110 : 0, 50);
+    let allowUp = upSpeed * 1.4 * dt + 6;
+    if (movedPart && now - movedPart < 1500) allowUp += 150 * dt + 20; // winda
+    const dh = Math.hypot(x - mv.x, z - mv.z);
+    const up = y - mv.y;
+    if (dh > allowH || up > allowUp) return this.moveViolation(p, dh > allowH ? `za szybki ruch (${dh.toFixed(0)} w ${dt.toFixed(2)} s)` : "za wysoki skok");
+    // latanie: długo w powietrzu i nie spada
+    if (grounded) this.resetAir(p, y);
+    else {
+      if (mv.airTime === 0) mv.airStartY = mv.y;
+      mv.airTime += dt;
+      const maxAir = ((2 * upSpeed) / Math.max(10, this.data.gravity)) * 1.6 + 1.5;
+      if (mv.airTime > maxAir && y > mv.airStartY - 1) return this.moveViolation(p, "latanie");
+    }
+    return accept();
+  }
+
+  private resetAir(p: PlayerState, y: number) {
+    p.mv.airTime = 0;
+    p.mv.airStartY = y;
+    return true;
+  }
+
+  private get hasBounce() {
+    return (this._hasBounce ??= this.data.parts.some((q) => q.kind === "bounce"));
+  }
+  private _hasBounce: boolean | undefined;
+
+  private moveViolation(p: PlayerState, reason: string): false {
+    const now = Date.now();
+    const mv = p.mv;
+    mv.strikes = mv.strikes.filter((t) => now - t < 60_000);
+    mv.strikes.push(now);
+    mv.airTime = 0;
+    mv.t = now;
+    // wraca na ostatnią dobrą pozycję
+    this.t.send(p.sid, "tp", { x: mv.x, y: mv.y, z: mv.z });
+    if (mv.strikes.length === 1) this.t.send(p.sid, "chat", { from: "", text: "⚠️ Serwer cofnął twój ruch (niemożliwy ruch)", system: true });
+    if (mv.strikes.length === 12) this.t.cheat?.(p.sid, reason, false);
+    if (mv.strikes.length >= 40) this.t.cheat?.(p.sid, reason, true);
+    return false;
+  }
+
   // ---------- siedzenia i pojazdy ----------
 
   /** kto siedzi na którym siedzeniu (id klocka -> gracz) */
@@ -439,6 +536,8 @@ export class GameSim {
   private onRespawned(sid: string) {
     const p = this.players.get(sid);
     if (!p) return;
+    // gracz pojawia się na spawnie - to nie teleport-oszustwo
+    this.moveGrace(p, 3000);
     p.dead = false;
     p.hp = p.maxHp;
     p.protectedUntil = Date.now() + SPAWN_PROTECTION_MS;
@@ -479,6 +578,7 @@ export class GameSim {
       this.heal(p, tool.heal);
     } else if (tool.type === "boost") {
       this.t.send(sid, "boost", { secs: tool.boost, mult: 1.8 });
+      Object.assign(p.mv, { boostUntil: Date.now() + (tool.boost ?? 0) * 1000 + 500, boostMult: 1.8 });
     } else {
       action = "swing";
     }
@@ -606,6 +706,7 @@ export class GameSim {
         const tz = finite(z, -LIMIT, LIMIT);
         if (!p || tx === undefined || ty === undefined || tz === undefined) return;
         Object.assign(p, { x: tx, y: ty, z: tz });
+        this.moveGrace(p, 1500);
         this.t.send(sid, "tp", { x: tx, y: ty, z: tz });
       },
       playerName: (sid) => player(sid)?.username ?? "",
@@ -621,8 +722,18 @@ export class GameSim {
         p.score = value;
         this.scoresDirty = true;
       },
-      setSpeed: (sid, speed) => this.t.send(sid, "stats", { speed: finite(speed, 0, 200) }),
-      setJump: (sid, jump) => this.t.send(sid, "stats", { jump: finite(jump, 0, 300) }),
+      setSpeed: (sid, speed) => {
+        const p = player(sid);
+        const v = finite(speed, 0, 200);
+        if (p && v !== undefined) p.mv.walk = v;
+        this.t.send(sid, "stats", { speed: v });
+      },
+      setJump: (sid, jump) => {
+        const p = player(sid);
+        const v = finite(jump, 0, 300);
+        if (p && v !== undefined) p.mv.jump = v;
+        this.t.send(sid, "stats", { jump: v });
+      },
       giveTool: (sid, name) => {
         const p = player(sid);
         const t = this.toolByName(name);
@@ -784,6 +895,7 @@ export class GameSim {
       if (typeof props.animId === "string") clean.animId = props.animId;
       if (Object.keys(clean).length === 0) continue;
       Object.assign(part, clean);
+      if (clean.x !== undefined || clean.y !== undefined || clean.z !== undefined) this.partMovedAt.set(part.id, Date.now());
       this.collisions.set(part);
       this.dirtyParts.set(part.id, { ...this.dirtyParts.get(part.id), ...clean });
     }

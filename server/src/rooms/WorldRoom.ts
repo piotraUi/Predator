@@ -74,6 +74,14 @@ export class WorldRoom extends Room {
           const j = this.joinedAt.get(sid);
           if (def && j) this.giveBadge(sid, j.userId, def);
         },
+        // oszukiwanie ruchem: zgłoszenie do administratora (od konta Predator), przy uporczywym - wyrzucenie z gry
+        cheat: (sid, reason, kick) => {
+          const j = this.joinedAt.get(sid);
+          const predator = users.byName("Predator");
+          if (j && predator && !reports.exists(predator.id, "user", j.userId))
+            reports.add(predator.id, "user", j.userId, "Oszukiwanie", `🤖 Automatyczne wykrycie w grze „${this.world.name}”: ${reason}.${kick ? " Gracz został wyrzucony z gry." : ""}`);
+          if (kick) this.clients.find((c) => c.sessionId === sid)?.leave(4000);
+        },
         // postęp graczy w tej grze zapisywany w bazie
         storage: {
           load: (userId) => (userId > 0 ? (gameData.load(world.id, userId) as Record<string, never>) : {}),
