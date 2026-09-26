@@ -4,7 +4,7 @@ import { newBody, NO_INPUT, SolidWorld, stepBody, stepTopDown, type Body2D, type
 import type { Cmd2D, Init2D, LevelSync } from "../../../shared/sim/sim2d.ts";
 import type { ChatMsg } from "../../../shared/types.ts";
 import type { Character2D, Enemy2D, Inst2D, InstState2D, Level2D, NetPlayer2D, Obj2D, World2D } from "../../../shared/types2d.ts";
-import { instBox, overlaps, type Box } from "../../../shared/world2d.ts";
+import { instBox, overlaps, SPRING_PUSH, type Box } from "../../../shared/world2d.ts";
 import { Input } from "../engine/input.ts";
 import type { GameConnection } from "../game/connection.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
@@ -77,6 +77,11 @@ export function play2dScreen(
   let level!: Level2D;
   let solids = new SolidWorld();
   let hazards: { inst: Inst2D; obj: Obj2D }[] = [];
+  let springs: { inst: Inst2D; obj: Obj2D }[] = [];
+  /** trampoliny, których gracz właśnie dotyka (wyrzucają raz na dotknięcie) */
+  const springTouch = new Set<string>();
+  /** animacja gracza po wyrzucie z trampoliny i do kiedy */
+  let springAnim: { name: string; until: number } | null = null;
   let pickups: { inst: Inst2D; obj: Obj2D }[] = [];
   let checkpoints: { inst: Inst2D; obj: Obj2D }[] = [];
   let me!: Actor;
@@ -142,6 +147,7 @@ export function play2dScreen(
   function rebuild() {
     const list: Solid[] = [];
     hazards = [];
+    springs = [];
     pickups = [];
     checkpoints = [];
     for (const i of allInst()) {
@@ -153,6 +159,7 @@ export function play2dScreen(
         list.push({ box: instBox({ ...i, x: p.x, y: p.y }, o), type: o.solid, obj: o.id, id: i.id });
       }
       if (o.role === "hazard") hazards.push({ inst: i, obj: o });
+      else if (o.role === "spring") springs.push({ inst: i, obj: o });
       else if (o.role === "pickup") pickups.push({ inst: i, obj: o });
       else if (o.role === "checkpoint") checkpoints.push({ inst: i, obj: o });
     }
@@ -372,6 +379,7 @@ export function play2dScreen(
   });
   conn.onMessage("inst", (m: { id: string; s: InstState2D }) => {
     view.state.set(m.id, { ...(view.state.get(m.id) ?? {}), ...m.s });
+    if (m.s.from) view.moves.set(m.id, performance.now());
     if ("hidden" in m.s || "open" in m.s || "x" in m.s || "y" in m.s) rebuild();
   });
   conn.onMessage("create", (i: Inst2D) => {
@@ -540,6 +548,7 @@ export function play2dScreen(
     const b = a.body;
     a.paused = false;
     if (isMe && playAnim && has(playAnim)) return playAnim;
+    if (isMe && springAnim && time < springAnim.until && has(springAnim.name)) return springAnim.name;
     if (b.onLadder) {
       a.paused = b.vy === 0 && b.vx === 0;
       return pick("climb");
@@ -573,12 +582,34 @@ export function play2dScreen(
       // od razu chowamy (serwer potwierdzi)
       if (obj.perPlayer) view.hiddenLocal.add(inst.id);
       else view.state.set(inst.id, { ...(view.state.get(inst.id) ?? {}), hidden: true });
+      if (obj.sound) assets.play(obj.sound);
       if (obj.coin) {
         if (time - lastCoin > 1) coinPitch = 0.8 + Math.random() * 0.2;
         assets.play(w.sounds.coin, { pitch: coinPitch, volume: 0.6 });
         coinPitch += 0.05 + Math.round(Math.random() * 2) * 0.025;
         lastCoin = time;
       }
+    }
+  }
+
+  /** trampolina: wyrzut na sekundę (jak siła w GDevelopie), raz na każde dotknięcie */
+  function touchSprings(b: Box) {
+    const box = { x: b.x - 0.5, y: b.y - 0.5, w: b.w + 1, h: b.h + 1.5 };
+    for (const { inst, obj } of springs) {
+      const p = view.pos(inst);
+      const on = !view.isHidden(inst, obj) && overlaps(box, instBox({ ...inst, x: p.x, y: p.y }, obj));
+      if (!on) {
+        springTouch.delete(inst.id);
+        continue;
+      }
+      if (springTouch.has(inst.id)) continue;
+      springTouch.add(inst.id);
+      const push = obj.push ?? SPRING_PUSH;
+      Object.assign(me.body, { pushX: push[0], pushY: push[1], pushT: 1 });
+      // wyrzut w górę przerywa skok i spadanie
+      if (push[1] < 0) Object.assign(me.body, { fallV: 0, jumpV: 0, jumping: false, onFloor: false });
+      if (obj.pushAnim) springAnim = { name: obj.pushAnim, until: time + 0.6 };
+      if (obj.sound) assets.play(obj.sound);
     }
   }
 
@@ -640,6 +671,7 @@ export function play2dScreen(
       setAnim(me, pickAnim(me, inp, true));
       const box = me.body.box;
       touchPickups(box);
+      touchSprings(box);
       for (const { inst, obj } of checkpoints) {
         if (overlaps(box, instBox(inst, obj))) {
           const was = checkpoint;
@@ -679,7 +711,7 @@ export function play2dScreen(
     const W = canvas.width, H = canvas.height;
     cam.scale = fitScale(W, H, level.zoom);
     const sp = spritePos(me);
-    const target = camLock ?? { x: sp.x + me.char.w / 2, y: sp.y + me.char.h / 2 };
+    const target = camLock ?? { x: level.cameraX ?? sp.x + me.char.w / 2, y: level.cameraY ?? sp.y + me.char.h / 2 };
     if (!camInit) {
       cam.x = target.x;
       cam.y = target.y;
@@ -803,6 +835,11 @@ export function play2dScreen(
         coinsLeft: view.coinsLeft(),
         insts: Object.fromEntries([...view.state.entries()].filter(([, x]) => x.anim)),
       }),
+      find: (name: string) =>
+        allInst()
+          .filter((i) => i.name === name || objs.get(i.obj)?.name === name)
+          .map((i) => ({ ...view.pos(i), w: i.w, h: i.h, hidden: view.state.get(i.id)?.hidden ?? false, anim: view.state.get(i.id)?.anim })),
+      body: () => ({ ...me.body.box, pushT: me.body.pushT, vy: me.body.vy, char: me.char.name }),
       teleport: (x: number, y: number) => {
         placeActor(me, x, y);
         if (pet) placeActor(pet, x, y);

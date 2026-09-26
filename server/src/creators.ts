@@ -5,6 +5,7 @@ import { users, worlds, type UserRow } from "./db.ts";
 /** nazwa gry -> nick twórcy */
 export const GAME_CREATORS: Record<string, string> = {
   "Ludzik 4": "Fadnmade",
+  "Ludzik 3 & Nero": "Fadnmade",
 };
 
 /** Konto, na którym serwer tworzy przykładowe gry */

@@ -92,10 +92,20 @@ if (fs.existsSync(path.join(config.gamesDir, "Ludzik 4.pgame")))
     fromFile("Ludzik 4.pgame"),
     "ludzik",
   ]);
-for (const m of MINIGAMES) demos.push([m.name, m.description, m.make, m.thumb]);
-// gry przeniesione z paczki GamesToadd (npm run port-games)
 /** skrót pliku gry - gdy się zmieni (nowa wersja), gra na koncie Predator jest podmieniana */
 const fileHashes = new Map<string, string>();
+if (fs.existsSync(path.join(config.gamesDir, "Ludzik 3 & Nero.pgame"))) {
+  // nowa wersja pliku (np. poprawiony port) podmienia grę, póki jest na koncie Predator
+  fileHashes.set("Ludzik 3 & Nero", crypto.createHash("sha1").update(fs.readFileSync(path.join(config.gamesDir, "Ludzik 3 & Nero.pgame"))).digest("hex"));
+  demos.push([
+    "Ludzik 3 & Nero",
+    "Platformówka 2D w stylu pixel-art: 10 poziomów z trampolinami, beczkami i lodem, lot przez kosmos i dwie walki z Gigantem. Graj jako Ludzik, Nero albo Pies!",
+    fromFile("Ludzik 3 & Nero.pgame"),
+    "ludzik3",
+  ]);
+}
+for (const m of MINIGAMES) demos.push([m.name, m.description, m.make, m.thumb]);
+// gry przeniesione z paczki GamesToadd (npm run port-games)
 for (const [file, thumb] of [["Tacos World", "tacos"], ["Tunnel Escape", "tunnel"], ["Spelling Bee", "spelling"]]) {
   const f = path.join(config.gamesDir, file + ".pgame");
   if (!fs.existsSync(f)) continue;
@@ -113,7 +123,7 @@ const versions: Record<string, string> = (() => {
 })();
 /** kategorie przykładowych gier */
 const DEMO_GENRES: Record<string, string> = {
-  "Tor przeszkód": "obby", Arena: "fight", "Predator City": "roleplay", "Ludzik 4": "platform",
+  "Tor przeszkód": "obby", Arena: "fight", "Predator City": "roleplay", "Ludzik 4": "platform", "Ludzik 3 & Nero": "platform",
   "Pizzeria Tycoon": "tycoon", Chowany: "minigames", "Wyścigi": "race", "Wieża Piekieł": "obby",
   "Tacos World": "adventure", "Tunnel Escape": "horror", "Spelling Bee": "puzzle",
 };
@@ -124,7 +134,9 @@ for (const [name, description, make, thumb] of demos) {
   const creator = GAME_CREATORS[name] ? users.byName(GAME_CREATORS[name]) : undefined;
   let id = worlds.byOwner(owner.id).find((w) => w.name === name)?.id ?? (creator && worlds.byOwner(creator.id).find((w) => w.name === name)?.id);
   if (!id) {
-    const data = { ...make(), badges: [welcomeBadge()] };
+    const made = make();
+    // odznaka za wejście + odznaki samej gry (np. za pokonanie bossa)
+    const data = { ...made, badges: [welcomeBadge(), ...(made.badges ?? [])] };
     id = worlds.create(owner.id, name, data, 30).id;
     worlds.update(id, { name, description, maxPlayers: 30, published: true, data });
     console.log(`Utworzono przykładową grę '${name}'`);
@@ -146,7 +158,9 @@ for (const [name, description, make, thumb] of demos) {
     const r = worlds.byId(id);
     if (r && r.owner_id === owner.id) {
       const fresh = make();
-      const badges = fresh.badges?.length ? fresh.badges : [welcomeBadge()];
+      // odznaka za wejście zostaje, nawet gdy gra ma własne (np. za pokonanie bossa)
+      const own = fresh.badges ?? [];
+      const badges = own.some((b) => b.trigger === "join") ? own : [welcomeBadge(), ...own];
       worlds.setData(id, sanitizeWorld({ ...fresh, badges }));
       console.log(`Zaktualizowano grę '${name}' do nowej wersji`);
     }

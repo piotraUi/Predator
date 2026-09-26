@@ -42,9 +42,10 @@ export type Solid2D = "none" | "solid" | "jumpthru" | "ladder";
  *  gate       - brama (zamknięta = ściana)
  *  spawn      - miejsce pojawienia się graczy
  *  respawn    - miejsce odrodzenia po śmierci (zamiast spawnu)
+ *  spring     - trampolina: wyrzuca gracza (siła push przez sekundę, jak w GDevelopie)
  */
 export type Role2D =
-  | "none" | "hazard" | "pickup" | "checkpoint" | "goal" | "enemy" | "jumpzone" | "button" | "gate" | "spawn" | "respawn";
+  | "none" | "hazard" | "pickup" | "checkpoint" | "goal" | "enemy" | "jumpzone" | "button" | "gate" | "spawn" | "respawn" | "spring";
 
 export interface Obj2D {
   id: string;
@@ -80,6 +81,12 @@ export interface Obj2D {
   font?: string;
   /** światło */
   radius?: number;
+  /** spring: siła wyrzutu [w prawo, w dół] w px/s (np. [0, -800] = w górę) */
+  push?: [number, number];
+  /** spring: animacja gracza przy wyrzucie */
+  pushAnim?: string;
+  /** dźwięk (id assetu) - np. trampolina, zebranie */
+  sound?: string;
 }
 
 export interface Inst2D {
@@ -130,6 +137,9 @@ export interface Level2D {
   selectable?: boolean;
   /** widok z góry (jak w grach RPG): bez grawitacji, ruch w 4 strony, ściany blokują ze wszystkich stron */
   topDown?: boolean;
+  /** kamera stoi w miejscu w poziomie / w pionie (środek widoku), zamiast iść za graczem */
+  cameraX?: number;
+  cameraY?: number;
 }
 
 /** Postać do grania: sprite i nazwy jego animacji */
@@ -214,4 +224,9 @@ export interface InstState2D {
   text?: string;
   /** brama otwarta */
   open?: boolean;
+  /** odbicie w poziomie */
+  flip?: boolean;
+  /** przesuwanie ze skryptu: skąd i w ile sekund jedzie do x, y */
+  from?: { x: number; y: number };
+  dur?: number;
 }

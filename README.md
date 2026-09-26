@@ -158,6 +158,24 @@ Twórcą gry jest **Fadnmade**. Jeśli konto o tym nicku już istnieje, serwer p
 
 Plik powstaje z oryginalnego zipa skryptem `npx tsx scripts/port-ludzik.ts game.zip`.
 
+### Ludzik 3 & Nero
+
+Druga gra Fadnmade (`games/Ludzik 3 & Nero.pgame`). Serwer też tworzy ją sam i przekazuje twórcy:
+
+- **Poziomy 1-10:** trampoliny, beczki, cylindry, lód, kolce i monety. Tabliczka „koniec” albo drzwi prowadzą dalej.
+- **Postacie:** Ludzik, Nero albo Pies do wyboru w menu (☰). W GDevelopie każdy poziom był trzy razy, tu jest raz.
+- **Walka z Gigantem:** trzeba przetrwać jego ataki. Dotknięcie Giganta zaczyna walkę od nowa.
+- **Lot przez kosmos:** widok z góry i kamienie do rozbijania.
+- **Druga walka:** po wygranej gracz dostaje odznakę „Pogromca Giganta”.
+
+Ruchy Giganta (czasy, przesunięcia, animacje, dźwięki) skrypt portu odczytuje prosto z kodu wyeksportowanej gry. Plik powstaje skryptem `npx tsx scripts/port-ludzik3.ts gra.zip`.
+
+Nowe rzeczy w silniku 2D, których używa ta gra:
+
+- zachowanie **Trampolina** (wyrzuca gracza z zadaną siłą przez sekundę, jak siły w GDevelopie);
+- `moveObject` / `flipObject` w Lua (płynne przesuwanie i odwracanie obiektów);
+- stała kamera w poziomie lub pionie na danym poziomie.
+
 ## Pliki gier .pgame i Studio bez serwera
 
 Gra (świat, skrypty, narzędzia, postacie, animacje) zapisuje się do jednego pliku **`.pgame`**. W środku jest zwykły JSON, więc da się go też pisać albo poprawiać w edytorze tekstu:

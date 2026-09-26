@@ -25,7 +25,7 @@ export const DEFAULT_PHYSICS_2D: Physics2D = {
 };
 
 const SOLIDS: Solid2D[] = ["none", "solid", "jumpthru", "ladder"];
-const ROLES: Role2D[] = ["none", "hazard", "pickup", "checkpoint", "goal", "enemy", "jumpzone", "button", "gate", "spawn", "respawn"];
+const ROLES: Role2D[] = ["none", "hazard", "pickup", "checkpoint", "goal", "enemy", "jumpzone", "button", "gate", "spawn", "respawn", "spring"];
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DATA_RE = /^data:(image\/(png|jpeg|gif|webp|svg\+xml)|audio\/(mpeg|wav|x-wav|ogg|aac|mp4|webm)|video\/mp4);base64,[A-Za-z0-9+/=]+$/;
 
@@ -38,6 +38,9 @@ const color = (v: unknown, def: string) => (typeof v === "string" && COLOR_RE.te
 const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 const arr = (v: unknown, max: number) => (Array.isArray(v) ? v.slice(0, max) : []);
 let counter = 0;
+/** domyślny wyrzut trampoliny (px/s przez sekundę): prosto w górę */
+export const SPRING_PUSH: [number, number] = [0, -800];
+
 export const newId2d = () => Date.now().toString(36) + (counter++).toString(36) + Math.random().toString(36).slice(2, 6);
 
 function sanitizeAnim(raw: unknown, assetIds: Set<string>): Anim2D {
@@ -77,6 +80,9 @@ export function sanitizeObj2D(raw: unknown, assetIds: Set<string>): Obj2D {
   if (o.fontSize !== undefined) out.fontSize = num(o.fontSize, 4, 400, 20);
   if (typeof o.font === "string" && assetIds.has(o.font)) out.font = o.font;
   if (o.radius !== undefined) out.radius = num(o.radius, 1, 5000, 100);
+  if (Array.isArray(o.push) && o.push.length === 2) out.push = [num(o.push[0], -5000, 5000, 0), num(o.push[1], -5000, 5000, 0)];
+  if (typeof o.pushAnim === "string" && o.pushAnim) out.pushAnim = o.pushAnim.slice(0, 40);
+  if (typeof o.sound === "string" && assetIds.has(o.sound)) out.sound = o.sound;
   return out;
 }
 
@@ -130,6 +136,8 @@ function sanitizeLevel(raw: unknown, objIds: Set<string>, charIds: Set<string>, 
   if (l.stackPlayers === true) out.stackPlayers = true;
   if (l.selectable === true) out.selectable = true;
   if (l.topDown === true) out.topDown = true;
+  if (typeof l.cameraX === "number" && Number.isFinite(l.cameraX)) out.cameraX = num(l.cameraX, -COORD, COORD, 0);
+  if (typeof l.cameraY === "number" && Number.isFinite(l.cameraY)) out.cameraY = num(l.cameraY, -COORD, COORD, 0);
   return out;
 }
 

@@ -103,12 +103,17 @@ export interface Body2D {
   blocked: boolean;
   /** stała siła w poziomie (px/s), np. jazda na deskorolce */
   force: number;
+  /** chwilowa siła (trampolina) w px/s i ile jeszcze działa (s) - jak "addForce" na sekundę w GDevelopie */
+  pushX: number;
+  pushY: number;
+  pushT: number;
 }
 
 export function newBody(box: Box): Body2D {
   return {
     box: { ...box }, vx: 0, vy: 0, onFloor: false, onLadder: false, jumping: false, sustain: 0,
     jumpV: 0, fallV: 0, jumpHeld: false, jumpWas: false, jumpBuffer: 0, dropThrough: 0, floorObj: null, blocked: false, force: 0,
+    pushX: 0, pushY: 0, pushT: 0,
   };
 }
 
@@ -204,8 +209,13 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
   }
   if (input.down && b.onFloor && !b.onLadder) b.dropThrough = 0.25;
 
+  // --- trampolina ---
+  const pushing = b.pushT > 0;
+  if (pushing) b.pushT = Math.max(0, b.pushT - dt);
+  const px = pushing ? b.pushX : 0, py = pushing ? b.pushY : 0;
+
   // --- ruch w poziomie z kolizją ---
-  const dx = (b.vx + b.force) * dt;
+  const dx = (b.vx + b.force + px) * dt;
   b.blocked = false;
   if (dx !== 0) {
     const sweep: Box = dx > 0 ? { x: b.box.x + b.box.w, y: b.box.y + EPS, w: dx, h: b.box.h - 2 * EPS } : { x: b.box.x + dx, y: b.box.y + EPS, w: -dx, h: b.box.h - 2 * EPS };
@@ -225,7 +235,7 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
   }
 
   // --- ruch w pionie z kolizją ---
-  const dy = b.vy * dt;
+  const dy = (b.vy + py) * dt;
   const wasOnFloor = b.onFloor;
   b.onFloor = false;
   if (dy > 0) {
@@ -258,6 +268,8 @@ function subStep(world: SolidWorld, b: Body2D, input: Input2D, dt: number, p: Ph
     }
     for (const s of world.query(sweep, tmp)) {
       if (s.type !== "solid") continue;
+      // trampolina wyrzuca przez platformy nad głową (jak siły w GDevelopie)
+      if (py < 0) continue;
       if (s.box.y + s.box.h > b.box.y + 1) continue; // już w środku
       move = Math.max(move, s.box.y + s.box.h - b.box.y);
     }
@@ -317,8 +329,10 @@ export function stepTopDown(world: SolidWorld, b: Body2D, input: Input2D, dt: nu
   b.blocked = false;
   const steps = Math.max(1, Math.ceil(dt / (1 / 60)));
   for (let i = 0; i < steps; i++) {
-    const mx = ((b.vx + b.force) * dt) / steps;
-    const my = (b.vy * dt) / steps;
+    const pushing = b.pushT > 0;
+    if (pushing) b.pushT = Math.max(0, b.pushT - dt / steps);
+    const mx = ((b.vx + b.force + (pushing ? b.pushX : 0)) * dt) / steps;
+    const my = ((b.vy + (pushing ? b.pushY : 0)) * dt) / steps;
     if (mx) {
       const moved = sweepAxis(world, b.box, mx, "x");
       if (moved !== mx) (b.blocked = true), (b.vx = 0);

@@ -6,7 +6,7 @@ import { newBody, NO_INPUT, pointInSolid, SolidWorld, stepBody, stepTopDown, typ
 import { LuaEngine, type LuaValue, type ScriptHost } from "../scripting/lua.ts";
 import type { ChatMsg, WorldData } from "../types.ts";
 import type { Character2D, Enemy2D, Inst2D, InstState2D, Level2D, NetPlayer2D, Obj2D, World2D } from "../types2d.ts";
-import { instBox, levelByName, newId2d, overlaps, type Box } from "../world2d.ts";
+import { instBox, levelByName, newId2d, overlaps, SPRING_PUSH, type Box } from "../world2d.ts";
 import type { SimInfo, SimTransport, SimUser } from "./gameSim.ts";
 import { GameShop } from "./shop.ts";
 import { PlayerDataStore } from "./playerData.ts";
@@ -105,6 +105,8 @@ interface LevelState {
   keysDown: Set<number>;
   playersDirty: boolean;
   lastFull: number;
+  /** kiedy zaczęło się przesuwanie instancji (moveObject) - do liczenia, gdzie teraz jest */
+  moveStart: Map<string, number>;
 }
 
 const finite = (v: unknown, min = -LIMIT, max = LIMIT) =>
@@ -155,6 +157,7 @@ export class Sim2D {
       keysDown: new Set(),
       playersDirty: true,
       lastFull: 0,
+      moveStart: new Map(),
     };
     this.levels.set(level.id, s);
     this.buildLevel(s);
@@ -480,6 +483,24 @@ export class Sim2D {
     Object.assign(p.mv, { x: p.x, y: p.y, t: Date.now(), graceUntil: Date.now() + ms });
   }
 
+  /** najmocniejszy wyrzut trampolin na poziomie (strażnik ruchu musi go przepuścić) */
+  private springCache = new Map<string, { x: number; y: number }>();
+  private springPush(levelId: string) {
+    let v = this.springCache.get(levelId);
+    if (v) return v;
+    v = { x: 0, y: 0 };
+    const l = this.w.levels.find((x) => x.id === levelId);
+    for (const i of l?.instances ?? []) {
+      const o = this.objs.get(i.obj);
+      if (o?.role !== "spring") continue;
+      const push = o.push ?? SPRING_PUSH;
+      v.x = Math.max(v.x, Math.abs(push[0]));
+      v.y = Math.max(v.y, -push[1], 0);
+    }
+    this.springCache.set(levelId, v);
+    return v;
+  }
+
   /** prędkość w poziomie i w górę z dużym zapasem (skoki, trampoliny, siły ze skryptów) */
   private moveAllowed(p: PlayerState, x: number, y: number): boolean {
     const mv = p.mv;
@@ -493,8 +514,9 @@ export class Sim2D {
     const ph = this.w.physics;
     const topDown = !!this.levels.get(p.level)?.level.topDown;
     const speed = Math.max(mv.speed ?? ph.maxSpeed, ph.maxSpeed);
-    const allowH = (speed * 1.6 + 200 + Math.abs(mv.force)) * dt + 48;
-    const upSpeed = topDown ? speed : Math.max(mv.jump ?? ph.jumpSpeed, ph.jumpSpeed, ph.ladderSpeed) * 1.6 + 300;
+    const spring = this.springPush(p.level);
+    const allowH = (speed * 1.6 + 200 + Math.abs(mv.force) + spring.x) * dt + 48;
+    const upSpeed = (topDown ? speed : Math.max(mv.jump ?? ph.jumpSpeed, ph.jumpSpeed, ph.ladderSpeed) * 1.6 + 300) + spring.y;
     const allowUp = upSpeed * dt + 64;
     const dx = Math.abs(x - mv.x);
     const up = mv.y - y; // w 2D y rośnie w dół
@@ -849,6 +871,25 @@ export class Sim2D {
       },
       hideObject: (name, level) => {
         for (const { s, i } of this.named(S(name), level ? S(level) : undefined)) this.setInst(s, i.id, { hidden: true });
+      },
+      moveObject: (name, x, y, seconds, level) => {
+        const dur = Math.min(600, Math.max(0, N(seconds, 0)));
+        for (const { s, i } of this.named(S(name), level ? S(level) : undefined)) {
+          const st = s.inst.get(i.id) ?? {};
+          // skąd rusza: tam, gdzie teraz jest (także w połowie poprzedniego przesuwania)
+          let fx = st.x ?? i.x, fy = st.y ?? i.y;
+          const t0 = s.moveStart.get(i.id);
+          if (st.from && st.dur && t0 !== undefined) {
+            const k = Math.min(1, (Date.now() - t0) / 1000 / st.dur);
+            fx = st.from.x + (fx - st.from.x) * k;
+            fy = st.from.y + (fy - st.from.y) * k;
+          }
+          s.moveStart.set(i.id, Date.now());
+          this.setInst(s, i.id, { x: N(x), y: N(y), from: { x: fx, y: fy }, dur });
+        }
+      },
+      flipObject: (name, on, level) => {
+        for (const { s, i } of this.named(S(name), level ? S(level) : undefined)) this.setInst(s, i.id, { flip: on !== false });
       },
       showObject: (name, level) => {
         for (const { s, i } of this.named(S(name), level ? S(level) : undefined)) this.setInst(s, i.id, { hidden: false });

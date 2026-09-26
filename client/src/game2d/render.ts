@@ -117,8 +117,18 @@ export class LevelView {
   /** pozycja instancji po zmianach ze skryptów */
   pos(i: Inst2D) {
     const st = this.state.get(i.id);
-    return { x: st?.x ?? i.x, y: st?.y ?? i.y };
+    const x = st?.x ?? i.x, y = st?.y ?? i.y;
+    // przesuwanie ze skryptu (moveObject) - płynnie od "from" do x, y
+    const t0 = this.moves.get(i.id);
+    if (st?.from && st.dur && t0 !== undefined) {
+      const k = (performance.now() - t0) / 1000 / st.dur;
+      if (k < 1) return { x: st.from.x + (x - st.from.x) * k, y: st.from.y + (y - st.from.y) * k };
+      this.moves.delete(i.id);
+    }
+    return { x, y };
   }
+  /** kiedy (performance.now) zaczęło się przesuwanie instancji */
+  readonly moves = new Map<string, number>();
 
   animOf(i: Inst2D, o: Obj2D) {
     const name = this.state.get(i.id)?.anim ?? i.anim;
@@ -224,7 +234,7 @@ export class LevelView {
     if (o.kind === "sprite") {
       const img = this.frame(o, this.state.get(i.id)?.anim ?? i.anim, t);
       if (img) {
-        if (i.flip) {
+        if (this.state.get(i.id)?.flip ?? i.flip) {
           ctx.save();
           ctx.translate(r.x + r.w, r.y);
           ctx.scale(-1, 1);

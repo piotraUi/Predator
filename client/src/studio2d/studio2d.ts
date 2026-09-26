@@ -49,6 +49,7 @@ const ROLE_LABELS: Record<Role2D, string> = {
   gate: "Brama",
   spawn: "Start graczy",
   respawn: "Odrodzenie po śmierci",
+  spring: "Trampolina (wyrzuca gracza)",
 };
 const SOLID_LABELS: Record<Solid2D, string> = {
   none: "Brak (można przejść)",
@@ -821,6 +822,13 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       }
       if (o.role === "goal") {
         roleFields.push(field("Na poziom", selectIn([["", "(wybierz)"], ...w.levels.map((l): [string, string] => [l.name, l.name])], o.toLevel ?? "", (v) => (o.toLevel = v || undefined))));
+      }
+      if (o.role === "spring") {
+        const push = o.push ?? [0, -800];
+        roleFields.push(
+          field("Wyrzut w bok / w górę", pair(numIn(push[0], (v) => (o.push = [v, (o.push ?? push)[1]])), numIn(-push[1], (v) => (o.push = [(o.push ?? push)[0], -v]))), "px/s przez sekundę, np. 0 i 800 = prosto w górę, -800 = w lewo"),
+          field("Dźwięk", selectIn([["", "(brak)"], ...w.assets.filter((a) => a.type === "sound").map((a): [string, string] => [a.id, a.name])], o.sound ?? "", (v) => (o.sound = v || undefined))),
+        );
       }
       if (o.role === "enemy") {
         roleFields.push(field("Prędkość / skok", pair(numIn(o.speed ?? 100, (v) => (o.speed = v)), numIn(o.jump ?? 400, (v) => (o.jump = v)))));

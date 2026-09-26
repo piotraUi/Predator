@@ -93,6 +93,8 @@ export const LUA_HELP_2D: [string, string][] = [
   ['setAnimation("Drzwi", "Otwarte")', "zmień animację obiektu"],
   ['setText("Napis", "tekst")', "zmień napis"],
   ['hideObject("Most") / showObject("Most")', "schowaj / pokaż obiekt (dla wszystkich)"],
+  ['moveObject("Boss", x, y, 0.5)', "przesuń obiekt płynnie w X sekund (0 = od razu)"],
+  ['flipObject("Boss", true)', "odwróć obiekt w poziomie (false = z powrotem)"],
   ['showFor(player, "Moneta")', "przywróć zebrane przez gracza rzeczy"],
   ['countObjects("Moneta", "Poziom 1")', "ile widocznych obiektów"],
   ['createObject("Potwor", x, y, "Poziom 1")', "stwórz obiekt"],
