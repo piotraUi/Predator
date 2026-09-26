@@ -3,7 +3,7 @@ import { emptyWorld2D, topDownWorld2D } from "../../shared/world2d.ts";
 import express, { type Response } from "express";
 import { CATALOG, findItem } from "../../shared/catalog.ts";
 import { DEFAULT_AVATAR } from "../../shared/catalog.ts";
-import { filterChat } from "../../shared/chatFilter.ts";
+import { filterChat, hasProfanity } from "../../shared/chatFilter.ts";
 import type { Avatar, ChatMessage, Conversation, FriendInfo, WorldInfo } from "../../shared/types.ts";
 import { DEFAULT_MAX_PLAYERS, MAX_PLAYERS_LIMIT } from "../../shared/types.ts";
 import { emptyWorld, sanitizeWorld, welcomeBadge } from "../../shared/world.ts";
@@ -72,6 +72,7 @@ api.post("/register", (req, res) => {
   const { username, password } = req.body ?? {};
   const err = validateCredentials(username, password);
   if (err) return fail(res, 400, err);
+  if (hasProfanity(username)) return fail(res, 400, "Ten nick jest niedozwolony - wybierz inny");
   if (users.byName(username)) return fail(res, 409, "Ten nick jest już zajęty");
   const { hash, salt } = hashPassword(password);
   const user = users.create(username, hash, salt);
