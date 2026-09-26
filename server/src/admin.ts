@@ -6,6 +6,9 @@ import { hashPassword, requireAuth, type AuthedRequest } from "./auth.ts";
 import { alerts, isAdminName, users, worlds } from "./db.ts";
 import { presence } from "./presence.ts";
 import { adminLog, groups, mutes, reports } from "./social.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { BACKUP_DIR, BACKUP_NAME_RE, backupNow, checkUpdates, isGitRepo, listBackups, runUpdate, supervised, updateState } from "./maintenance.ts";
 
 export const admin = express.Router();
 
@@ -214,6 +217,38 @@ admin.delete("/groups/:id", (req, res) => {
   groups.remove(g.id);
   reports.closeTarget("group", g.id, adminId(req));
   log(req, "Usunął grupę", g.name);
+  res.json({ ok: true });
+});
+
+// ---------- serwer: kopie zapasowe i aktualizacja ----------
+
+admin.get("/backups", (_req, res) => res.json(listBackups()));
+
+admin.post("/backups", (req, res) => {
+  try {
+    const b = backupNow("reczna");
+    log(req, "Kopia zapasowa bazy", b.name);
+    res.json(b);
+  } catch (e) {
+    fail(res, 500, "Nie udało się zrobić kopii: " + (e as Error).message);
+  }
+});
+
+admin.get("/backups/:name", (req, res) => {
+  const name = String(req.params.name);
+  if (!BACKUP_NAME_RE.test(name) || !fs.existsSync(path.join(BACKUP_DIR, name))) return fail(res, 404, "Nie ma takiej kopii");
+  res.download(path.join(BACKUP_DIR, name), name);
+});
+
+admin.get("/update", async (req, res) => {
+  const check = req.query.check ? await checkUpdates() : null;
+  res.json({ git: isGitRepo(), supervised, state: updateState, check });
+});
+
+admin.post("/update", (req, res) => {
+  if (updateState.running) return fail(res, 400, "Aktualizacja już trwa");
+  log(req, "Aktualizacja serwera");
+  void runUpdate(() => process.exit(75));
   res.json({ ok: true });
 });
 

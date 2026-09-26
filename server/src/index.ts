@@ -21,6 +21,7 @@ import { config } from "./config.ts";
 import { sourceHash } from "../../shared/sourceHash.ts";
 import { users, worlds } from "./db.ts";
 import { StudioRoom } from "./rooms/StudioRoom.ts";
+import { startBackups } from "./maintenance.ts";
 import { WorldRoom } from "./rooms/WorldRoom.ts";
 import { GAME_CREATORS, giveGamesToCreator } from "./creators.ts";
 import { setupPredatorAccount } from "./predatorAccount.ts";
@@ -170,6 +171,8 @@ for (const [name, description, make, thumb] of demos) {
 }
 
 await gameServer.listen(config.port, config.host);
+// codzienne kopie zapasowe bazy (data/backups)
+startBackups();
 
 const addrs = Object.values(os.networkInterfaces())
   .flat()

@@ -1,6 +1,6 @@
 // Panel admina (tylko dla kont z listy adminów - serwer i tak sprawdza każde żądanie).
 import { CATALOG } from "../../../shared/catalog.ts";
-import { adminApi, type AdminReport, type AdminUser, type AdminWorld } from "../api.ts";
+import { adminApi, getServerUrl, getToken, type AdminReport, type AdminUser, type AdminWorld } from "../api.ts";
 import { ask, h, modal, toast } from "./dom.ts";
 
 const fmt = new Intl.NumberFormat("pl-PL");
@@ -36,7 +36,7 @@ function inputModal(title: string, label: string, opts: { type?: string; value?:
 }
 
 export function adminPanel(el: HTMLElement) {
-  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Historia"] as const;
+  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Serwer", "Historia"] as const;
   let tab: (typeof tabs)[number] = "Start";
   const tabBar = h("div", { class: "shop-tabs adm-tabs" });
   const body = h("div", { class: "adm-body" });
@@ -53,6 +53,7 @@ export function adminPanel(el: HTMLElement) {
     if (tab === "Start") statsTab(body);
     else if (tab === "Zgłoszenia") reportsTab(body);
     else if (tab === "Historia") logTab(body);
+    else if (tab === "Serwer") serverTab(body);
     else if (tab === "Gracze") usersTab(body);
     else if (tab === "Gry") worldsTab(body);
     else announceTab(body);
@@ -375,6 +376,126 @@ function reportsTab(el: HTMLElement) {
   };
   el.append(toggle, list);
   load();
+}
+
+/** kopie zapasowe bazy i aktualizacja serwera z GitHuba */
+function serverTab(el: HTMLElement) {
+  const upd = h("div", { class: "adm-box" });
+  const backups = h("div", { class: "adm-box" });
+  const size = (b: number) => (b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " KB");
+  let poll = 0;
+
+  const renderBackups = async () => {
+    const list = await run(adminApi.backups());
+    if (!list) return;
+    backups.replaceChildren(
+      h("h3", null, "💾 Kopie zapasowe bazy"),
+      h("p", { class: "muted small" }, "Serwer robi kopię codziennie (i przed każdą aktualizacją) i trzyma 14 ostatnich w folderze data/backups. Konta, monety i gry są bezpieczne."),
+      h("button", { class: "btn primary small", onClick: async () => (await run(adminApi.backupNow(), "Zrobiono kopię")) && renderBackups() }, "Zrób kopię teraz"),
+      h(
+        "div",
+        { class: "adm-list" },
+        list.length
+          ? list.map((b) =>
+              h(
+                "div",
+                { class: "adm-row" },
+                h("div", { class: "adm-row-main" }, h("b", null, b.name), h("span", { class: "muted small" }, ` · ${size(b.size)} · ${new Date(b.at).toLocaleString("pl-PL")}`)),
+                h(
+                  "button",
+                  {
+                    class: "btn small",
+                    onClick: async () => {
+                      // pobranie z tokenem (zwykły link nie wyśle nagłówka logowania)
+                      const r = await fetch(getServerUrl() + "/api/admin/backups/" + encodeURIComponent(b.name), { headers: { authorization: "Bearer " + getToken() } });
+                      if (!r.ok) return toast("Nie udało się pobrać", "error");
+                      const url = URL.createObjectURL(await r.blob());
+                      const a = h("a", { href: url, download: b.name });
+                      document.body.append(a);
+                      a.click();
+                      a.remove();
+                      setTimeout(() => URL.revokeObjectURL(url), 5000);
+                    },
+                  },
+                  "⬇️ Pobierz",
+                ),
+              ),
+            )
+          : h("div", { class: "muted" }, "Jeszcze nie ma kopii."),
+      ),
+    );
+  };
+
+  const renderUpdate = async (check = false) => {
+    const s = await run(adminApi.updateStatus(check));
+    if (!s) return;
+    const st = s.state;
+    upd.replaceChildren(
+      h("h3", null, "🔄 Aktualizacja serwera"),
+      !s.git
+        ? h("p", { class: "form-error" }, "Serwer nie jest pobrany przez „git clone”, więc nie umie się sam zaktualizować. Pobierz nową wersję ręcznie.")
+        : h(
+            "p",
+            { class: "muted small" },
+            "Pobiera nową wersję z GitHuba, robi kopię bazy i uruchamia serwer ponownie (gracze zostaną rozłączeni na chwilę). Aplikacje graczy same pobiorą nową wersję gry.",
+          ),
+      s.git && !s.supervised
+        ? h("p", { class: "form-error" }, "Uwaga: serwer nie został uruchomiony przez start-server.bat / start-server.sh - po aktualizacji trzeba go uruchomić ponownie ręcznie.")
+        : "",
+      s.check
+        ? s.check.error
+          ? h("p", { class: "form-error" }, s.check.error)
+          : h(
+              "div",
+              null,
+              h("p", null, s.check.behind ? `Nowych zmian: ${s.check.behind} (gałąź ${s.check.branch})` : `✅ Serwer jest aktualny (gałąź ${s.check.branch})`),
+              s.check.commits?.length ? h("ul", { class: "adm-commits" }, s.check.commits.map((c) => h("li", null, c))) : "",
+            )
+        : "",
+      h(
+        "div",
+        { class: "row" },
+        h("button", { class: "btn small", disabled: !s.git, onClick: () => renderUpdate(true) }, "Sprawdź aktualizacje"),
+        h(
+          "button",
+          {
+            class: "btn primary small",
+            disabled: !s.git || st.running,
+            onClick: async () => {
+              if (!(await ask("Zaktualizować serwer? Gracze zostaną na chwilę rozłączeni.", "Aktualizuj", "Anuluj"))) return;
+              if (await run(adminApi.updateServer())) startPolling();
+            },
+          },
+          st.running ? "Aktualizuję…" : "Aktualizuj i uruchom ponownie",
+        ),
+      ),
+      st.log.length ? h("pre", { class: "adm-log-box" }, st.log.join("\n")) : "",
+    );
+  };
+
+  // w trakcie aktualizacji serwer się wyłącza - czekamy, aż wróci
+  const startPolling = () => {
+    clearInterval(poll);
+    let sawDown = false;
+    poll = window.setInterval(async () => {
+      if (!el.isConnected) return clearInterval(poll);
+      try {
+        await adminApi.updateStatus();
+        if (sawDown) {
+          clearInterval(poll);
+          toast("✅ Serwer działa w nowej wersji", "good");
+        }
+        renderUpdate();
+      } catch {
+        sawDown = true;
+        upd.querySelector(".adm-log-box")?.append("\n⏳ Serwer się uruchamia…");
+      }
+    }, 3000);
+  };
+
+  el.append(upd, backups);
+  renderUpdate();
+  renderBackups();
 }
 
 async function logTab(el: HTMLElement) {

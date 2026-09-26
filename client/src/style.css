@@ -1335,3 +1335,7 @@ canvas.terrain-brush { cursor: crosshair; }
 .privacy label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .blocked-list { display: flex; flex-direction: column; gap: 4px; }
 .blocked-row { display: flex; justify-content: space-between; align-items: center; }
+.adm-box { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
+.adm-box h3 { margin: 0; }
+.adm-log-box { background: #0003; border-radius: 10px; padding: 10px; font-size: 12px; white-space: pre-wrap; max-height: 260px; overflow: auto; margin: 0; }
+.adm-commits { margin: 0; padding-left: 18px; font-size: 13px; }

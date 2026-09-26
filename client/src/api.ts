@@ -252,6 +252,16 @@ export const adminApi = {
   closeReport: (id: number) => req("POST", `/admin/reports/${id}/close`),
   deleteGroup: (id: number) => req("DELETE", "/admin/groups/" + id),
   log: () => req<{ id: number; admin: string; action: string; target: string; details: string; at: number }[]>("GET", "/admin/log"),
+  backups: () => req<{ name: string; size: number; at: number }[]>("GET", "/admin/backups"),
+  backupNow: () => req<{ name: string; size: number; at: number }>("POST", "/admin/backups"),
+  updateStatus: (check = false) =>
+    req<{
+      git: boolean;
+      supervised: boolean;
+      state: { running: boolean; log: string[]; error: string | null; done: boolean };
+      check: { git: boolean; branch?: string; behind?: number; commits?: string[]; error?: string } | null;
+    }>("GET", "/admin/update" + (check ? "?check=1" : "")),
+  updateServer: () => req<{ ok: true }>("POST", "/admin/update"),
   users: (q = "") => req<AdminUser[]>("GET", "/admin/users?q=" + encodeURIComponent(q)),
   coins: (id: number, amount: number, set = false) => req<AdminUser>("POST", `/admin/users/${id}/coins`, { amount, set }),
   ban: (id: number, banned: boolean) => req<AdminUser>("POST", `/admin/users/${id}/ban`, { banned }),
