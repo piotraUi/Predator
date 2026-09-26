@@ -92,6 +92,20 @@ Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` 
 
 Ilość monet za granie, dzienny limit i bonus zmienisz w `server/src/config.ts`.
 
+### Aktualizacje i kopie zapasowe
+
+- **Aktualizacja serwera:** Panel admina → **Serwer** → „Sprawdź aktualizacje” → „Aktualizuj i uruchom ponownie”. Serwer robi kopię bazy, pobiera nową wersję (`git pull`) i sam się uruchamia ponownie. Działa, gdy serwer był pobrany przez `git clone` i uruchomiony przez `start-server.bat` / `start-server.sh`. Bez panelu: `update-server.bat` / `update-server.sh`, a potem ponowne uruchomienie serwera.
+- **Aplikacje graczy aktualizują się same:** po aktualizacji serwera aplikacja (exe, APK, iOS) przy starcie pobiera nową wersję gry z serwera (`/app-update`). Nowy exe czy APK jest potrzebny tylko wtedy, gdy zmienia się sama „skorupa” aplikacji.
+- **Kopie zapasowe bazy:** codziennie i przed każdą aktualizacją w `data/backups` (14 ostatnich). Ręcznie i do pobrania: Panel admina → Serwer.
+
+### Bezpieczeństwo graczy
+
+- **Filtr czatu** łapie wulgaryzmy także pisane „kombinowanie” (k.u.r.w.a, kuuurwa, k u r w a, ch*j, cyfry zamiast liter, litery z innych alfabetów). Nicki z przekleństwami są blokowane przy rejestracji.
+- **Blokowanie:** na profilu gracza albo w grze (przycisk 👥). Zablokowany nie pisze, nie zaprasza, nie jest słyszalny na czacie głosowym, a jego wiadomości na czacie gry są ukryte.
+- **Zgłaszanie z gry i z czatu głosowego (🚩):** administrator dostaje zgłoszenie razem z ostatnimi wiadomościami z czatu tej gry.
+- **Prywatność** (Ustawienia): kto może zapraszać do znajomych, pisać, zapraszać do gier i widzieć, w co grasz.
+- **Ochrona przed oszustami:** serwer sprawdza ruch graczy (prędkość, teleport, latanie). Niemożliwy ruch jest cofany, a uporczywi oszuści są automatycznie zgłaszani i wyrzucani z gry.
+
 ## Aplikacje: EXE, APK i iOS
 
 Aplikacje łączą się z Twoim serwerem. Przy pierwszym uruchomieniu wpisujesz jego adres, np. `192.168.1.10:2567`.
