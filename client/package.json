@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:app": "vite build --mode app",
     "typecheck": "tsc --noEmit",
-    "cap:sync": "npm run build:app && cap sync"
+    "cap:sync": "npm run build:app && cap sync",
+    "build:update": "vite build --mode app --outDir dist-app --emptyOutDir"
   },
   "dependencies": {
     "@babylonjs/core": "^9.27.1",

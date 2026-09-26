@@ -11,6 +11,8 @@ const config: CapacitorConfig = {
   plugins: {
     // aplikacja omija wcięcia ekranu (kamera, paski) - odstępy robi CSS
     SystemBars: { insetsHandling: "css", initialViewportFitValueHint: "cover" },
+    // nowe wersje gry pobierane z serwera Predator (bez instalowania nowego APK)
+    CapacitorUpdater: { autoUpdate: false, resetWhenUpdate: true, appReadyTimeout: 20000 },
   },
   android: {
     allowMixedContent: true,

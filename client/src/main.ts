@@ -3,6 +3,7 @@ import { api, getServerUrl, getToken, needsServerAddress, pingServer, setToken }
 import { session } from "./state.ts";
 import { authScreen } from "./ui/auth.ts";
 import { startLiveNotifications } from "./ui/liveNotify.ts";
+import { autoUpdate, confirmAppStarted } from "./appUpdate.ts";
 import { h, logo, toast } from "./ui/dom.ts";
 import { desktop, launchFile, type OpenedFile } from "./files.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
@@ -122,9 +123,16 @@ function openGameFile(f: OpenedFile) {
 }
 desktop?.onFileOpened((f) => openGameFile(f));
 
-/** Aplikacja ma starszą wersję niż serwer - napis na górze (na razie: poproś twórcę o aktualizację) */
-function checkVersion(serverHash: string) {
+/**
+ * Aplikacja ma starszą wersję niż serwer: pobiera nową sama (exe / APK / iOS),
+ * a gdy się nie da - napis na górze z prośbą o aktualizację.
+ */
+async function checkVersion(serverHash: string) {
   if (!__APP_MODE__ || !serverHash || serverHash === __CLIENT_HASH__) return;
+  // w trakcie gry albo w Studiu nie przeszkadzamy - sprawdzimy przy następnym wejściu na stronę główną
+  const screen = document.body.dataset.screen;
+  if (screen && screen !== "home" && screen !== "auth") return;
+  if (await autoUpdate(getServerUrl(), serverHash)) return;
   try {
     if (sessionStorage.getItem("predator.updateHidden") === serverHash) return;
   } catch {
@@ -179,6 +187,8 @@ function watchConnection() {
 }
 
 async function boot() {
+  // telefon: nowa (pobrana) wersja gry wystartowała poprawnie
+  void confirmAppStarted();
   const loading = loadingScreen("Predator", true);
   root.append(loading.el);
   const launched = await launchFile();
@@ -194,7 +204,7 @@ async function boot() {
     if (needsServerAddress) {
       const pong = await pingServer(getServerUrl(), 5000);
       if (!pong) return go("auth", { unreachable: true });
-      checkVersion(pong.hash);
+      await checkVersion(pong.hash);
     }
     if (!getToken()) return go("auth");
     const { user } = await api.me();

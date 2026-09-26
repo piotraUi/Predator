@@ -2,6 +2,7 @@
 // Gra jest wbudowana w aplikację, więc Studio działa bez serwera (pliki .pgame).
 // Z serwerem łączymy się po zalogowaniu (adres wpisuje się na ekranie logowania).
 const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } = require("electron");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -16,6 +17,61 @@ app.commandLine.appendSwitch("unsafely-treat-insecure-origin-as-secure", "app://
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
+
+// ---------- aktualizacja gry z serwera (bez instalowania nowego .exe) ----------
+// Nowa wersja gry jest zapisywana w folderze użytkownika i ładowana zamiast wbudowanej.
+// Po zainstalowaniu nowszego .exe (inna wbudowana gra) pobrana wersja jest pomijana.
+const UPDATE_DIR = () => path.join(app.getPath("userData"), "game-update");
+const builtinStamp = () => {
+  try {
+    return crypto.createHash("sha1").update(fs.readFileSync(path.join(APP_DIR, "index.html"))).digest("hex");
+  } catch {
+    return "";
+  }
+};
+function currentUpdate() {
+  try {
+    const cur = JSON.parse(fs.readFileSync(path.join(UPDATE_DIR(), "current.json"), "utf8"));
+    const dir = path.join(UPDATE_DIR(), cur.hash);
+    if (cur.base === builtinStamp() && fs.existsSync(path.join(dir, "index.html"))) return { ...cur, dir };
+  } catch {
+    /* brak aktualizacji */
+  }
+  return null;
+}
+function clearUpdate() {
+  fs.rmSync(path.join(UPDATE_DIR(), "current.json"), { force: true });
+}
+/** folder, z którego ładujemy grę */
+const gameDir = () => currentUpdate()?.dir ?? APP_DIR;
+
+ipcMain.handle("update-game", async (_e, { server, hash }) => {
+  const base = String(server).replace(/\/+$/, "") + "/app-update";
+  const res = await net.fetch(base + "/manifest.json", { cache: "no-store" });
+  if (!res.ok) throw new Error("Serwer nie ma wersji dla aplikacji");
+  const m = await res.json();
+  if (!m || m.hash !== hash || !Array.isArray(m.files) || !m.files.includes("index.html")) throw new Error("Zła wersja na serwerze");
+  const root = UPDATE_DIR();
+  const tmp = path.join(root, "tmp-" + hash);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  for (const f of m.files) {
+    // ścieżki tylko wewnątrz folderu gry
+    const target = path.normalize(path.join(tmp, f));
+    if (!target.startsWith(tmp + path.sep) || f.includes("..")) throw new Error("Zła ścieżka pliku: " + f);
+    const r = await net.fetch(base + "/files/" + f.split("/").map(encodeURIComponent).join("/"), { cache: "no-store" });
+    if (!r.ok) throw new Error("Nie udało się pobrać " + f);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, Buffer.from(await r.arrayBuffer()));
+  }
+  const final = path.join(root, hash);
+  fs.rmSync(final, { recursive: true, force: true });
+  fs.renameSync(tmp, final);
+  fs.writeFileSync(path.join(root, "current.json"), JSON.stringify({ hash, base: builtinStamp(), at: Date.now() }));
+  await win?.webContents.session.clearCache();
+  // starsze pobrane wersje usuwamy
+  for (const d of fs.readdirSync(root)) if (d !== hash && d !== "current.json") fs.rmSync(path.join(root, d), { recursive: true, force: true });
+  return true;
+});
 
 let win = null;
 let pendingFile = null;
@@ -95,12 +151,18 @@ ipcMain.on("set-dirty", (_e, v) => {
 app.whenReady().then(() => {
   protocol.handle("app", (req) => {
     const { pathname } = new URL(req.url);
-    let file = path.normalize(path.join(APP_DIR, decodeURIComponent(pathname)));
+    const dir = gameDir();
+    let file = path.normalize(path.join(dir, decodeURIComponent(pathname)));
     // nie wychodzimy poza folder gry; nieznane ścieżki -> index.html (aplikacja jednostronicowa)
-    if (!file.startsWith(APP_DIR) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-      file = path.join(APP_DIR, "index.html");
+    if (!file.startsWith(dir) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      file = path.join(dir, "index.html");
     }
-    return net.fetch(pathToFileURL(file).toString());
+    // bez pamięci podręcznej - po aktualizacji gry te same adresy mają nową zawartość
+    return net.fetch(pathToFileURL(file).toString()).then((r) => {
+      const headers = new Headers(r.headers);
+      headers.set("cache-control", "no-store");
+      return new Response(r.body, { status: r.status, headers });
+    });
   });
 
   pendingFile = pendingFile ?? (fileFromArgs(process.argv) ? readGameFile(fileFromArgs(process.argv)) : null);
@@ -145,6 +207,16 @@ app.whenReady().then(() => {
   win.webContents.on("will-prevent-unload", (e) => e.preventDefault());
   // po systemowych okienkach Windows potrafi "zgubić" fokus pól tekstowych - przywracamy go
   win.on("focus", () => win.webContents.focus());
+  // pobrana wersja gry się nie wczytała - wracamy do wbudowanej
+  win.webContents.on("did-fail-load", (_e, _code, _desc, url) => {
+    if (url.startsWith("app://") && currentUpdate()) {
+      clearUpdate();
+      win.loadURL("app://predator/index.html");
+    }
+  });
+  win.webContents.on("render-process-gone", () => {
+    if (currentUpdate()) clearUpdate();
+  });
   win.loadURL("app://predator/index.html");
 });
 
