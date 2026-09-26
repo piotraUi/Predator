@@ -19,7 +19,7 @@ import { config } from "./config.ts";
 import { live } from "./live.ts";
 import { alerts, badges, canEdit, editors, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
-import { mutes, stock, trades } from "./social.ts";
+import { blocks, mutes, privacy, sanitizePrivacy, stock, trades } from "./social.ts";
 
 export const api = express.Router();
 // gry mogą zawierać modele 3D postaci (.glb), więc limit jest duży
@@ -100,7 +100,31 @@ api.get("/me", requireAuth, (req, res) => {
   const user = (req as AuthedRequest).user;
   presence.touch(user.id);
   const dailyBonus = users.claimDaily(user.id, config.dailyBonus);
-  res.json({ user: toPublicUser(users.byId(user.id)!), dailyBonus });
+  res.json({ user: toPublicUser(users.byId(user.id)!), dailyBonus, blocked: blocks.list(user.id), privacy: privacy.get(user.id) });
+});
+
+// ---------- blokowanie i prywatność ----------
+
+/** blokada: koniec znajomości, wiadomości, zaproszeń i rozmów głosowych */
+api.post("/blocks", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const other = users.byId(Number(req.body?.userId)) ?? users.byName(String(req.body?.username ?? ""));
+  if (!other || other.id === me.id) return fail(res, 404, "Nie ma takiego gracza");
+  blocks.add(me.id, other.id);
+  friends.remove(me.id, other.id);
+  res.json({ ok: true, blocked: blocks.list(me.id) });
+});
+
+api.delete("/blocks/:id", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  blocks.remove(me.id, Number(req.params.id));
+  res.json({ ok: true, blocked: blocks.list(me.id) });
+});
+
+api.put("/privacy", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  privacy.set(me.id, sanitizePrivacy(req.body));
+  res.json(privacy.get(me.id));
 });
 
 // ---------- Awatar i sklep ----------
@@ -371,7 +395,9 @@ api.get("/friends", requireAuth, (req, res) => {
     const status: FriendInfo["status"] =
       f.status === "accepted" ? "accepted" : f.user_id === me.id ? "outgoing" : "incoming";
     const p = status === "accepted" ? presence.get(f.other_id) : { online: false, playing: null };
-    return { id: f.other_id, username: f.username, avatar: parseAvatar(f.avatar), status, online: p.online, playing: p.playing };
+    // ktoś ukrył, w co gra - znajomi widzą tylko "online"
+    const playing = p.playing && privacy.get(f.other_id).showPlaying !== "none" ? p.playing : null;
+    return { id: f.other_id, username: f.username, avatar: parseAvatar(f.avatar), status, online: p.online, playing };
   });
   list.sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username));
   res.json(list);
@@ -382,6 +408,7 @@ api.post("/friends/request", requireAuth, (req, res) => {
   const other = users.byName(String(req.body?.username ?? ""));
   if (!other) return fail(res, 404, "Nie ma takiego gracza");
   if (other.id === me.id) return fail(res, 400, "Nie możesz dodać siebie 🙂");
+  if (blocks.between(me.id, other.id)) return fail(res, 403, "Nie możesz zaprosić tej osoby");
   const existing = friends.get(me.id, other.id);
   if (existing?.status === "accepted") return fail(res, 400, "Już jesteście znajomymi");
   if (existing && existing.user_id === other.id) {
@@ -390,6 +417,7 @@ api.post("/friends/request", requireAuth, (req, res) => {
     return res.json({ ok: true, accepted: true });
   }
   if (existing) return fail(res, 400, "Zaproszenie już wysłane");
+  if (privacy.get(other.id).friendRequests === "none") return fail(res, 403, "Ta osoba nie przyjmuje zaproszeń do znajomych");
   friends.request(me.id, other.id);
   res.json({ ok: true });
 });
@@ -449,6 +477,8 @@ api.post("/chat/:id", requireAuth, (req, res) => {
   lastSent.set(me.id, now);
   const muted = mutes.message(me.id);
   if (muted) return fail(res, 403, muted);
+  if (blocks.between(me.id, other)) return fail(res, 403, "Nie możesz pisać do tej osoby");
+  if (privacy.get(other).messages === "none") return fail(res, 403, "Ta osoba wyłączyła wiadomości");
   const text = filterChat(String(req.body?.text ?? ""));
   if (!text) return fail(res, 400, "Pusta wiadomość");
   const id = messages.send(me.id, other, text);
@@ -481,6 +511,7 @@ api.post("/invite", requireAuth, (req, res) => {
   const me = (req as AuthedRequest).user;
   const friendId = Number(req.body?.friendId);
   if (!areFriends(me.id, friendId)) return fail(res, 400, "Możesz zapraszać tylko znajomych");
+  if (blocks.between(me.id, friendId) || privacy.get(friendId).invites === "none") return fail(res, 403, "Ta osoba nie przyjmuje zaproszeń do gier");
   const playing = presence.get(me.id).playing;
   if (!playing) return fail(res, 400, "Zapraszać możesz tylko w trakcie gry");
   const code = typeof req.body?.privateCode === "string" ? req.body.privateCode.slice(0, 20) : undefined;

@@ -37,6 +37,8 @@ export class VoiceChat {
   })();
   /** głośność osoby zależnie od odległości (0..1) - ustawia ekran gry 3D */
   volumeFor: ((sid: string) => number) | null = null;
+  /** zgłoszenie osoby z czatu głosowego (ekran gry otwiera okno zgłoszenia) */
+  onReport: ((sid: string, username: string) => void) | null = null;
   /** ktoś zaczął / przestał mówić (ikonka przy nicku) */
   onSpeaking: ((sid: string, speaking: boolean) => void) | null = null;
   readonly button: HTMLButtonElement;
@@ -255,6 +257,7 @@ export class VoiceChat {
           },
           p.muted ? "🔇" : "🔊",
         ),
+        this.onReport ? h("button", { class: "btn small danger", title: "Zgłoś (i zablokuj)", onClick: () => this.onReport?.(p.sid, p.username) }, "🚩") : "",
       );
     });
     this.panel.replaceChildren(

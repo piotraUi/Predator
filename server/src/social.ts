@@ -1,6 +1,7 @@
 // Tabele "społecznościowe": zgłoszenia, historia admina, ulubione gry, grupy, wymiany,
 // limitowane przedmioty i prywatne serwery.
 import { db } from "./db.ts";
+import { DEFAULT_PRIVACY, type Privacy } from "../../shared/types.ts";
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS reports (
@@ -86,10 +87,58 @@ CREATE TABLE IF NOT EXISTS private_servers (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS private_servers_world ON private_servers(world_id);
+
+-- zablokowani gracze (nie piszą, nie zapraszają, nie słychać ich na czacie głosowym)
+CREATE TABLE IF NOT EXISTS blocks (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, blocked_id)
+);
 `);
 
 const userCols = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
 if (!userCols.includes("muted_until")) db.exec("ALTER TABLE users ADD COLUMN muted_until INTEGER NOT NULL DEFAULT 0");
+if (!userCols.includes("privacy")) db.exec("ALTER TABLE users ADD COLUMN privacy TEXT NOT NULL DEFAULT '{}'");
+
+// ---------- blokowanie ----------
+
+export const blocks = {
+  add: (userId: number, blockedId: number) =>
+    db.prepare("INSERT OR IGNORE INTO blocks (user_id, blocked_id, created_at) VALUES (?, ?, ?)").run(userId, blockedId, Date.now()),
+  remove: (userId: number, blockedId: number) => db.prepare("DELETE FROM blocks WHERE user_id = ? AND blocked_id = ?").run(userId, blockedId),
+  /** kogo zablokowałem */
+  list: (userId: number) =>
+    db
+      .prepare("SELECT u.id, u.username FROM blocks b JOIN users u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY b.created_at DESC")
+      .all(userId) as unknown as { id: number; username: string }[],
+  /** czy któraś z osób zablokowała drugą */
+  between: (a: number, b: number) => !!db.prepare("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_id = ?) OR (user_id = ? AND blocked_id = ?)").get(a, b, b, a),
+};
+
+// ---------- prywatność ----------
+
+export const privacy = {
+  get(userId: number): Privacy {
+    const row = db.prepare("SELECT privacy FROM users WHERE id = ?").get(userId) as { privacy: string } | undefined;
+    try {
+      return sanitizePrivacy(JSON.parse(row?.privacy ?? "{}"));
+    } catch {
+      return { ...DEFAULT_PRIVACY };
+    }
+  },
+  set: (userId: number, p: Privacy) => db.prepare("UPDATE users SET privacy = ? WHERE id = ?").run(JSON.stringify(sanitizePrivacy(p)), userId),
+};
+
+export function sanitizePrivacy(input: unknown): Privacy {
+  const p = (input ?? {}) as Record<string, unknown>;
+  return {
+    friendRequests: p.friendRequests === "none" ? "none" : "all",
+    messages: p.messages === "none" ? "none" : "friends",
+    invites: p.invites === "none" ? "none" : "friends",
+    showPlaying: p.showPlaying === "none" ? "none" : "friends",
+  };
+}
 
 // ---------- wyciszenie ----------
 

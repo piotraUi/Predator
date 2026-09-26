@@ -17,6 +17,8 @@ import type {
   WorldInfo,
 } from "../../shared/types.ts";
 import type { CatalogItem } from "../../shared/catalog.ts";
+import type { Privacy } from "../../shared/types.ts";
+import { safety, type BlockedUser } from "./safety.ts";
 
 const LS_SERVER = "predator.server";
 const LS_TOKEN = "predator.token";
@@ -125,7 +127,14 @@ export const api = {
   register: (username: string, password: string) => req<Auth>("POST", "/register", { username, password }),
   login: (username: string, password: string) => req<Auth>("POST", "/login", { username, password }),
   logout: () => req("POST", "/logout"),
-  me: () => req<{ user: PublicUser; dailyBonus: number }>("GET", "/me"),
+  me: () =>
+    req<{ user: PublicUser; dailyBonus: number; blocked?: BlockedUser[]; privacy?: Privacy }>("GET", "/me").then((r) => {
+      safety.set(r);
+      return r;
+    }),
+  block: (userId: number) => req<{ ok: true; blocked: BlockedUser[] }>("POST", "/blocks", { userId }).then((r) => (safety.set(r), r)),
+  unblock: (userId: number) => req<{ ok: true; blocked: BlockedUser[] }>("DELETE", `/blocks/${userId}`).then((r) => (safety.set(r), r)),
+  setPrivacy: (p: Privacy) => req<Privacy>("PUT", "/privacy", p).then((privacy) => (safety.set({ privacy }), privacy)),
   catalog: () => req<CatalogItem[]>("GET", "/catalog"),
   saveAvatar: (a: Partial<PublicUser["avatar"]>) => req<{ user: PublicUser }>("PUT", "/avatar", a),
   buy: (itemId: string) => req<{ user: PublicUser }>("POST", "/buy", { itemId }),

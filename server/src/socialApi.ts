@@ -28,6 +28,7 @@ import {
   trades,
   type GroupRow,
   type TradeRow,
+  privacy,
 } from "./social.ts";
 
 export const social = express.Router();
@@ -102,7 +103,7 @@ social.get("/users/:name/profile", requireAuth, (req, res) => {
     admin: isAdminName(u.username),
     banned: !!u.banned,
     online: showPresence && pres.online,
-    playing: showPresence ? pres.playing : null,
+    playing: showPresence && (friendStatus === "me" || privacy.get(u.id).showPlaying !== "none") ? pres.playing : null,
     friendStatus,
     friends: (db.prepare("SELECT COUNT(*) AS c FROM friends WHERE (user_id = ? OR friend_id = ?) AND status = 'accepted'").get(u.id, u.id) as { c: number }).c,
     badges,

@@ -10,6 +10,8 @@ import type { GameConnection } from "../game/connection.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
 import { VoiceChat } from "../game/voice.ts";
 import { gameShop } from "../game/gameShop.ts";
+import { openGameReport, playersPanel } from "../game/playersPanel.ts";
+import { safety } from "../safety.ts";
 import { openInviteFriends } from "../game/inviteFriends.ts";
 import { AssetStore, unlockAudio } from "./assets.ts";
 import { fitScale, LevelView, type Camera2D, type Entity2D } from "./render.ts";
@@ -246,6 +248,8 @@ export function play2dScreen(
     } else if (e.key === "Escape") closeChat();
   });
   function addChat(m: ChatMsg) {
+    // wiadomości zablokowanych graczy nie pokazujemy
+    if (!m.system && safety.isBlockedName(m.from)) return;
     const line = h("div", { class: "chat-line" + (m.system ? " system" : "") }, m.system ? m.text : [h("b", null, m.from + ": "), m.text]);
     chatLog.append(line);
     while (chatLog.children.length > 60) chatLog.firstChild?.remove();
@@ -321,6 +325,12 @@ export function play2dScreen(
   // czat głosowy ze znajomymi (tylko w grze na serwerze)
   const voice = params.offline ? null : new VoiceChat(conn, init.you);
   if (voice) (topbar.insertBefore(voice.button, topbar.lastChild), wrap.append(voice.panel));
+  // gracze na serwerze: znajomi / zablokuj / zgłoś
+  if (!params.offline) {
+    const pp = playersPanel(conn, () => [...remotes.entries()].map(([sid, rm]) => ({ sid, username: rm.net.username })));
+    topbar.insertBefore(pp.button, topbar.lastChild);
+    if (voice) voice.onReport = (sid, username) => openGameReport(conn, { sid, username }, true);
+  }
   // sklep gry (pokazuje się, gdy gra ma produkty)
   const shop = gameShop(conn, { offline: !!params.offline });
   topbar.insertBefore(shop.button, topbar.lastChild);

@@ -2,6 +2,7 @@
 // Trzymane w pamięci (krótko) - aplikacja odbiera je co kilka sekund (GET /live).
 import { friends, users } from "./db.ts";
 import { presenceHooks } from "./presence.ts";
+import { privacy } from "./social.ts";
 
 export type LiveEvent =
   | { kind: "online"; fromId: number; from: string; at: number }
@@ -54,6 +55,8 @@ export const live = {
   },
   /** ktoś zaczął grać (publiczny serwer - prywatnych nie ogłaszamy) */
   startedPlaying(userId: number, p: { worldId: number; worldName: string; roomId: string }) {
+    // gracz ukrył, w co gra
+    if (privacy.get(userId).showPlaying === "none") return;
     const u = users.byId(userId);
     if (u) live.toFriends(userId, { kind: "playing", fromId: userId, from: u.username, ...p });
   },

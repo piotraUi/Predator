@@ -389,6 +389,19 @@ export const MAX_HP = 100;
 
 // ---------- społeczność ----------
 
+/** Ustawienia prywatności gracza */
+export interface Privacy {
+  /** kto może zapraszać do znajomych */
+  friendRequests: "all" | "none";
+  /** kto może pisać wiadomości (i tak tylko znajomi) */
+  messages: "friends" | "none";
+  /** kto może zapraszać do gier */
+  invites: "friends" | "none";
+  /** czy znajomi widzą, w co gram (i mogą dołączyć) */
+  showPlaying: "friends" | "none";
+}
+export const DEFAULT_PRIVACY: Privacy = { friendRequests: "all", messages: "friends", invites: "friends", showPlaying: "friends" };
+
 export const REPORT_REASONS = ["Brzydkie słowa", "Nękanie / wyzywanie", "Oszukiwanie", "Spam", "Nieodpowiednie treści", "Podszywanie się", "Inne"] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 

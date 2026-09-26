@@ -14,6 +14,7 @@ import {
 } from "../../../shared/types.ts";
 import { api } from "../api.ts";
 import { session } from "../state.ts";
+import { safety } from "../safety.ts";
 import { ask, h, modal, toast } from "./dom.ts";
 import { headshot } from "./headshot.ts";
 import { errorBox, gameGrid, loading, timeAgo, timeLabel, type Ctx } from "./home.ts";
@@ -114,7 +115,26 @@ export async function profileView(el: HTMLElement, ctx: Ctx, name: string) {
       actions.push(h("button", { class: "btn", onClick: () => ctx.nav({ v: "chat", with: p.id }) }, icon("chat", 18), " Napisz"));
       actions.push(h("button", { class: "btn", onClick: () => newTradeDialog(p.username, () => ctx.nav({ v: "trades" })) }, "🔁 Wymiana"));
     }
-    if (p.friendStatus !== "me") actions.push(h("button", { class: "btn small ghost", onClick: () => reportDialog("user", p.id, p.username) }, "⚑ Zgłoś"));
+    if (p.friendStatus !== "me") {
+      actions.push(h("button", { class: "btn small ghost", onClick: () => reportDialog("user", p.id, p.username) }, "⚑ Zgłoś"));
+      const blocked = safety.isBlocked(p.id);
+      actions.push(
+        h(
+          "button",
+          {
+            class: "btn small ghost",
+            onClick: async () => {
+              if (!blocked && !(await ask(`Zablokować ${p.username}? Przestaniecie być znajomymi, nie będzie mógł(a) do Ciebie pisać, zapraszać Cię ani rozmawiać z Tobą głosowo.`, "Zablokuj", "Anuluj", true))) return;
+              if (await run(blocked ? api.unblock(p.id) : api.block(p.id), blocked ? "Odblokowano" : "🚫 Zablokowano")) {
+                if (!blocked && p.friendStatus !== "none") p.friendStatus = "none";
+                render();
+              }
+            },
+          },
+          blocked ? "Odblokuj" : "🚫 Zablokuj",
+        ),
+      );
+    }
 
     const stat = (label: string, v: number | string) => h("div", { class: "prof-stat" }, h("b", null, String(v)), h("span", { class: "muted" }, label));
     el.replaceChildren(

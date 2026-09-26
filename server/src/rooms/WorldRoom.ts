@@ -3,13 +3,14 @@
 import { Room, type Client } from "colyseus";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
 import { Sim2D } from "../../../shared/sim/sim2d.ts";
-import { creatorCut, GAME_PROTOCOL, type BadgeDef, type ProductDef } from "../../../shared/types.ts";
+import { creatorCut, GAME_PROTOCOL, REPORT_REASONS, type BadgeDef, type ProductDef, type ReportReason } from "../../../shared/types.ts";
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
-import { alerts, badges, gameData, purchases, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
+import { alerts, badges, friends, gameData, purchases, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
 import { presence } from "../presence.ts";
-import { areFriends, mutes, privateServers, type PrivateServerRow } from "../social.ts";
+import { areFriends, blocks, mutes, privacy, privateServers, reports, type PrivateServerRow } from "../social.ts";
+import { filterChat } from "../../../shared/chatFilter.ts";
 import { PAID_EMOTES } from "../../../shared/catalog.ts";
 
 const TICK_MS = 50; // 20 razy na sekundę
@@ -38,6 +39,8 @@ export class WorldRoom extends Room {
   private voiceMode = new Map<string, "all" | "friends">();
   /** ostatnio wysłana lista rozmówców (wysyłamy tylko zmiany) */
   private voiceSent = new Map<string, string>();
+  /** ostatnie wiadomości z czatu gry (do zgłoszeń) */
+  private chatLog: { from: string; text: string; at: number }[] = [];
 
   onCreate(options: { worldId?: number; privateCode?: string }) {
     const world = worlds.byId(Number(options.worldId));
@@ -62,6 +65,7 @@ export class WorldRoom extends Room {
       {
         send: (sid, type, msg) => this.clients.find((c) => c.sessionId === sid)?.send(type, msg),
         broadcast: (type, msg, exceptSid) => {
+
           const except = exceptSid ? this.clients.find((c) => c.sessionId === exceptSid) : undefined;
           this.broadcast(type, msg, except ? { except } : undefined);
         },
@@ -84,10 +88,19 @@ export class WorldRoom extends Room {
           const j = this.joinedAt.get(client.sessionId);
           const muted = j ? mutes.message(j.userId) : null;
           if (muted) return client.send("chat", { from: "", text: "🔇 " + muted, system: true });
+          // ostatnie wiadomości czatu (tak, jak je napisano - bez gwiazdek) - dla administratora przy zgłoszeniach
+          if (typeof msg === "string" && msg.trim()) {
+            this.chatLog.push({ from: this.sim.players.get(client.sessionId)?.username ?? "?", text: msg.slice(0, 200), at: Date.now() });
+            if (this.chatLog.length > 60) this.chatLog.shift();
+          }
         }
         this.sim.handle(client.sessionId, type, msg);
       });
     this.onMessage("buy", (client, m: { id?: unknown }) => this.buy(client, String(m?.id ?? "")));
+    // gracz z tego serwera: zgłoś / zablokuj / dodaj do znajomych
+    this.onMessage("report", (client, m: { sid?: unknown; reason?: unknown; text?: unknown; voice?: unknown }) => this.report(client, m));
+    this.onMessage("block", (client, m: { sid?: unknown }) => this.blockPlayer(client, String(m?.sid ?? "")));
+    this.onMessage("befriend", (client, m: { sid?: unknown }) => this.befriend(client, String(m?.sid ?? "")));
     // czat głosowy: gracze w pobliżu (albo tylko znajomi), serwer przekazuje sygnały połączenia WebRTC
     this.onMessage("voice", (client, on: unknown) => {
       if (on === true) {
@@ -172,6 +185,60 @@ export class WorldRoom extends Room {
     });
   }
 
+  /** zgłoszenie gracza z gry: administrator dostaje też ostatnie wiadomości z czatu */
+  private report(client: Client, m: { sid?: unknown; reason?: unknown; text?: unknown; voice?: unknown }) {
+    const me = this.joinedAt.get(client.sessionId);
+    const sid = String(m?.sid ?? "");
+    const target = this.joinedAt.get(sid);
+    const reason = String(m?.reason ?? "") as ReportReason;
+    if (!me || !target || target.userId === me.userId) return client.send("reported", { error: "Nie ma takiego gracza" });
+    if (!REPORT_REASONS.includes(reason)) return client.send("reported", { error: "Wybierz powód" });
+    if (reports.exists(me.userId, "user", target.userId)) return client.send("reported", { error: "Już to zgłosiłeś - administrator to sprawdzi" });
+    if (reports.countToday(me.userId) >= 20) return client.send("reported", { error: "Za dużo zgłoszeń dzisiaj" });
+    const name = this.sim.players.get(sid)?.username ?? "?";
+    const time = (t: number) => new Date(t).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+    const log = this.chatLog.slice(-30).map((c) => `[${time(c.at)}] ${c.from}${c.from === name ? " ⚠️" : ""}: ${c.text}`);
+    const text = [
+      filterChat(String(m?.text ?? "")).slice(0, 300),
+      `— Zgłoszone z gry „${this.world.name}”${m?.voice === true ? " (czat głosowy)" : ""}.`,
+      log.length ? "Ostatnie wiadomości na czacie:\n" + log.join("\n") : "Brak wiadomości na czacie.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    reports.add(me.userId, "user", target.userId, reason, text.slice(0, 4000));
+    client.send("reported", { ok: true, username: name });
+  }
+
+  /** blokada z gry: nie słychać się na czacie głosowym, koniec znajomości i zaproszeń */
+  private blockPlayer(client: Client, sid: string) {
+    const me = this.joinedAt.get(client.sessionId);
+    const target = this.joinedAt.get(sid);
+    if (!me || !target || target.userId === me.userId) return;
+    blocks.add(me.userId, target.userId);
+    friends.remove(me.userId, target.userId);
+    client.send("blocked", { blocked: blocks.list(me.userId) });
+    this.updateVoicePeers();
+  }
+
+  /** zaproszenie do znajomych z gry */
+  private befriend(client: Client, sid: string) {
+    const me = this.joinedAt.get(client.sessionId);
+    const target = this.joinedAt.get(sid);
+    const reply = (text: string, ok = false) => client.send("befriended", { text, ok });
+    if (!me || !target || target.userId === me.userId) return;
+    if (blocks.between(me.userId, target.userId)) return reply("Nie możesz zaprosić tej osoby");
+    const existing = friends.get(me.userId, target.userId);
+    if (existing?.status === "accepted") return reply("Już jesteście znajomymi");
+    if (existing && existing.user_id === target.userId) {
+      friends.accept(target.userId, me.userId);
+      return reply("Jesteście teraz znajomymi! 🎉", true);
+    }
+    if (existing) return reply("Zaproszenie już wysłane");
+    if (privacy.get(target.userId).friendRequests === "none") return reply("Ta osoba nie przyjmuje zaproszeń do znajomych");
+    friends.request(me.userId, target.userId);
+    reply("Wysłano zaproszenie do znajomych", true);
+  }
+
   /** zakup w sklepie gry: monety od gracza, część dla twórcy, a skrypt dostaje onPurchase */
   private buy(client: Client, id: string) {
     const j = this.joinedAt.get(client.sessionId);
@@ -241,6 +308,8 @@ export class WorldRoom extends Room {
     const ua = this.joinedAt.get(a)?.userId;
     const ub = this.joinedAt.get(b)?.userId;
     if (!ua || !ub || mutes.message(ua) || mutes.message(ub)) return false;
+    // zablokowani się nie słyszą
+    if (blocks.between(ua, ub)) return false;
     // "tylko znajomi" u któregokolwiek z nich = muszą być znajomymi
     if (this.voiceMode.get(a) === "friends" || this.voiceMode.get(b) === "friends") return areFriends(ua, ub);
     return true;

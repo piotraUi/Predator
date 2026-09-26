@@ -21,6 +21,8 @@ import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { gameShop } from "./gameShop.ts";
+import { openGameReport, playersPanel } from "./playersPanel.ts";
+import { safety } from "../safety.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
 import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride } from "./vehicles.ts";
 import { openInviteFriends } from "./inviteFriends.ts";
@@ -701,6 +703,7 @@ export function playScreen(
         const d = Math.hypot(rm.tx - body.x, rm.ty - body.y, rm.tz - body.z);
         return d < 25 ? 1 : Math.max(0.08, 1 - (d - 25) / 140);
       };
+      voice.onReport = (sid, username) => openGameReport(r, { sid, username }, true);
       voice.onSpeaking = (sid, on) => {
         const rm = remotes.get(sid);
         const t = rm?.tag.children[0] as TextBlock | undefined;
@@ -710,12 +713,19 @@ export function playScreen(
       wrap.append(voice.panel);
       cleanups.push(() => voice.dispose());
     }
+    // gracze na serwerze: znajomi / zablokuj / zgłoś
+    if (!params.offline) {
+      const pp = playersPanel(r, () => [...remotes.entries()].map(([sid, rm]) => ({ sid, username: rm.username })));
+      topbar.insertBefore(pp.button, topbar.querySelector(".hud-title"));
+    }
     // sklep gry (pokazuje się, gdy gra ma produkty)
     const shop = gameShop(r, { offline: !!params.offline, onCoins: (c) => (coinsEl.textContent = String(c)) });
     topbar.insertBefore(shop.button, topbar.querySelector(".hud-title"));
     cleanups.push(() => shop.dispose());
 
     const addChat = (m: ChatMsg) => {
+      // wiadomości zablokowanych graczy nie pokazujemy
+      if (!m.system && safety.isBlockedName(m.from)) return;
       const line = m.system
         ? h("div", { class: "chat-line system" }, m.text)
         : h("div", { class: "chat-line" }, h("b", null, m.from + ": "), m.text);
