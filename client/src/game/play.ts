@@ -227,9 +227,13 @@ export function playScreen(
     const crosshair = h("div", { class: "fp-cross hidden" });
     wrap.append(crosshair);
     const touchDevice = matchMedia("(pointer: coarse)").matches;
+    /** gracz sam wyszedł z łapania myszki (Esc) - wtedy myszka jest wolna do klikania w menu */
+    let fpFreed = false;
     function setFirstPersonMode(on: boolean) {
       fp = on;
+      fpFreed = false;
       crosshair.classList.toggle("hidden", !on);
+      canvas.classList.toggle("fp-mouse", on && !touchDevice);
       setCameraFirstPerson(camera, on);
       // w pierwszej osobie widać bliskie rzeczy (własne ręce) i można patrzeć prawie pionowo w dół i w górę
       camera.minZ = on ? 0.05 : 0.2;
@@ -237,12 +241,35 @@ export function playScreen(
       camera.upperBetaLimit = on ? Math.PI * 0.94 : Math.PI * 0.7;
       if (!on && document.pointerLockElement === canvas) document.exitPointerLock();
     }
-    // komputer: w pierwszej osobie myszka jest złapana (jak w Robloxie) - kliknij, żeby rozglądać się bez prawego przycisku
-    const onFpDown = () => {
-      if (fp && !touchDevice && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
+    // komputer: w pierwszej osobie myszka od razu obraca kamerę (jak w Robloxie), a przy pierwszym
+    // kliknięciu albo klawiszu przeglądarka ją łapie (bez tego nie wolno), żeby nie uciekała z okna
+    const lockMouse = () => {
+      if (!fp || touchDevice || document.pointerLockElement === canvas) return;
+      fpFreed = false;
+      try {
+        canvas.requestPointerLock?.()?.catch?.(() => {});
+      } catch {
+        /* przeglądarka nie pozwala */
+      }
+    };
+    const onFpDown = () => lockMouse();
+    const onFpKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key === "Escape" || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable))) return;
+      if (!fpFreed) lockMouse();
+    };
+    const onLockChange = () => {
+      // wyjście z łapania (Esc) - myszka wolna, dopóki gracz nie kliknie w grę
+      if (fp && document.pointerLockElement !== canvas) fpFreed = true;
+      canvas.classList.toggle("fp-mouse", fp && !touchDevice && !fpFreed);
     };
     const onFpMove = (e: PointerEvent | MouseEvent) => {
-      if (!fp || document.pointerLockElement !== canvas) return;
+      if (!fp || touchDevice) return;
+      const locked = document.pointerLockElement === canvas;
+      // bez złapania obracamy tylko, gdy myszka jest nad grą (nie nad menu i przyciskami)
+      if (!locked && (fpFreed || e.target !== canvas || e.buttons & 2)) return;
+      // przeglądarka zaraz po złapaniu myszki potrafi wysłać jeden ogromny skok - pomijamy go
+      if (Math.abs(e.movementX) > 250 || Math.abs(e.movementY) > 250) return;
       const k = lookRadPerPx();
       camera.alpha -= e.movementX * k;
       const b = camera.beta - e.movementY * k * (settings.invertY ? -1 : 1);
@@ -250,9 +277,13 @@ export function playScreen(
     };
     canvas.addEventListener("pointerdown", onFpDown);
     document.addEventListener("mousemove", onFpMove);
+    window.addEventListener("keydown", onFpKey);
+    document.addEventListener("pointerlockchange", onLockChange);
     cleanups.push(() => {
       canvas.removeEventListener("pointerdown", onFpDown);
       document.removeEventListener("mousemove", onFpMove);
+      window.removeEventListener("keydown", onFpKey);
+      document.removeEventListener("pointerlockchange", onLockChange);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     });
 
@@ -471,7 +502,7 @@ export function playScreen(
     });
     for (const p of init.players) if (p.seat && p.sid !== init.you) rides.start(p.sid, p.seat);
     if (localStorage.getItem("predator.debug"))
-      (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, get ry() { return ry; } };
+      (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, get ry() { return ry; }, camera, get fp() { return fp; } };
 
     /** Dymek z wiadomością nad głową gracza (znika po 6 s) */
     const showBubble = (username: string, text: string) => {
@@ -935,7 +966,9 @@ export function playScreen(
     scene.onPointerObservable.add((pi) => {
       if (pi.type !== PointerEventTypes.POINTERTAP || !hotbar.current) return;
       if ((pi.event as PointerEvent).button !== 0 && (pi.event as PointerEvent).pointerType === "mouse") return;
-      useTool(scene.pointerX, scene.pointerY);
+      // w pierwszej osobie celujemy zawsze w kropkę na środku (kursor jest schowany albo złapany)
+      if (fp) useTool();
+      else useTool(scene.pointerX, scene.pointerY);
     });
     r.onMessage("tp", (t: { x: number; y: number; z: number }) => {
       Object.assign(body, t, { vx: 0, vy: 0, vz: 0 });
