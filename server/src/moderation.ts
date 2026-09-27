@@ -172,7 +172,8 @@ async function chat(content: unknown, timeoutMs: number, prio: Prio, cost = 1000
     () => JSON.stringify({
       model: TEXT_MODEL,
       temperature: 0,
-      max_tokens: 1500,
+      // darmowy plan Groq: najwyżej 1000 tokenów odpowiedzi na minutę
+      max_tokens: 600,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: RULES + '\nOdpowiedz TYLKO JSON: {"results":[{"i":1,"ok":true,"reason":""}]} - jeden wpis na każdy numer.' },
@@ -212,11 +213,11 @@ export async function checkTexts(texts: string[], timeoutMs = 30_000, prio: Prio
     if (c) out[idx] = { ok: !!c.ok, reason: c.reason };
     else todo.push({ idx, text, hash });
   });
-  // partie do ~20 tekstów / 6000 znaków
+  // partie do ~12 tekstów / 6000 znaków (odpowiedź musi się zmieścić w limicie tokenów)
   for (let i = 0; i < todo.length; ) {
     const batch: typeof todo = [];
     let size = 0;
-    while (i < todo.length && batch.length < 20 && (size === 0 || size + todo[i].text.length < 6000)) {
+    while (i < todo.length && batch.length < 12 && (size === 0 || size + todo[i].text.length < 6000)) {
       size += todo[i].text.length;
       batch.push(todo[i++]);
     }
