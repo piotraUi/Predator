@@ -87,6 +87,9 @@ Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` 
 | `HOST` | `0.0.0.0` | na jakim adresie nasłuchiwać |
 | `DATA_DIR` | `./data` | gdzie zapisywać bazę danych (zrób kopię tego folderu!) |
 | `PREDATOR_PASSWORD` | (losowe) | hasło konta **Predator** |
+| `GROQ_API_KEY` | (brak) | klucz Groq do moderacji AI (można też wpisać w panelu admina → Moderacja) |
+| `GROQ_MODEL` | `qwen/qwen3.8-27b` | model do sprawdzania tekstu i obrazków |
+| `GROQ_AUDIO_MODEL` | `whisper-large-v3` | model zamieniający dźwięki i piosenki na tekst |
 
 **Konto Predator** serwer tworzy sam przy każdym starcie (jeśli go nie ma) i ustawia na nim wszystko: skórkę Predatora (Korona Predatora, Koszulka Predatora, Skrzydła Predatora), wszystkie przedmioty, milion monet i uprawnienia admina. Hasło bierze ze zmiennej `PREDATOR_PASSWORD`, a jeśli jej nie ma, wymyśla je przy pierwszym starcie i zapisuje w pliku `konto-predator.txt` w folderze danych. Lista adminów jest w `server/src/config.ts`.
 
@@ -104,6 +107,7 @@ Ilość monet za granie, dzienny limit i bonus zmienisz w `server/src/config.ts`
 - **Blokowanie:** na profilu gracza albo w grze (przycisk 👥). Zablokowany nie pisze, nie zaprasza, nie jest słyszalny na czacie głosowym, a jego wiadomości na czacie gry są ukryte.
 - **Zgłaszanie z gry i z czatu głosowego (🚩):** administrator dostaje zgłoszenie razem z ostatnimi wiadomościami z czatu tej gry.
 - **Prywatność** (Ustawienia): kto może zapraszać do znajomych, pisać, zapraszać do gier i widzieć, w co grasz.
+- **Moderacja AI (Groq), tylko na serwerze:** czat w grach, wiadomości prywatne i czat grup są sprawdzane, zanim trafią do innych. Po 3 zablokowanych wiadomościach w godzinę gracz ma czat wyłączony na 10 minut. Sprawdzane są też nicki i nazwy grup, serwerów oraz modeli. Opublikowane gry są sprawdzane po każdym zapisie: nazwa, opis, napisy w skryptach, odznaki, produkty, obrazki i miniaturka (model z widzeniem) oraz dźwięki i piosenki (Whisper zamienia je na tekst, a potem tekst jest sprawdzany). Gra z problemem jest ukrywana, a twórca dostaje powiadomienie z powodem. Po poprawce i zapisie sprawdza się jeszcze raz i publikuje sama. Każdy tekst, obrazek i dźwięk jest sprawdzany tylko raz (wynik zostaje w bazie). Gdy Groq nie odpowiada, działa zwykły filtr słów. Klucz, włączanie, próbę i dziennik zablokowanych treści znajdziesz w panelu admina → **Moderacja**. Klucz zostaje na serwerze i nigdy nie trafia do aplikacji graczy. Czat głosowy nie jest sprawdzany (dźwięk idzie bezpośrednio między graczami), na niego jest przycisk 🚩.
 - **Ochrona przed oszustami:** serwer sprawdza ruch graczy (prędkość, teleport, latanie). Niemożliwy ruch jest cofany, a uporczywi oszuści są automatycznie zgłaszani i wyrzucani z gry.
 
 ## Aplikacje: EXE, APK i iOS

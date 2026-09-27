@@ -8,6 +8,7 @@ import { presence } from "./presence.ts";
 import { adminLog, groups, mutes, reports } from "./social.ts";
 import fs from "node:fs";
 import path from "node:path";
+import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings } from "./moderation.ts";
 import { BACKUP_DIR, BACKUP_NAME_RE, backupNow, checkUpdates, isGitRepo, listBackups, runUpdate, supervised, updateState } from "./maintenance.ts";
 
 export const admin = express.Router();
@@ -254,4 +255,63 @@ admin.post("/update", (req, res) => {
 
 admin.get("/log", (_req, res) => {
   res.json(adminLog.list().map((l) => ({ id: l.id, admin: l.admin_name, action: l.action, target: l.target, details: l.details, at: l.created_at })));
+});
+
+// ---------- moderacja AI (Groq) ----------
+
+let scanAll: { running: boolean; checked: number; flagged: number } = { running: false, checked: 0, flagged: 0 };
+
+admin.get("/moderation", (_req, res) => {
+  res.json({
+    ...moderationStatus(),
+    scanAll,
+    log: modLog.list(150).map((l) => ({ id: l.id, kind: l.kind, user: l.username, world: l.world_name, worldId: l.world_id, content: l.content, reason: l.reason, at: l.created_at })),
+  });
+});
+
+admin.put("/moderation", (req, res) => {
+  const b = req.body ?? {};
+  if (typeof b.key === "string") {
+    const key = b.key.trim();
+    if (key && !/^gsk_[A-Za-z0-9]{20,100}$/.test(key)) return fail(res, 400, "To nie wygląda na klucz Groq (zaczyna się od gsk_)");
+    settings.set("groq_key", key || null);
+    log(req, key ? "Klucz Groq ustawiony" : "Klucz Groq usunięty");
+  }
+  if (typeof b.enabled === "boolean") {
+    settings.set("ai_moderation", b.enabled ? "1" : "0");
+    log(req, b.enabled ? "Moderacja AI włączona" : "Moderacja AI wyłączona");
+  }
+  res.json(moderationStatus());
+});
+
+/** próba: sprawdza tekst (i pokazuje, czy klucz działa) */
+admin.post("/moderation/test", async (req, res) => {
+  const text = String(req.body?.text ?? "").slice(0, 500);
+  if (!text.trim()) return fail(res, 400, "Wpisz tekst");
+  try {
+    const [v] = await checkTexts([text], 15_000);
+    res.json(v);
+  } catch (e) {
+    fail(res, 502, "Groq nie odpowiada: " + (e as Error).message);
+  }
+});
+
+/** sprawdza wszystkie opublikowane gry (w tle) */
+admin.post("/moderation/scan", (req, res) => {
+  if (scanAll.running) return fail(res, 400, "Sprawdzanie już trwa");
+  if (!aiEnabled()) return fail(res, 400, "Najpierw ustaw klucz Groq");
+  log(req, "Sprawdzenie wszystkich gier przez moderację AI");
+  scanAll = { running: true, checked: 0, flagged: 0 };
+  void scanAllPublished()
+    .then((r) => (scanAll = { running: false, ...r }))
+    .catch(() => (scanAll = { ...scanAll, running: false }));
+  res.json({ ok: true });
+});
+
+/** sprawdza jedną grę od razu */
+admin.post("/moderation/worlds/:id", async (req, res) => {
+  if (!aiEnabled()) return fail(res, 400, "Najpierw ustaw klucz Groq");
+  const r = await runWorldScan(Number(req.params.id));
+  if (!r) return fail(res, 502, "Nie udało się sprawdzić gry");
+  res.json(r);
 });

@@ -148,7 +148,7 @@ export const api = {
   saveWorld: (
     id: number,
     body: Partial<{ name: string; description: string; maxPlayers: number; published: boolean; data: WorldData; thumbnail: string }>,
-  ) => req<WorldInfo>("PUT", "/worlds/" + id, body),
+  ) => req<WorldInfo & { moderation?: string | null }>("PUT", "/worlds/" + id, body),
   deleteWorld: (id: number) => req("DELETE", "/worlds/" + id),
   friends: () => req<FriendInfo[]>("GET", "/friends"),
   addFriend: (username: string) => req<{ ok: true; accepted?: boolean }>("POST", "/friends/request", { username }),
@@ -241,6 +241,19 @@ export interface AdminWorld {
 }
 
 /** panel admina - serwer sprawdza, czy konto jest adminem */
+export interface AdminModeration {
+  enabled: boolean;
+  hasKey: boolean;
+  keyFromEnv: boolean;
+  keyHint: string;
+  textModel: string;
+  audioModel: string;
+  flaggedWorlds: number;
+  limits: { tokensLeft: number | null; requestsLeft: number | null; paused: string | null };
+  scanAll?: { running: boolean; checked: number; flagged: number };
+  log?: { id: number; kind: string; user: string | null; world: string | null; worldId: number | null; content: string; reason: string; at: number }[];
+}
+
 export const adminApi = {
   stats: () =>
     req<{ users: number; worlds: number; online: number; playing: number; rooms: number; items: number; groups: number; reports: number }>(
@@ -262,6 +275,11 @@ export const adminApi = {
       check: { git: boolean; branch?: string; behind?: number; commits?: string[]; error?: string } | null;
     }>("GET", "/admin/update" + (check ? "?check=1" : "")),
   updateServer: () => req<{ ok: true }>("POST", "/admin/update"),
+  moderation: () => req<AdminModeration>("GET", "/admin/moderation"),
+  setModeration: (b: { key?: string; enabled?: boolean }) => req<AdminModeration>("PUT", "/admin/moderation", b),
+  testModeration: (text: string) => req<{ ok: boolean; reason: string }>("POST", "/admin/moderation/test", { text }),
+  scanAllWorlds: () => req<{ ok: true }>("POST", "/admin/moderation/scan"),
+  scanWorld: (id: number) => req<{ ok: boolean; problems: { where: string; reason: string }[] }>("POST", `/admin/moderation/worlds/${id}`),
   users: (q = "") => req<AdminUser[]>("GET", "/admin/users?q=" + encodeURIComponent(q)),
   coins: (id: number, amount: number, set = false) => req<AdminUser>("POST", `/admin/users/${id}/coins`, { amount, set }),
   ban: (id: number, banned: boolean) => req<AdminUser>("POST", `/admin/users/${id}/ban`, { banned }),

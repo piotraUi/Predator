@@ -7,6 +7,7 @@ import { sanitizeWorld } from "../../../shared/world.ts";
 import { applyOps2d, flatten2d } from "../../../shared/collab2d.ts";
 import { userFromToken } from "../auth.ts";
 import { canEdit, worlds, type UserRow } from "../db.ts";
+import { queueWorldScan } from "../moderation.ts";
 
 /** pola gry (poza klockami), które synchronizujemy w całości */
 export const STUDIO_FIELDS = [
@@ -152,6 +153,8 @@ export class StudioRoom extends Room {
     this.dirty = false;
     try {
       worlds.setData(this.worldId, this.data);
+      // opublikowana gra zmieniona we wspólnej edycji - moderacja sprawdzi ją jeszcze raz
+      if (worlds.byId(this.worldId)?.published) queueWorldScan(this.worldId, 30_000);
     } catch (e) {
       console.error("Studio: zapis gry", e);
     }

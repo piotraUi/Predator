@@ -36,7 +36,7 @@ function inputModal(title: string, label: string, opts: { type?: string; value?:
 }
 
 export function adminPanel(el: HTMLElement) {
-  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Serwer", "Historia"] as const;
+  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Moderacja", "Serwer", "Historia"] as const;
   let tab: (typeof tabs)[number] = "Start";
   const tabBar = h("div", { class: "shop-tabs adm-tabs" });
   const body = h("div", { class: "adm-body" });
@@ -54,6 +54,7 @@ export function adminPanel(el: HTMLElement) {
     else if (tab === "Zgłoszenia") reportsTab(body);
     else if (tab === "Historia") logTab(body);
     else if (tab === "Serwer") serverTab(body);
+    else if (tab === "Moderacja") moderationTab(body);
     else if (tab === "Gracze") usersTab(body);
     else if (tab === "Gry") worldsTab(body);
     else announceTab(body);
@@ -379,6 +380,130 @@ function reportsTab(el: HTMLElement) {
 }
 
 /** kopie zapasowe bazy i aktualizacja serwera z GitHuba */
+/** moderacja AI przez Groq: klucz, włącz / wyłącz, próba, sprawdzenie gier, dziennik */
+async function moderationTab(el: HTMLElement) {
+  const s = await run(adminApi.moderation());
+  if (!s) return;
+  const keyIn = h("input", { type: "password", placeholder: s.hasKey ? `Zapisany klucz: ${s.keyHint}` : "gsk_...", autocomplete: "off" });
+  const testIn = h("input", { placeholder: "Np. wiadomość do sprawdzenia" });
+  const testOut = h("div", { class: "muted small" });
+  const redraw = () => (el.replaceChildren(), moderationTab(el));
+  const KIND_ICONS: Record<string, string> = { "czat w grze": "💬", "wiadomość prywatna": "✉️", "czat grupy": "👥", gra: "🎮", nick: "🪪", mute: "🔇" };
+  el.append(
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "🛡️ Moderacja AI (Groq)"),
+      h(
+        "p",
+        { class: "muted small" },
+        `Serwer sprawdza czat (w grach, prywatny i w grupach), nicki i nazwy, a opublikowane gry: teksty, skrypty, obrazki i dźwięki / piosenki (Whisper zamienia je na tekst). Model tekstu i obrazków: ${s.textModel}, dźwięku: ${s.audioModel}. Gdy Groq nie działa, zostaje zwykły filtr słów.`,
+      ),
+      h(
+        "p",
+        null,
+        s.enabled ? "✅ Włączona" : s.hasKey ? "⏸️ Wyłączona" : "❌ Brak klucza",
+        s.flaggedWorlds ? ` · gier zatrzymanych przez moderację: ${s.flaggedWorlds}` : "",
+      ),
+      s.limits.requestsLeft !== null
+        ? h("p", { class: "muted small" }, `Limit Groq: zostało zapytań ${s.limits.requestsLeft}, tokenów w tej minucie ${s.limits.tokensLeft ?? "?"}. Darmowy plan ma mało zapytań na dzień - przy wielu graczach potrzebny jest płatny plan Groq.`)
+        : "",
+      s.limits.paused ? h("p", { class: "form-error" }, "⏸️ " + s.limits.paused) : "",
+      s.keyFromEnv
+        ? h("p", { class: "muted small" }, "Klucz jest ustawiony w zmiennej GROQ_API_KEY na serwerze.")
+        : h(
+            "div",
+            { class: "row" },
+            keyIn,
+            h("button", { class: "btn primary small", onClick: async () => (await run(adminApi.setModeration({ key: keyIn.value }), "Zapisano klucz")) && redraw() }, "Zapisz klucz"),
+            s.hasKey ? h("button", { class: "btn small danger", onClick: async () => (await run(adminApi.setModeration({ key: "" }), "Usunięto klucz")) && redraw() }, "Usuń") : "",
+          ),
+      s.hasKey
+        ? h(
+            "button",
+            { class: "btn small", onClick: async () => (await run(adminApi.setModeration({ enabled: !s.enabled }))) && redraw() },
+            s.enabled ? "⏸️ Wyłącz moderację AI" : "▶️ Włącz moderację AI",
+          )
+        : "",
+    ),
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "🧪 Sprawdź tekst"),
+      h(
+        "div",
+        { class: "row" },
+        testIn,
+        h(
+          "button",
+          {
+            class: "btn small",
+            onClick: async () => {
+              testOut.textContent = "⏳ Sprawdzam…";
+              const r = await run(adminApi.testModeration(testIn.value));
+              testOut.textContent = r ? (r.ok ? "✅ W porządku" : "🚫 Zablokowane: " + r.reason) : "";
+            },
+          },
+          "Sprawdź",
+        ),
+      ),
+      testOut,
+    ),
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "🎮 Gry"),
+      h("p", { class: "muted small" }, "Każda opublikowana gra jest sprawdzana po zapisie. Gra z problemem jest ukrywana, a twórca dostaje powiadomienie z powodem. Po poprawce i zapisie sprawdza się jeszcze raz i publikuje sama."),
+      s.scanAll?.running
+        ? h("p", null, "⏳ Trwa sprawdzanie wszystkich gier…")
+        : h(
+            "button",
+            { class: "btn small", onClick: async () => (await run(adminApi.scanAllWorlds(), "Sprawdzanie ruszyło - odśwież za chwilę")) && redraw() },
+            "Sprawdź wszystkie opublikowane gry",
+          ),
+      s.scanAll && !s.scanAll.running && s.scanAll.checked ? h("p", { class: "muted small" }, `Ostatnio: sprawdzono ${s.scanAll.checked}, ukryto ${s.scanAll.flagged}.`) : "",
+    ),
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "📜 Zablokowane ostatnio"),
+      h(
+        "div",
+        { class: "adm-list" },
+        s.log?.length
+          ? s.log.map((l) =>
+              h(
+                "div",
+                { class: "adm-row" },
+                h(
+                  "div",
+                  { class: "adm-row-main" },
+                  h("b", null, `${KIND_ICONS[l.kind] ?? "🛡️"} ${l.kind}`),
+                  h("span", { class: "muted small" }, ` · ${l.user ?? "?"}${l.world ? " · " + l.world : ""} · ${new Date(l.at).toLocaleString("pl-PL")}`),
+                  l.content ? h("div", { class: "small" }, "„" + l.content + "”") : "",
+                  h("div", { class: "small" }, "Powód: " + l.reason),
+                ),
+                l.worldId
+                  ? h(
+                      "button",
+                      {
+                        class: "btn small",
+                        onClick: async () => {
+                          const r = await run(adminApi.scanWorld(l.worldId!));
+                          if (r) toast(r.ok ? "✅ Gra jest teraz w porządku" : "🚫 " + r.problems.map((p) => p.where + ": " + p.reason).join("; "), r.ok ? "good" : "error");
+                        },
+                      },
+                      "Sprawdź grę",
+                    )
+                  : "",
+              ),
+            )
+          : [h("p", { class: "muted" }, "Nic nie zostało zablokowane.")],
+      ),
+    ),
+  );
+}
+
 function serverTab(el: HTMLElement) {
   const upd = h("div", { class: "adm-box" });
   const backups = h("div", { class: "adm-box" });

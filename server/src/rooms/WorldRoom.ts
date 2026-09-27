@@ -12,6 +12,7 @@ import { presence } from "../presence.ts";
 import { areFriends, blocks, mutes, privacy, privateServers, reports, type PrivateServerRow } from "../social.ts";
 import { filterChat } from "../../../shared/chatFilter.ts";
 import { PAID_EMOTES } from "../../../shared/catalog.ts";
+import { aiEnabled, moderateMessage } from "../moderation.ts";
 
 const TICK_MS = 50; // 20 razy na sekundę
 /** czat głosowy: zasięg (jednostki świata 3D) i najwięcej rozmówców naraz */
@@ -100,6 +101,15 @@ export class WorldRoom extends Room {
           if (typeof msg === "string" && msg.trim()) {
             this.chatLog.push({ from: this.sim.players.get(client.sessionId)?.username ?? "?", text: msg.slice(0, 200), at: Date.now() });
             if (this.chatLog.length > 60) this.chatLog.shift();
+            // moderacja AI (Groq): wiadomość idzie do innych dopiero po sprawdzeniu
+            if (aiEnabled()) {
+              void moderateMessage(msg.slice(0, 300), j?.userId ?? 0, "czat w grze", this.world.id).then((v) => {
+                if (!this.clients.some((c) => c.sessionId === client.sessionId)) return;
+                if (v.ok) this.sim.handle(client.sessionId, type, msg);
+                else client.send("chat", { from: "", text: "🛡️ Wiadomość zablokowana przez moderację: " + v.reason, system: true });
+              });
+              return;
+            }
           }
         }
         this.sim.handle(client.sessionId, type, msg);

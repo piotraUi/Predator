@@ -20,6 +20,7 @@ import { live } from "./live.ts";
 import { alerts, badges, canEdit, editors, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { blocks, mutes, privacy, sanitizePrivacy, stock, trades } from "./social.ts";
+import { beforePublish, moderateMessage, moderateName, queueWorldScan } from "./moderation.ts";
 
 export const api = express.Router();
 // gry mogą zawierać modele 3D postaci (.glb), więc limit jest duży
@@ -68,11 +69,14 @@ const MAX_THUMB = 400_000;
 
 // ---------- Konta ----------
 
-api.post("/register", (req, res) => {
+api.post("/register", async (req, res) => {
   const { username, password } = req.body ?? {};
   const err = validateCredentials(username, password);
   if (err) return fail(res, 400, err);
   if (hasProfanity(username)) return fail(res, 400, "Ten nick jest niedozwolony - wybierz inny");
+  if (users.byName(username)) return fail(res, 409, "Ten nick jest już zajęty");
+  // moderacja AI (Groq) - nick sprawdzony też pod kątem obraźliwych treści
+  if (!(await moderateName(username, null, "nick")).ok) return fail(res, 400, "Ten nick jest niedozwolony - wybierz inny");
   if (users.byName(username)) return fail(res, 409, "Ten nick jest już zajęty");
   const { hash, salt } = hashPassword(password);
   const user = users.create(username, hash, salt);
@@ -265,7 +269,7 @@ api.get("/models", requireAuth, (req, res) => {
   res.json(models.search(q, req.query.mine ? me.id : null).map((r) => ({ id: r.id, name: r.name, icon: r.icon, parts: r.parts, uses: r.uses, ownerName: r.owner_name, mine: r.owner_id === me.id, createdAt: r.created_at })));
 });
 
-api.post("/models", requireAuth, (req, res) => {
+api.post("/models", requireAuth, async (req, res) => {
   const me = (req as AuthedRequest).user;
   const name = String(req.body?.name ?? "").trim().slice(0, 40);
   if (!name) return fail(res, 400, "Podaj nazwę modelu");
@@ -276,6 +280,7 @@ api.post("/models", requireAuth, (req, res) => {
   const data = JSON.stringify(model);
   if (data.length > 3_000_000) return fail(res, 400, "Model jest za duży");
   const icon = typeof req.body?.icon === "string" && MODEL_ICON_RE.test(req.body.icon) ? req.body.icon : "📦";
+  if (!(await moderateName(name, me.id, "nazwa modelu")).ok) return fail(res, 400, "Ta nazwa jest niedozwolona");
   res.json({ id: models.create(me.id, filterChat(name) || name, icon, model.parts.length, data) });
 });
 
@@ -366,16 +371,21 @@ api.put("/worlds/:id", requireAuth, (req, res) => {
   // publikować / ukrywać może tylko twórca
   if (w.owner_id !== meId) b.published = undefined;
   const maxPlayers = Math.round(Number(b.maxPlayers) || DEFAULT_MAX_PLAYERS);
+  const wantPublish = b.published === undefined ? !!w.published : !!b.published;
+  // gra zatrzymana przez moderację czeka na ponowne sprawdzenie, zanim znów będzie widoczna
+  const mod = beforePublish(w.id, wantPublish, !!w.published);
   worlds.update(w.id, {
     name: String(b.name ?? w.name).trim().slice(0, 40) || w.name,
     description: String(b.description ?? w.description).slice(0, 500),
     maxPlayers: Math.min(MAX_PLAYERS_LIMIT, Math.max(1, maxPlayers)),
-    published: b.published === undefined ? !!w.published : !!b.published,
+    published: mod.publish,
     data: sanitizeWorld(b.data === undefined ? JSON.parse(w.data) : b.data),
   });
   if (typeof b.thumbnail === "string" && b.thumbnail.length <= MAX_THUMB && THUMB_RE.test(b.thumbnail))
     worlds.setThumbnail(w.id, b.thumbnail);
-  res.json(infoById(w.id));
+  // opublikowane gry sprawdza moderacja AI (teksty, obrazki, dźwięki) - w tle
+  if (wantPublish) queueWorldScan(w.id, mod.message ? 1000 : 8000);
+  res.json({ ...infoById(w.id), moderation: mod.message });
 });
 
 api.delete("/worlds/:id", requireAuth, (req, res) => {
@@ -468,7 +478,7 @@ api.get("/chat/:id", requireAuth, (req, res) => {
   res.json(list);
 });
 
-api.post("/chat/:id", requireAuth, (req, res) => {
+api.post("/chat/:id", requireAuth, async (req, res) => {
   const me = (req as AuthedRequest).user;
   const other = Number(req.params.id);
   if (!areFriends(me.id, other)) return fail(res, 403, "Możesz pisać tylko ze znajomymi");
@@ -481,6 +491,8 @@ api.post("/chat/:id", requireAuth, (req, res) => {
   if (privacy.get(other).messages === "none") return fail(res, 403, "Ta osoba wyłączyła wiadomości");
   const text = filterChat(String(req.body?.text ?? ""));
   if (!text) return fail(res, 400, "Pusta wiadomość");
+  const mod = await moderateMessage(String(req.body?.text ?? ""), me.id, "wiadomość prywatna");
+  if (!mod.ok) return fail(res, 400, "🛡️ Wiadomość zablokowana przez moderację: " + mod.reason);
   const id = messages.send(me.id, other, text);
   res.json({ id, fromMe: true, text, at: now } satisfies ChatMessage);
 });

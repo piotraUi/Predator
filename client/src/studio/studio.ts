@@ -145,6 +145,8 @@ export function studioScreen(
           published: info.published,
           async save(meta, d, published, thumbnail) {
             const res = await api.saveWorld(worldId, { ...meta, published, data: d, thumbnail });
+            // gra czeka na sprawdzenie przez moderację (serwer publikuje ją sam, gdy wszystko jest dobrze)
+            if (res.moderation) toast(res.moderation);
             src.published = res.published;
           },
         };

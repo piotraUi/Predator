@@ -18,6 +18,7 @@ import { infoById, parseAvatar } from "./api.ts";
 import { requireAuth, type AuthedRequest } from "./auth.ts";
 import { alerts, db, isAdminName, toPublicUser, users, worlds, type UserRow } from "./db.ts";
 import { presence } from "./presence.ts";
+import { moderateMessage, moderateName } from "./moderation.ts";
 import {
   areFriends,
   favorites,
@@ -173,7 +174,7 @@ social.get("/groups/mine", requireAuth, (req, res) => {
   res.json(groups.ofUser(u.id).map((g) => groupInfo(g, u.id)));
 });
 
-social.post("/groups", requireAuth, (req, res) => {
+social.post("/groups", requireAuth, async (req, res) => {
   const u = me(req);
   const name = String(req.body?.name ?? "").trim().replace(/\s+/g, " ");
   const description = filterChat(String(req.body?.description ?? "")).slice(0, 300);
@@ -183,6 +184,8 @@ social.post("/groups", requireAuth, (req, res) => {
   if (filterChat(name) !== name) return fail(res, 400, "Ta nazwa jest niedozwolona");
   if (!GROUP_ICONS.includes(icon)) return fail(res, 400, "Wybierz logo");
   if (!GROUP_COLORS.includes(color)) return fail(res, 400, "Wybierz kolor");
+  if (groups.byName(name)) return fail(res, 409, "Grupa o tej nazwie już istnieje");
+  if (!(await moderateName(`${name} - ${description}`, u.id, "grupa")).ok) return fail(res, 400, "Ta nazwa albo opis są niedozwolone");
   if (groups.byName(name)) return fail(res, 409, "Grupa o tej nazwie już istnieje");
   if (groups.ofUser(u.id).filter((g) => g.role === "owner").length >= MAX_OWNED_GROUPS)
     return fail(res, 400, `Możesz mieć maksymalnie ${MAX_OWNED_GROUPS} własne grupy`);
@@ -215,14 +218,16 @@ social.get("/groups/:id", requireAuth, (req, res) => {
   });
 });
 
-social.put("/groups/:id", requireAuth, (req, res) => {
+social.put("/groups/:id", requireAuth, async (req, res) => {
   const g = groupFrom(req, res);
   if (!g) return;
   if (groups.role(g.id, me(req).id) !== "owner") return fail(res, 403, "Tylko właściciel może zmieniać grupę");
   const icon = String(req.body?.icon ?? g.icon);
   const color = String(req.body?.color ?? g.color);
   if (!GROUP_ICONS.includes(icon) || !GROUP_COLORS.includes(color)) return fail(res, 400, "Złe logo");
-  groups.update(g.id, filterChat(String(req.body?.description ?? g.description)).slice(0, 300), icon, color);
+  const description = filterChat(String(req.body?.description ?? g.description)).slice(0, 300);
+  if (description !== g.description && !(await moderateName(description, me(req).id, "opis grupy")).ok) return fail(res, 400, "Ten opis jest niedozwolony");
+  groups.update(g.id, description, icon, color);
   res.json(groupInfo(groups.byId(g.id)!, me(req).id));
 });
 
@@ -286,7 +291,7 @@ social.get("/groups/:id/chat", requireAuth, (req, res) => {
 });
 
 const lastGroupMsg = new Map<number, number>();
-social.post("/groups/:id/chat", requireAuth, (req, res) => {
+social.post("/groups/:id/chat", requireAuth, async (req, res) => {
   const g = groupFrom(req, res);
   if (!g) return;
   const u = me(req);
@@ -298,6 +303,8 @@ social.post("/groups/:id/chat", requireAuth, (req, res) => {
   lastGroupMsg.set(u.id, now);
   const text = filterChat(String(req.body?.text ?? ""));
   if (!text) return fail(res, 400, "Pusta wiadomość");
+  const mod = await moderateMessage(String(req.body?.text ?? ""), u.id, "czat grupy");
+  if (!mod.ok) return fail(res, 400, "🛡️ Wiadomość zablokowana przez moderację: " + mod.reason);
   const id = groups.say(g.id, u.id, text);
   res.json({ id, text, at: now, userId: u.id, username: u.username, avatar: parseAvatar(u.avatar) } satisfies GroupMessage);
 });
@@ -447,12 +454,13 @@ social.get("/worlds/:id/servers", requireAuth, (req, res) => {
   res.json(privateServers.visible(Number(req.params.id), me(req).id).map((s) => serverInfo(s, me(req).id)));
 });
 
-social.post("/worlds/:id/servers", requireAuth, (req, res) => {
+social.post("/worlds/:id/servers", requireAuth, async (req, res) => {
   const u = me(req);
   const w = infoById(Number(req.params.id));
   if (!w || (!w.published && w.ownerId !== u.id)) return fail(res, 404, "Nie ma takiej gry");
   if (privateServers.countOwned(u.id) >= MAX_PRIVATE_SERVERS) return fail(res, 400, `Możesz mieć maksymalnie ${MAX_PRIVATE_SERVERS} prywatnych serwerów`);
-  const name = filterChat(String(req.body?.name ?? "")).slice(0, 30) || `Serwer ${u.username}`;
+  let name = filterChat(String(req.body?.name ?? "")).slice(0, 30) || `Serwer ${u.username}`;
+  if (!(await moderateName(name, u.id, "nazwa serwera")).ok) name = `Serwer ${u.username}`;
   const id = privateServers.create(w.id, u.id, name, newCode());
   res.json(serverInfo(privateServers.byId(id)!, u.id));
 });
