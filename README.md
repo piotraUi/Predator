@@ -64,6 +64,7 @@ Przy pierwszym uruchomieniu powstają przykładowe gry:
 - **🏙️ Predator City**: gra społeczna. Prace w Ratuszu (policjant, lekarz, kucharz) z wypłatą co 30 s, kawiarnia z baristą, park ze stawem i trampoliną, klub disco z kolorowym parkietem i DJ-em, domy z otwieranymi drzwiami, cykl dnia i nocy, rozmowy z NPC. Komendy na czacie: `/pomoc`, `/praca`, `/kasa`.
 - **⚔️ Arena**: miecz i pistolet na start, karabin, młot, apteczki i kawa do podniesienia.
 - **🔥 Tor przeszkód**: skoki nad lawą ze skryptami.
+- **🍭 Fabryka Słodyczy Tycoon**: 6 fabryk. Dropery zrzucają cukierki na taśmę, a ulepszacze ×2 i ×3 mnożą ich wartość. Pakowarka zamienia cukierki na pieniądze w kasie. Kupujesz 17 rzeczy, a przyciski z cenami pojawiają się po kolei. Na końcu cukierkowa rakieta i odrodzenie (+50% kasy na zawsze). Postęp się zapisuje, a w sklepie gry jest „Podwójna kasa”.
 - **🍕 Pizzeria Tycoon**: zajmij działkę, zarabiaj co sekundę i kupuj po kolei ściany, piec, stoły, dach, neon, fontannę i wieżę.
 - **🙈 Chowany**: jeden gracz szuka z piankowym młotkiem (czeka 15 s w klatce), reszta chowa się w domach, szafach i krzakach. Runda 2 minuty.
 - **🏎️ Wyścigi**: wszyscy startują razem; turbo, błoto, skocznia nad wodą, ruchome spychacze, 3 checkpointy i punkty za miejsca.

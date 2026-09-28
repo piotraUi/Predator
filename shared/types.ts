@@ -41,6 +41,8 @@ export interface Part {
   spin?: boolean;
   /** kind = "seat": siedzenie pojazdu (brak = zwykłe krzesło / ławka) */
   vehicle?: VehicleType;
+  /** napis unoszący się nad klockiem (np. cena przycisku w tycoonie) */
+  label?: string;
 }
 
 // ---------- Postacie ----------

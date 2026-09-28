@@ -210,6 +210,10 @@ export class WorldView {
   private npcs = new Map<string, { model: AvatarModel; key: string; target: Vector3; spin: boolean }>();
   /** klocki, które się kręcą (tylko wygląd) */
   private spinning = new Set<string>();
+  /** napisy nad klockami (tabliczka zwrócona zawsze do kamery) */
+  private labels = new Map<string, { plane: Mesh; text: string }>();
+  /** klocki jadące płynnie do nowej pozycji (tweenPart w skryptach) */
+  private tweens = new Map<string, { from: Vector3; to: Vector3; t0: number; dur: number }>();
   private baseLight = { hemi: 0.85, sun: 0.7 };
   private brightness = 1;
   private skyColor = "#8ec8ff";
@@ -285,6 +289,21 @@ export class WorldView {
         for (const id of this.spinning) {
           const m = this.meshes.get(id);
           if (m) m.rotation.y += dt * 2;
+        }
+      }
+      if (this.tweens.size) {
+        const now = performance.now();
+        for (const [id, tw] of this.tweens) {
+          const m = this.meshes.get(id);
+          const k = Math.min(1, (now - tw.t0) / 1000 / tw.dur);
+          if (m) Vector3.LerpToRef(tw.from, tw.to, k, m.position);
+          const label = this.labels.get(id);
+          const part = this.parts.get(id);
+          if (label && part && m) label.plane.position.set(m.position.x, m.position.y + part.sy / 2 + 1.6, m.position.z);
+          if (k >= 1) {
+            this.tweens.delete(id);
+            if (m && !this.spinning.has(id)) m.freezeWorldMatrix();
+          }
         }
       }
     });
@@ -483,9 +502,80 @@ export class WorldView {
     }
     this.updatePickup(part);
     this.updateNpc(part);
+    this.updateLabel(part);
+  }
+
+  /** klocek jedzie płynnie z "from" do swojej (już ustawionej) pozycji */
+  tween(id: string, from: Vector3, seconds: number) {
+    const mesh = this.meshes.get(id);
+    const part = this.parts.get(id);
+    if (!mesh || !part || seconds <= 0) return;
+    mesh.unfreezeWorldMatrix();
+    mesh.doNotSyncBoundingInfo = false;
+    this.tweens.set(id, { from: from.clone(), to: new Vector3(part.x, part.y, part.z), t0: performance.now(), dur: seconds });
+    mesh.position.copyFrom(from);
+  }
+
+  /** napis nad klockiem - tabliczka z tekstem, zawsze przodem do kamery */
+  private updateLabel(part: Part) {
+    const cur = this.labels.get(part.id);
+    const text = part.transparency < 0.999 && part.kind !== "npc" ? (part.label ?? "") : "";
+    if (!text) {
+      if (cur) {
+        cur.plane.material?.dispose(false, true);
+        cur.plane.dispose();
+        this.labels.delete(part.id);
+      }
+      return;
+    }
+    if (cur && cur.text === text) {
+      cur.plane.position.set(part.x, part.y + part.sy / 2 + 1.6, part.z);
+      return;
+    }
+    cur?.plane.material?.dispose(false, true);
+    cur?.plane.dispose();
+    // tekst rysowany na teksturze (szerokość zależy od długości napisu)
+    const font = "bold 44px system-ui, sans-serif";
+    const probe = document.createElement("canvas").getContext("2d")!;
+    probe.font = font;
+    const w = Math.min(1024, Math.ceil(probe.measureText(text).width) + 48);
+    const h = 72;
+    const tex = new DynamicTexture("label-" + part.id, { width: w, height: h }, this.scene, true);
+    tex.hasAlpha = true;
+    const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(10, 12, 20, 0.72)";
+    ctx.beginPath();
+    ctx.roundRect(2, 2, w - 4, h - 4, 22);
+    ctx.fill();
+    ctx.font = font;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(text, w / 2, h / 2 + 2);
+    tex.update();
+    // długie napisy mniejsze (najwyżej ~14 jednostek szerokości)
+    const scale = Math.min(0.028, 14 / w);
+    const plane = MeshBuilder.CreatePlane("label-" + part.id, { width: w * scale, height: h * scale }, this.scene);
+    const mat = new StandardMaterial("label-" + part.id, this.scene);
+    mat.diffuseTexture = tex;
+    mat.emissiveColor = Color3.White();
+    mat.disableLighting = true;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.backFaceCulling = false;
+    plane.material = mat;
+    plane.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    plane.isPickable = false;
+    plane.position.set(part.x, part.y + part.sy / 2 + 1.6, part.z);
+    this.labels.set(part.id, { plane, text });
   }
 
   remove(id: string) {
+    const label = this.labels.get(id);
+    label?.plane.material?.dispose(false, true);
+    label?.plane.dispose();
+    this.labels.delete(id);
+    this.tweens.delete(id);
     this.meshes.get(id)?.dispose();
     this.meshes.delete(id);
     this.parts.delete(id);

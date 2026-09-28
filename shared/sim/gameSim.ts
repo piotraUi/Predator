@@ -11,7 +11,12 @@ import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
 import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
 
-const ANIMS: Anim[] = ["idle", "walk", "jump", "fall", "dead", "swim", "tread", "seated", "drive", "skate", ...EMOTES];
+import { MAX_LABEL } from "../world.ts";
+
+/** zmiana klocka wysyłana graczom; tw = płynne przejście do nowej pozycji (sekundy) */
+export type PartChange = Partial<Part> & { tw?: number };
+
+const ANIMS: Anim[] =["idle", "walk", "jump", "fall", "dead", "swim", "tread", "seated", "drive", "skate", ...EMOTES];
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const LIMIT = 2000;
 const SPAWN_PROTECTION_MS = 2000;
@@ -86,7 +91,7 @@ export class GameSim {
   private partsById = new Map<string, Part>();
   private toolsById = new Map<string, ToolDef>();
   private collisions: CollisionWorld;
-  private dirtyParts = new Map<string, Partial<Part>>();
+  private dirtyParts = new Map<string, PartChange>();
   private scoresDirty = false;
   private lua: LuaEngine | null = null;
   private logs: { text: string; error: boolean }[] = [];
@@ -832,6 +837,16 @@ export class GameSim {
         });
       },
       closePrompt: (target) => to(target, "prompt", null),
+      // napis nad klockiem (np. cena przycisku): setLabel("Przycisk", "Dropper - 50 💰"), "" = bez napisu
+      setLabel: (name, text) => this.updatePartsByName(String(name ?? ""), () => ({ label: String(text ?? "") })),
+      // płynne przesunięcie klocka do x, y, z w podanym czasie (np. cukierek jadący po taśmie)
+      tweenPart: (name, x, y, z, secs) =>
+        this.updatePartsByName(String(name ?? ""), () => ({ x, y, z, tw: typeof secs === "number" ? secs : 0 })),
+      // płynne przesunięcie o tyle (wszystkie klocki o tej nazwie razem - np. cała rakieta)
+      tweenMove: (name, dx, dy, dz, secs) => {
+        const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+        this.updatePartsByName(String(name ?? ""), (part) => ({ x: part.x + n(dx), y: part.y + n(dy), z: part.z + n(dz), tw: n(secs) }));
+      },
       getPlayerLook: (sid) => {
         const p = this.players.get(String(sid ?? ""));
         return p ? [-Math.sin(p.ry), -Math.cos(p.ry)] : null;
@@ -893,11 +908,17 @@ export class GameSim {
       if (t !== undefined) clean.transparency = t;
       if (typeof props.collide === "boolean") clean.collide = props.collide;
       if (typeof props.animId === "string") clean.animId = props.animId;
+      if (typeof props.label === "string") clean.label = filterChat(props.label.slice(0, MAX_LABEL));
       if (Object.keys(clean).length === 0) continue;
       Object.assign(part, clean);
       if (clean.x !== undefined || clean.y !== undefined || clean.z !== undefined) this.partMovedAt.set(part.id, Date.now());
       this.collisions.set(part);
-      this.dirtyParts.set(part.id, { ...this.dirtyParts.get(part.id), ...clean });
+      // tw = płynne przejście (sekundy) - klient przesuwa klocek po drodze, serwer od razu zna pozycję końcową
+      const tw = finite(props.tw, 0, 600);
+      const next: PartChange = { ...this.dirtyParts.get(part.id), ...clean };
+      if (tw) next.tw = tw;
+      else if (clean.x !== undefined || clean.y !== undefined || clean.z !== undefined) delete next.tw;
+      this.dirtyParts.set(part.id, next);
     }
   }
 }

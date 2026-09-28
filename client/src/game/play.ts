@@ -821,10 +821,12 @@ export function playScreen(
         rm.model.anim = a;
       }
     });
-    r.onMessage("part", (changes: (Partial<Part> & { id: string })[]) => {
-      for (const c of changes) {
+    r.onMessage("part", (changes: (Partial<Part> & { id: string; tw?: number })[]) => {
+      for (const { tw, ...c } of changes) {
         const p = parts.get(c.id);
         if (!p) continue;
+        // płynne przesunięcie (tweenPart): startuje tam, gdzie klocek jest teraz widoczny
+        const from = tw ? (world.meshes.get(c.id)?.position.clone() ?? new Vector3(p.x, p.y, p.z)) : null;
         if (c.id === groundPartId && body.onGround) {
           // ruchoma platforma - przesuwamy gracza o tyle samo
           body.x += (c.x ?? p.x) - p.x;
@@ -842,6 +844,7 @@ export function playScreen(
           fresh.freezeWorldMatrix();
           fresh.doNotSyncBoundingInfo = true;
         }
+        if (from && tw) world.tween(p.id, from, tw);
         collisions.set(p);
       }
     });

@@ -2,6 +2,7 @@
 // Mapy są budowane z kodu (te same klocki, co w Studio), a zasady gry są w skryptach Lua.
 import type { BadgeDef, Part, WorldData, WorldScript } from "../types.ts";
 import { makePart, makeTool, newId, spawnPart, welcomeBadge } from "../world.ts";
+import { demoCandyTycoon } from "./candyTycoon.ts";
 
 type Opts = Partial<Part>;
 
@@ -693,6 +694,12 @@ end)
 
 /** przykładowe minigry: nazwa, opis, generator i nazwa miniaturki */
 export const MINIGAMES: { name: string; description: string; make: () => WorldData; thumb: string }[] = [
+  {
+    name: "Fabryka Słodyczy Tycoon",
+    description: "Zbuduj własną fabrykę słodyczy! Dropery zrzucają cukierki na taśmę, ulepszacze mnożą ich wartość, a Ty rozbudowujesz fabrykę aż do cukierkowej rakiety. Postęp się zapisuje. 🍭",
+    make: demoCandyTycoon,
+    thumb: "candy",
+  },
   { name: "Pizzeria Tycoon", description: "Zajmij działkę i zbuduj najlepszą pizzerię! Zarabiasz co sekundę, kupujesz piec, stoły, neon i wieżę. 🍕", make: demoTycoon, thumb: "tycoon" },
   { name: "Chowany", description: "Jeden gracz szuka z piankowym młotkiem, reszta chowa się w miasteczku: w szafach, krzakach i domach. 🙈", make: demoHideSeek, thumb: "hideseek" },
   { name: "Wyścigi", description: "Wyścig na torze: turbo, błoto, skocznia nad wodą, ruchome przeszkody i checkpointy. Kto pierwszy na mecie? 🏎️", make: demoRace, thumb: "race" },

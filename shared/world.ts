@@ -4,6 +4,7 @@ import { sanitizeTerrain } from "./terrain.ts";
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
 import { DEFAULT_AVATAR } from "./catalog.ts";
 import { findSkybox } from "./skybox.ts";
+import { filterChat } from "./chatFilter.ts";
 import type {
   BadgeDef,
   Accessory,
@@ -26,6 +27,8 @@ import type {
 import { findGenre, VEHICLE_TYPES, type VehicleType, JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
 
 export const MAX_PARTS = 5000;
+/** najdłuższy napis nad klockiem */
+export const MAX_LABEL = 60;
 export const MAX_SCRIPTS = 50;
 export const MAX_SCRIPT_LEN = 50_000;
 export const MAX_TOOLS = 30;
@@ -246,6 +249,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       ...(typeof p.group === "string" && p.group ? { group: p.group.slice(0, 40) } : {}),
       ...(p.spin === true ? { spin: true } : {}),
       ...(p.kind === "seat" && VEHICLE_TYPES.includes(p.vehicle as VehicleType) ? { vehicle: p.vehicle as VehicleType } : {}),
+      ...(typeof p.label === "string" && p.label.trim() ? { label: filterChat(p.label.trim().slice(0, MAX_LABEL)) } : {}),
     };
   });
   const rawScripts = Array.isArray(w.scripts) ? w.scripts.slice(0, MAX_SCRIPTS) : [];

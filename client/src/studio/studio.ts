@@ -1489,6 +1489,15 @@ export function studioScreen(
           h("input", { type: "checkbox", checked: !!p.spin, onChange: (e: Event) => upd(() => ((e.target as HTMLInputElement).checked ? (p.spin = true) : delete p.spin)) }),
           h("span", null, "🔄 Kręci się (np. moneta)"),
         ),
+        field(
+          "Napis nad klockiem",
+          h("input", {
+            value: p.label ?? "",
+            maxLength: 60,
+            placeholder: "np. Sklep, Start, Kup: 50 💰",
+            onChange: (e: Event) => upd(() => ((e.target as HTMLInputElement).value.trim() ? (p.label = (e.target as HTMLInputElement).value.trim()) : delete p.label)),
+          }),
+        ),
       );
     }
 

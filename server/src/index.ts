@@ -124,7 +124,7 @@ const versions: Record<string, string> = (() => {
 /** kategorie przykładowych gier */
 const DEMO_GENRES: Record<string, string> = {
   "Tor przeszkód": "obby", Arena: "fight", "Predator City": "roleplay", "Ludzik 4": "platform", "Ludzik 3 & Nero": "platform",
-  "Pizzeria Tycoon": "tycoon", Chowany: "minigames", "Wyścigi": "race", "Wieża Piekieł": "obby",
+  "Pizzeria Tycoon": "tycoon", "Fabryka Słodyczy Tycoon": "tycoon", Chowany: "minigames", "Wyścigi": "race", "Wieża Piekieł": "obby",
   "Tacos World": "adventure", "Tunnel Escape": "horror", "Spelling Bee": "puzzle",
 };
 // konto Predator: zawsze jest, ma swój wygląd, wszystkie przedmioty i jest adminem
