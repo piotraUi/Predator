@@ -36,7 +36,7 @@ function inputModal(title: string, label: string, opts: { type?: string; value?:
 }
 
 export function adminPanel(el: HTMLElement) {
-  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Moderacja", "Serwer", "Historia"] as const;
+  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Moderacja", "AI", "Serwer", "Historia"] as const;
   let tab: (typeof tabs)[number] = "Start";
   const tabBar = h("div", { class: "shop-tabs adm-tabs" });
   const body = h("div", { class: "adm-body" });
@@ -55,6 +55,7 @@ export function adminPanel(el: HTMLElement) {
     else if (tab === "Historia") logTab(body);
     else if (tab === "Serwer") serverTab(body);
     else if (tab === "Moderacja") moderationTab(body);
+    else if (tab === "AI") aiTab(body);
     else if (tab === "Gracze") usersTab(body);
     else if (tab === "Gry") worldsTab(body);
     else announceTab(body);
@@ -379,8 +380,111 @@ function reportsTab(el: HTMLElement) {
   load();
 }
 
+/** Gemini (Google Cloud): plik klucza JSON, model, asystent w Studio */
+async function aiTab(el: HTMLElement) {
+  const s = await run(adminApi.ai());
+  if (!s) return;
+  const redraw = () => (el.replaceChildren(), aiTab(el));
+  const fileIn = h("input", { type: "file", accept: ".json,application/json", class: "hidden" });
+  fileIn.addEventListener("change", async () => {
+    const f = fileIn.files?.[0];
+    if (!f) return;
+    if (f.size > 32_000) return toast("To za duży plik - klucz konta usługi ma ok. 2-3 KB", "error");
+    if ((await run(adminApi.uploadAiKey(await f.text()), "Klucz Gemini zapisany ✔")) !== null) redraw();
+  });
+  const model = h("input", { value: s.model, placeholder: "gemini-3.8-flash" });
+  const loc = h("input", { value: s.location, placeholder: "global" });
+  const limit = h("input", { type: "number", min: "0", value: String(s.dailyLimit) });
+  const testOut = h("div", { class: "muted small" });
+  el.append(
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "✨ Gemini (Google Cloud)"),
+      h("p", { class: "muted small" }, "Gemini napędza asystenta AI w Studio i (zamiast Groq) moderację czatu, gier, obrazków i dźwięków. Serwer łączy się z Google plikiem klucza konta usługi (JSON). Plik zostaje tylko na serwerze."),
+      s.ready
+        ? h("p", null, "✅ Klucz wgrany", h("br"), h("span", { class: "muted small" }, `Konto: ${s.email} · projekt: ${s.project}`))
+        : h("p", null, "❌ Brak klucza - wgraj plik JSON"),
+      s.fromEnv
+        ? h("p", { class: "muted small" }, "Klucz jest ustawiony w zmiennej GOOGLE_APPLICATION_CREDENTIALS na serwerze.")
+        : h(
+            "div",
+            { class: "row wrap" },
+            fileIn,
+            h("button", { class: "btn primary small", onClick: () => fileIn.click() }, s.ready ? "📄 Wgraj nowy plik JSON" : "📄 Wgraj plik klucza JSON"),
+            s.ready
+              ? h(
+                  "button",
+                  {
+                    class: "btn small danger",
+                    onClick: async () => (await ask("Usunąć klucz Gemini z serwera?", "Usuń", "Anuluj", true)) && (await run(adminApi.deleteAiKey(), "Usunięto klucz")) && redraw(),
+                  },
+                  "Usuń klucz",
+                )
+              : "",
+          ),
+      h(
+        "details",
+        { class: "adm-help" },
+        h("summary", null, "❓ Jak zrobić plik klucza JSON"),
+        h(
+          "ol",
+          { class: "small" },
+          h("li", null, "Wejdź na console.cloud.google.com i wybierz projekt (ten sam co maszyna wirtualna może być)."),
+          h("li", null, "Menu → „APIs & Services” → „Enable APIs” → wyszukaj „Vertex AI API” → Enable."),
+          h("li", null, "Menu → „IAM & Admin” → „Service Accounts” → „Create service account”. Nazwa np. predator-ai."),
+          h("li", null, "Rola: „Vertex AI User” → Continue → Done."),
+          h("li", null, "Kliknij to konto → zakładka „Keys” → „Add key” → „Create new key” → JSON → Create. Pobierze się plik .json."),
+          h("li", null, "Tutaj kliknij „Wgraj plik klucza JSON” i wybierz ten plik. Nie wysyłaj go nikomu i nie wrzucaj na GitHuba."),
+        ),
+      ),
+    ),
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "⚙️ Model"),
+      h("label", { class: "field" }, h("span", null, "Nazwa modelu (np. gemini-3.8-flash)"), model),
+      h("label", { class: "field" }, h("span", null, "Region (global działa dla najnowszych modeli)"), loc),
+      h(
+        "div",
+        { class: "row wrap" },
+        h("button", { class: "btn small primary", onClick: async () => (await run(adminApi.setAi({ model: model.value, location: loc.value }), "Zapisano")) && redraw() }, "Zapisz"),
+        h(
+          "button",
+          {
+            class: "btn small",
+            disabled: !s.ready,
+            onClick: async () => {
+              testOut.textContent = "⏳ Pytam Gemini…";
+              const r = await run(adminApi.testAi());
+              testOut.textContent = r ? `✅ Działa (${(r.ms / 1000).toFixed(1)} s): „${r.text}”` : "❌ Nie działa - zobacz komunikat";
+            },
+          },
+          "🧪 Sprawdź połączenie",
+        ),
+      ),
+      testOut,
+    ),
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "🤖 Asystent AI w Studio"),
+      h("p", { class: "muted small" }, "Twórcy piszą, co chcą zrobić, a asystent sam buduje mapę, obiekty, skrypty i GUI w ich grze. Jeden krok asystenta = jedno zapytanie do Gemini (zwykła prośba to ok. 5-20 kroków)."),
+      h("p", null, s.assistant ? "✅ Włączony" : "⏸️ Wyłączony", s.ready ? "" : " (potrzebny klucz Gemini)"),
+      h("p", { class: "muted small" }, `Dzisiaj: ${fmt.format(s.stats.requests)} kroków, ${fmt.format(s.stats.tokens)} tokenów, ${s.stats.users} twórców.`),
+      h("label", { class: "field" }, h("span", null, "Limit kroków na twórcę dziennie (admini bez limitu)"), limit),
+      h(
+        "div",
+        { class: "row wrap" },
+        h("button", { class: "btn small primary", onClick: async () => (await run(adminApi.setAi({ dailyLimit: Number(limit.value) || 0 }), "Zapisano")) && redraw() }, "Zapisz limit"),
+        h("button", { class: "btn small", onClick: async () => (await run(adminApi.setAi({ assistant: !s.assistant }))) && redraw() }, s.assistant ? "⏸️ Wyłącz asystenta" : "▶️ Włącz asystenta"),
+      ),
+    ),
+  );
+}
+
 /** kopie zapasowe bazy i aktualizacja serwera z GitHuba */
-/** moderacja AI przez Groq: klucz, włącz / wyłącz, próba, sprawdzenie gier, dziennik */
+/** moderacja AI (Gemini albo Groq): klucz, włącz / wyłącz, próba, sprawdzenie gier, dziennik */
 async function moderationTab(el: HTMLElement) {
   const s = await run(adminApi.moderation());
   if (!s) return;
@@ -393,11 +497,28 @@ async function moderationTab(el: HTMLElement) {
     h(
       "div",
       { class: "adm-box" },
-      h("h3", null, "🛡️ Moderacja AI (Groq)"),
+      h("h3", null, "🛡️ Moderacja AI"),
       h(
         "p",
         { class: "muted small" },
-        `Serwer sprawdza czat (w grach, prywatny i w grupach), nicki i nazwy, a opublikowane gry: teksty, skrypty, obrazki i dźwięki / piosenki (Whisper zamienia je na tekst). Model tekstu i obrazków: ${s.textModel}, dźwięku: ${s.audioModel}. Gdy Groq nie działa, zostaje zwykły filtr słów.`,
+        s.provider === "gemini"
+          ? `Sprawdza Gemini (${s.textModel}): czat (w grach, prywatny i w grupach), nicki i nazwy, a w opublikowanych grach teksty, skrypty, obrazki i dźwięki / piosenki (Gemini słucha nagrań sam). Klucz Gemini ustawiasz w zakładce AI. Gdy AI nie działa, zostaje zwykły filtr słów.`
+          : `Sprawdza Groq: czat (w grach, prywatny i w grupach), nicki i nazwy, a opublikowane gry: teksty, skrypty, obrazki i dźwięki / piosenki (Whisper zamienia je na tekst). Model tekstu i obrazków: ${s.textModel}, dźwięku: ${s.audioModel}. Gdy Groq nie działa, zostaje zwykły filtr słów.`,
+      ),
+      h(
+        "div",
+        { class: "row wrap" },
+        h("span", null, "Kto sprawdza:"),
+        ...(["gemini", "groq"] as const).map((pv) =>
+          h(
+            "button",
+            {
+              class: "btn small" + (s.provider === pv ? " primary" : ""),
+              onClick: async () => (await run(adminApi.setModeration({ provider: pv }))) && redraw(),
+            },
+            pv === "gemini" ? "✨ Gemini" : "⚡ Groq",
+          ),
+        ),
       ),
       h(
         "p",
@@ -429,7 +550,7 @@ async function moderationTab(el: HTMLElement) {
     h(
       "div",
       { class: "adm-box" },
-      h("h3", null, "🧪 Sprawdź tekst"),
+      h("h3", null, "🧪 Sprawdź tekst" + (s.provider ? (s.provider === "gemini" ? " (Gemini)" : " (Groq)") : "")),
       h(
         "div",
         { class: "row" },

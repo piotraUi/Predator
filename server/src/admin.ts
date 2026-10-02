@@ -9,6 +9,8 @@ import { adminLog, groups, mutes, reports } from "./social.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings } from "./moderation.ts";
+import { deleteServiceAccount, gemini, geminiReady, geminiStatus, responseText, saveServiceAccount } from "./gemini.ts";
+import { assistantStats } from "./assistant.ts";
 import { BACKUP_DIR, BACKUP_NAME_RE, backupNow, checkUpdates, isGitRepo, listBackups, runUpdate, supervised, updateState } from "./maintenance.ts";
 
 export const admin = express.Router();
@@ -277,6 +279,10 @@ admin.put("/moderation", (req, res) => {
     settings.set("groq_key", key || null);
     log(req, key ? "Klucz Groq ustawiony" : "Klucz Groq usunięty");
   }
+  if (b.provider === "gemini" || b.provider === "groq") {
+    settings.set("ai_provider", b.provider);
+    log(req, "Moderacja AI: " + (b.provider === "gemini" ? "Gemini" : "Groq"));
+  }
   if (typeof b.enabled === "boolean") {
     settings.set("ai_moderation", b.enabled ? "1" : "0");
     log(req, b.enabled ? "Moderacja AI włączona" : "Moderacja AI wyłączona");
@@ -296,10 +302,60 @@ admin.post("/moderation/test", async (req, res) => {
   }
 });
 
+// ---------- Gemini (Google Cloud): plik klucza JSON, model, asystent ----------
+
+const aiStatus = () => ({ ...geminiStatus(), assistant: settings.get("ai_assistant") !== "0", dailyLimit: Number(settings.get("ai_daily_limit") ?? 300), stats: assistantStats() });
+
+admin.get("/ai", (_req, res) => res.json(aiStatus()));
+
+/** wgranie pliku klucza konta usługi (JSON) */
+admin.post("/ai/key", express.json({ limit: "64kb" }), (req, res) => {
+  const text = String(req.body?.json ?? "");
+  const sa = saveServiceAccount(text);
+  if (typeof sa === "string") return fail(res, 400, sa);
+  log(req, "Klucz Gemini wgrany", sa.client_email);
+  res.json(aiStatus());
+});
+admin.delete("/ai/key", (req, res) => {
+  deleteServiceAccount();
+  log(req, "Klucz Gemini usunięty");
+  res.json(aiStatus());
+});
+
+admin.put("/ai", (req, res) => {
+  const b = req.body ?? {};
+  if (typeof b.model === "string") {
+    const m = b.model.trim();
+    if (m && !/^[a-z0-9][a-z0-9.\-_@]{1,80}$/i.test(m)) return fail(res, 400, "Zła nazwa modelu");
+    settings.set("gemini_model", m || null);
+  }
+  if (typeof b.location === "string") {
+    const l = b.location.trim();
+    if (l && !/^[a-z0-9-]{2,40}$/.test(l)) return fail(res, 400, "Zły region");
+    settings.set("gemini_location", l || null);
+  }
+  if (typeof b.assistant === "boolean") settings.set("ai_assistant", b.assistant ? "1" : "0");
+  if (typeof b.dailyLimit === "number") settings.set("ai_daily_limit", String(Math.max(0, Math.min(100_000, Math.round(b.dailyLimit)))));
+  log(req, "Ustawienia AI zmienione", "", JSON.stringify({ model: b.model, location: b.location, assistant: b.assistant, dailyLimit: b.dailyLimit }));
+  res.json(aiStatus());
+});
+
+/** próba: krótkie pytanie do Gemini (czy klucz, model i region działają) */
+admin.post("/ai/test", async (_req, res) => {
+  if (!geminiReady()) return fail(res, 400, "Najpierw wgraj plik klucza JSON");
+  const t0 = Date.now();
+  try {
+    const r = await gemini({ contents: [{ role: "user", parts: [{ text: "Odpowiedz jednym zdaniem po polsku: kim jesteś?" }] }], generationConfig: { maxOutputTokens: 200 } }, 30_000);
+    res.json({ ok: true, text: responseText(r).slice(0, 300), ms: Date.now() - t0 });
+  } catch (e) {
+    fail(res, 502, (e as Error).message);
+  }
+});
+
 /** sprawdza wszystkie opublikowane gry (w tle) */
 admin.post("/moderation/scan", (req, res) => {
   if (scanAll.running) return fail(res, 400, "Sprawdzanie już trwa");
-  if (!aiEnabled()) return fail(res, 400, "Najpierw ustaw klucz Groq");
+  if (!aiEnabled()) return fail(res, 400, "Najpierw ustaw klucz Gemini albo Groq");
   log(req, "Sprawdzenie wszystkich gier przez moderację AI");
   scanAll = { running: true, checked: 0, flagged: 0 };
   void scanAllPublished()
@@ -310,7 +366,7 @@ admin.post("/moderation/scan", (req, res) => {
 
 /** sprawdza jedną grę od razu */
 admin.post("/moderation/worlds/:id", async (req, res) => {
-  if (!aiEnabled()) return fail(res, 400, "Najpierw ustaw klucz Groq");
+  if (!aiEnabled()) return fail(res, 400, "Najpierw ustaw klucz Gemini albo Groq");
   const r = await runWorldScan(Number(req.params.id));
   if (!r) return fail(res, 502, "Nie udało się sprawdzić gry");
   res.json(r);

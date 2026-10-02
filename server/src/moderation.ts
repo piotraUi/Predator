@@ -1,21 +1,20 @@
-// Moderacja AI przez Groq (tylko po stronie serwera):
+// Moderacja AI przez Gemini (Google Cloud) albo Groq (tylko po stronie serwera):
 //  - czat w grach, wiadomości prywatne i czat grup - sprawdzane przed wysłaniem,
 //  - nicki, nazwy grup, serwerów i modeli,
 //  - opublikowane gry: teksty, skrypty, obrazki (model z widzeniem) i dźwięki / piosenki
-//    (najpierw zamiana na tekst modelem Whisper, potem sprawdzenie tekstu).
-// Klucz API: zmienna GROQ_API_KEY albo panel admina (zakładka "Moderacja"). Klucz nigdy nie trafia do przeglądarki.
-// Gdy Groq nie odpowiada, działa dalej zwykły filtr słów - gra nie staje.
+//    (Gemini słucha nagrania sam; Groq najpierw zamienia je na tekst modelem Whisper).
+// Gemini: plik klucza JSON wgrany w panelu admina (zakładka "AI"); Groq: GROQ_API_KEY albo panel admina.
+// Gdy jest klucz Gemini, moderacja używa Gemini (chyba że admin wybierze Groq). Klucze nigdy nie trafiają do przeglądarki.
+// Gdy AI nie odpowiada, działa dalej zwykły filtr słów - gra nie staje.
 import crypto from "node:crypto";
 import type { WorldData } from "../../shared/types.ts";
 import { alerts, db, worlds } from "./db.ts";
 import { mutes } from "./social.ts";
 import { decodePng, makeSheet, type Rgba } from "./pngSheet.ts";
+import { settings } from "./settings.ts";
+import { dataUrlPart, gemini, GeminiError, geminiModel, geminiReady, responseText, type GeminiPart } from "./gemini.ts";
 
 db.exec(`
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS moderation_cache (
   hash TEXT PRIMARY KEY,
   ok INTEGER NOT NULL,
@@ -42,21 +41,24 @@ CREATE TABLE IF NOT EXISTS world_moderation (
 );
 `);
 
-export const settings = {
-  get: (key: string) => (db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined)?.value,
-  set: (key: string, value: string | null) =>
-    value === null
-      ? db.prepare("DELETE FROM settings WHERE key = ?").run(key)
-      : db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value),
-};
+export { settings };
 
 const API = "https://api.groq.com/openai/v1";
 export const TEXT_MODEL = process.env.GROQ_MODEL || "qwen/qwen3.8-27b";
 export const AUDIO_MODEL = process.env.GROQ_AUDIO_MODEL || "whisper-large-v3";
 
 const apiKey = () => process.env.GROQ_API_KEY || settings.get("groq_key") || "";
+/** kto sprawdza: Gemini (gdy jest klucz i admin nie wybrał Groq), inaczej Groq */
+export function provider(): "gemini" | "groq" | null {
+  const g = geminiReady();
+  const pref = settings.get("ai_provider");
+  if (g && (pref !== "groq" || !apiKey())) return "gemini";
+  if (apiKey()) return "groq";
+  return null;
+}
+const usingGemini = () => provider() === "gemini";
 /** moderacja działa: jest klucz i admin jej nie wyłączył */
-export const aiEnabled = () => !!apiKey() && settings.get("ai_moderation") !== "0";
+export const aiEnabled = () => !!provider() && settings.get("ai_moderation") !== "0";
 
 export interface Verdict {
   ok: boolean;
@@ -98,7 +100,7 @@ const paused = (k: Kind) => (Date.now() < pauses[k].until ? pauses[k] : null);
 /** błąd "limit" - gra zostanie sprawdzona jeszcze raz, gdy limit się odnowi */
 export class LimitError extends Error {
   constructor(public retryAt: number, reason: string) {
-    super("Limit Groq: " + reason);
+    super("Limit AI: " + reason);
   }
 }
 /** "1h2m3.5s", "12.9s", "300ms" -> milisekundy */
@@ -166,7 +168,64 @@ async function groq(path: string, body: () => BodyInit, json: boolean, timeoutMs
   });
 }
 
-async function chat(content: unknown, timeoutMs: number, prio: Prio, cost = 1000): Promise<{ results?: { i?: number; ok?: boolean; reason?: string }[] }> {
+type ChatResult = { results?: { i?: number; ok?: boolean; reason?: string }[]; transcript?: string; ok?: boolean; reason?: string; blocked?: string };
+const JSON_RULE = '\nOdpowiedz TYLKO JSON: {"results":[{"i":1,"ok":true,"reason":""}]} - jeden wpis na każdy numer.';
+
+/** treść w formacie OpenAI (tekst / obrazki) -> części Gemini */
+function toGeminiParts(content: unknown): GeminiPart[] {
+  if (typeof content === "string") return [{ text: content }];
+  const parts: GeminiPart[] = [];
+  for (const c of content as { type: string; text?: string; image_url?: { url: string } }[]) {
+    if (c.type === "text" && c.text) parts.push({ text: c.text });
+    else if (c.type === "image_url" && c.image_url) {
+      const p = dataUrlPart(c.image_url.url);
+      if (p) parts.push(p);
+    }
+  }
+  return parts;
+}
+
+/** zapytanie do Gemini z odpowiedzią JSON; "low" czeka na limit i ponawia */
+async function geminiJson(parts: GeminiPart[], system: string, timeoutMs: number, prio: Prio): Promise<ChatResult> {
+  return slot(prio, async () => {
+    for (let attempt = 0; ; attempt++) {
+      const p = paused("chat");
+      if (p) throw new LimitError(p.until, p.reason);
+      try {
+        const r = await gemini(
+          {
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: "user", parts }],
+            generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "low" } },
+          },
+          timeoutMs,
+        );
+        // Gemini sam odrzucił treść (np. pornografia) - to też znaczy "niedozwolone"
+        const blocked = r.promptFeedback?.blockReason || (r.candidates?.[0]?.finishReason === "SAFETY" ? "SAFETY" : "") || (r.candidates?.[0]?.finishReason === "PROHIBITED_CONTENT" ? "PROHIBITED_CONTENT" : "");
+        if (blocked) return { blocked };
+        const text = responseText(r);
+        const m = /\{[\s\S]*\}/.exec(text);
+        return JSON.parse(m ? m[0] : "{}");
+      } catch (e) {
+        if (e instanceof GeminiError && e.status === 429) {
+          if (prio === "low" && attempt < 5) {
+            await sleep(Math.max(e.retryAfter, 5 * 2 ** attempt) * 1000);
+            continue;
+          }
+          if (prio === "high") throw pauseChat(20_000, "limit zapytań Gemini - przez chwilę działa zwykły filtr słów");
+        }
+        throw e;
+      }
+    }
+  });
+}
+function pauseChat(ms: number, reason: string) {
+  pauses.chat = { until: Date.now() + ms, reason };
+  return new LimitError(pauses.chat.until, reason);
+}
+
+async function chat(content: unknown, timeoutMs: number, prio: Prio, cost = 1000): Promise<ChatResult> {
+  if (usingGemini()) return geminiJson(toGeminiParts(content), RULES + JSON_RULE, timeoutMs, prio);
   const out = (await groq(
     "/chat/completions",
     () => JSON.stringify({
@@ -176,7 +235,7 @@ async function chat(content: unknown, timeoutMs: number, prio: Prio, cost = 1000
       max_tokens: 600,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: RULES + '\nOdpowiedz TYLKO JSON: {"results":[{"i":1,"ok":true,"reason":""}]} - jeden wpis na każdy numer.' },
+        { role: "system", content: RULES + JSON_RULE },
         { role: "user", content },
       ],
     }),
@@ -222,6 +281,17 @@ export async function checkTexts(texts: string[], timeoutMs = 30_000, prio: Prio
       batch.push(todo[i++]);
     }
     const res = await chat(batch.map((b, n) => `${n + 1}. ${b.text.replace(/\n+/g, " ")}`).join("\n"), timeoutMs, prio, 700 + Math.ceil(size / 2));
+    if (res.blocked) {
+      // Gemini odrzucił całą partię - szukamy, który tekst (pojedynczy odrzucony = niedozwolony)
+      for (const b of batch) {
+        const one = batch.length === 1 ? res : await chat(`1. ${b.text.replace(/\n+/g, " ")}`, timeoutMs, prio);
+        const r = one.results?.[0];
+        const v: Verdict = one.blocked ? { ok: false, reason: "treść odrzucona przez filtr bezpieczeństwa AI" } : r && r.ok === false ? { ok: false, reason: String(r.reason ?? "niedozwolona treść").slice(0, 200) } : OK;
+        out[b.idx] = v;
+        cacheSet(b.hash, v);
+      }
+      continue;
+    }
     batch.forEach((b, n) => {
       const r = res.results?.find((x) => x.i === n + 1) ?? res.results?.[n];
       const v: Verdict = r && r.ok === false ? { ok: false, reason: String(r.reason ?? "niedozwolona treść").slice(0, 200) } : OK;
@@ -236,27 +306,40 @@ const IMAGE_RE = /^data:image\/(png|jpeg|jpg|webp|gif);base64,/;
 /** Groq przyjmuje obrazki do 4 MB (base64) */
 const MAX_IMAGE_CHARS = 4 * 1024 * 1024;
 
-/** model z widzeniem przyjmuje najwyżej 3 obrazki na raz */
-const IMAGES_PER_REQUEST = 3;
+/** model z widzeniem Groq przyjmuje najwyżej 3 obrazki na raz (Gemini więcej) */
+const imagesPerRequest = () => (usingGemini() ? 6 : 3);
 /** ile tokenów liczy Groq za jeden obrazek (mniej więcej) */
 const IMAGE_TOKENS = 1300;
 
 /** obrazki po kolei, po 3 w jednym zapytaniu */
 async function checkImagesOneByOne(todo: { url: string }[]): Promise<Verdict[]> {
   const out: Verdict[] = [];
-  for (let i = 0; i < todo.length; i += IMAGES_PER_REQUEST) {
-    const batch = todo.slice(i, i + IMAGES_PER_REQUEST);
+  const per = imagesPerRequest();
+  for (let i = 0; i < todo.length; i += per) {
+    const batch = todo.slice(i, i + per);
     const content = [
       { type: "text", text: `Sprawdź ${batch.length} obrazk${batch.length === 1 ? "" : "i"} z gry (numery 1-${batch.length}, w tej kolejności). Czy są odpowiednie dla dzieci?` },
       ...batch.map((b) => ({ type: "image_url", image_url: { url: b.url } })),
     ];
     const res = await chat(content, 60_000, "low", IMAGE_TOKENS * batch.length + 500);
+    if (res.blocked) {
+      // odrzucona cała partia - każdy obrazek osobno
+      if (batch.length === 1) out.push({ ok: false, reason: "obrazek odrzucony przez filtr bezpieczeństwa AI" });
+      else for (const b of batch) out.push(...(await checkImagesOneByOneSingle(b.url)));
+      continue;
+    }
     batch.forEach((_, n) => {
       const r = res.results?.find((x) => x.i === n + 1) ?? res.results?.[n];
       out.push(r && r.ok === false ? { ok: false, reason: String(r.reason ?? "niedozwolony obrazek").slice(0, 200) } : OK);
     });
   }
   return out;
+}
+
+async function checkImagesOneByOneSingle(url: string): Promise<Verdict[]> {
+  const res = await chat([{ type: "text", text: "Sprawdź obrazek z gry (numer 1). Czy jest odpowiedni dla dzieci?" }, { type: "image_url", image_url: { url } }], 60_000, "low", IMAGE_TOKENS + 500);
+  const r = res.results?.[0];
+  return [res.blocked ? { ok: false, reason: "obrazek odrzucony przez filtr bezpieczeństwa AI" } : r && r.ok === false ? { ok: false, reason: String(r.reason ?? "niedozwolony obrazek").slice(0, 200) } : OK];
 }
 
 /** ile małych obrazków na jednym arkuszu */
@@ -300,7 +383,7 @@ export async function checkImages(images: string[]): Promise<Verdict[]> {
       IMAGE_TOKENS + 500,
     );
     const r = res.results?.[0];
-    if (!r || r.ok !== false) {
+    if (!res.blocked && (!r || r.ok !== false)) {
       for (const p of part) save(p, OK);
       continue;
     }
@@ -330,6 +413,36 @@ export async function checkAudio(sounds: string[]): Promise<(Verdict & { transcr
       continue;
     }
     const bytes = Buffer.from(url.slice(url.indexOf(",") + 1), "base64");
+    if (usingGemini()) {
+      // Gemini słucha nagrania sam: słowa + ocena w jednym zapytaniu (do ~14 MB w zapytaniu)
+      if (bytes.length > 14 * 1024 * 1024 || bytes.length < 4000) continue;
+      const part = dataUrlPart(url);
+      if (!part) continue;
+      let res: ChatResult;
+      try {
+        res = await geminiJson(
+          [
+            { text: 'Nagranie z gry (dźwięk, muzyka albo piosenka). Zapisz słowa, które w nim słychać (transcript; pusty, gdy nie ma słów), i oceń, czy całe nagranie (słowa i dźwięki) jest odpowiednie dla dzieci. Odpowiedz TYLKO JSON: {"transcript":"","ok":true,"reason":""}' },
+            part,
+          ],
+          RULES,
+          120_000,
+          "low",
+        );
+      } catch (e) {
+        // np. format, którego Gemini nie zna - nie blokujemy gry z tego powodu
+        if (e instanceof GeminiError && e.status === 400) {
+          console.warn("Moderacja dźwięku:", e.message);
+          continue;
+        }
+        throw e;
+      }
+      const transcript = String(res.transcript ?? "").trim().slice(0, 4000);
+      const v: Verdict = res.blocked ? { ok: false, reason: "nagranie odrzucone przez filtr bezpieczeństwa AI" } : res.ok === false ? { ok: false, reason: String(res.reason ?? "niedozwolone nagranie").slice(0, 200) } : OK;
+      out[idx] = { ...v, transcript };
+      cacheSet(hash, v, transcript);
+      continue;
+    }
     // Whisper przyjmuje do 25 MB; bardzo krótkie dźwięki (kliknięcia, skoki) nie mają słów
     if (bytes.length > 25 * 1024 * 1024 || bytes.length < 4000) continue;
     const form = new FormData();
@@ -571,10 +684,12 @@ export function moderationStatus() {
   const key = apiKey();
   return {
     enabled: aiEnabled(),
+    provider: provider(),
+    preferGroq: settings.get("ai_provider") === "groq",
     hasKey: !!key,
     keyFromEnv: !!process.env.GROQ_API_KEY,
     keyHint: key ? key.slice(0, 4) + "…" + key.slice(-4) : "",
-    textModel: TEXT_MODEL,
+    textModel: usingGemini() ? geminiModel() : TEXT_MODEL,
     audioModel: AUDIO_MODEL,
     limits: {
       tokensLeft: Number.isFinite(limits.tokensLeft) ? limits.tokensLeft : null,

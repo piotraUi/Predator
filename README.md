@@ -14,6 +14,7 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 | 🕺 **Animacje** | chodzenie, skok, spadanie, rozpadanie się po śmierci, trzymanie narzędzia, cios, strzał, picie/leczenie, mignięcie po trafieniu, emotki: machanie, taniec, wiwatowanie, wskazywanie, siadanie |
 | 👥 **Multiplayer** | domyślnie 30 graczy na serwer gry, twórca może ustawić do 50; płynny ruch innych graczy, nicki nad głowami |
 | 🧸 **Łatwe Studio** | zakładka **Zestaw** z gotowymi modelami (drzewo, dom, most, samochód, latarnia, zjeżdżalnia, meta…) wstawianymi jednym kliknięciem w wolne miejsce; części modelu przesuwają się, obracają i kopiują razem; **Zachowania** - kliknij „💰 Daje punkt”, „👻 Znika”, „↕️ Jeździ”, „🌀 Teleport”, „🚪 Drzwi”… i skrypt pisze się sam; szybkie kolory, wyszukiwarka obiektów, podpowiedzi na dole ekranu i przewodnik „Pierwsze kroki” (❓ Pomoc) |
+| 🤖 **Asystent AI (Gemini)** | przycisk **AI** w Studio 2D i 3D: napisz, co zrobić, a agent sam buduje mapę, obiekty, skrypty Lua, GUI, miejsca i poziomy, testuje grę w symulacji i poprawia błędy; obrazki w czacie (📎); całą prośbę cofa Ctrl+Z - [więcej](#asystent-ai-w-studio-gemini) |
 | 🧱 **Studio** | dodawanie klocków, kul, walców, klinów, spawnów, lawy, trampolin i pól z narzędziami; przesuwanie i skalowanie z siatką, obracanie, kolory, materiały, cofanie (Ctrl+Z), edytor narzędzi i broni, włączanie PvP, publikowanie |
 | 🛠 **Studio - praca z wieloma klockami** | zaznaczanie kilku naraz (Shift / Ctrl + klik, ramka myszką, Ctrl + A, na telefonie przycisk „Wiele”); przesuwanie i obracanie całego zaznaczenia gizmem, strzałkami i PageUp / PageDown; łączenie w model (Ctrl + G); wyrównywanie i równe odstępy; wspólny kolor, materiał, przezroczystość i kolizja; kopiowanie wielu obiektów (także do innej gry); **🔁 Powiel w rzędzie** (płoty, schody, kolumny); **⬇ Na ziemię** (End); blokada (L) i chowanie w Studio (H) z Eksploratora; siatka na ziemi (G), widok z góry (T), cała mapa (Home), obrys klocka pod kursorem, pasek stanu i lista skrótów (?) |
 | 🪟 **GUI (2D i 3D)** | edytor GUI w Studio (przycisk **🪟 GUI**): menu, okienka, liczniki, napisy, przyciski, ramki i obrazki na ekranie gracza; przeciąganie i zmiana rozmiaru na podglądzie 16:9; gotowe szablony (menu z przyciskiem Graj, okienko z OK, licznik w rogu); przycisk bez skryptu może zamknąć GUI, otworzyć inne, przenieść na poziom 2D albo do miejsca 3D; GUI widoczne od startu, tylko na wybranym poziomie / w miejscu, z przyciemnieniem gry (wtedy postać stoi); skrypty: `showGui`, `hideGui`, `toggleGui`, `setGuiText`, `isGuiOpen`, `onGuiClick` i bloczki w kategorii „GUI”; napisy i obrazki przechodzą przez filtr i moderację |
@@ -42,6 +43,27 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 | 🔥 **Hity i oceny** | strona gry z dużym przyciskiem Graj, łapki w górę / w dół i „Ocena 93%”, listy: popularne, najlepiej oceniane, najczęściej odwiedzane, nowe |
 | ✉️ **Czat ze znajomymi** | prywatne wiadomości poza grą, licznik nieprzeczytanych |
 | 🖼 **Miniaturki** | zapis gry w Studio robi zdjęcie tego, co widać w edytorze, i ustawia je jako miniaturkę w menu |
+
+## Asystent AI w Studio (Gemini)
+
+W Studio 2D i 3D jest przycisk **🤖 AI**. Twórca pisze po polsku, co chce zrobić (np. „zrób tor przeszkód z lawą i metą”, „dodaj menu startowe z przyciskiem Graj”, „sprawdź moje skrypty i napraw błędy”), a asystent sam to robi w otwartej grze:
+
+- ogląda grę (klocki, poziomy, obiekty, skrypty, GUI, zaznaczenie i miejsce, na które patrzy kamera),
+- buduje i zmienia klocki (3D) albo obiekty i instancje na poziomach (2D, z prostą grafiką rysowaną od razu albo z dołączonego obrazka),
+- pisze skrypty Lua (kod jest sprawdzany przed zapisem; błąd wraca do asystenta, który go poprawia),
+- robi GUI, miejsca (3D), poziomy (2D), narzędzia, odznaki, ustawienia gry i fizykę,
+- **testuje grę w symulacji** (gracze dotykają klocków, piszą na czacie, klikają GUI) i naprawia błędy, które zobaczy.
+
+Każdą zmianę widać od razu, a całą prośbę cofa jedno **Ctrl+Z**. Do wiadomości można dołączyć obrazki 📎 (szkic mapy, grafika postaci) - asystent je widzi i może użyć jako grafiki w grze albo w GUI. Działa też przy wspólnej edycji (zmiany idą do innych twórców jak zwykłe).
+
+Gemini działa przez Google Cloud (Vertex AI). Admin wgrywa **plik klucza JSON** w panelu admina → **AI** (instrukcja jest tam po kliknięciu „Jak zrobić plik klucza JSON”):
+
+1. console.cloud.google.com → wybierz projekt → **APIs & Services → Enable APIs** → „Vertex AI API” → Enable.
+2. **IAM & Admin → Service Accounts → Create service account** (np. `predator-ai`), rola **Vertex AI User**.
+3. To konto → **Keys → Add key → Create new key → JSON** - pobierze się plik.
+4. Panel admina → AI → **Wgraj plik klucza JSON** → **Sprawdź połączenie**.
+
+Plik zostaje tylko na serwerze (`data/gemini-key.json`, prawa 600) i nie trafia do aplikacji ani do repozytorium. W tej samej zakładce: nazwa modelu (domyślnie `gemini-3.8-flash`), region, włączanie asystenta, dzienny limit kroków na twórcę (admini bez limitu) i dzisiejsze zużycie. Ten sam klucz przełącza moderację na Gemini.
 
 ## Uruchomienie serwera
 
@@ -93,6 +115,9 @@ Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` 
 | `HOST` | `0.0.0.0` | na jakim adresie nasłuchiwać |
 | `DATA_DIR` | `./data` | gdzie zapisywać bazę danych (zrób kopię tego folderu!) |
 | `PREDATOR_PASSWORD` | (losowe) | hasło konta **Predator** |
+| `GOOGLE_APPLICATION_CREDENTIALS` | (brak) | ścieżka do pliku klucza Gemini (JSON konta usługi); zwykle wygodniej wgrać plik w panelu admina → AI |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | model Gemini (można też zmienić w panelu admina → AI) |
+| `GEMINI_LOCATION` | `global` | region Vertex AI |
 | `GROQ_API_KEY` | (brak) | klucz Groq do moderacji AI (można też wpisać w panelu admina → Moderacja) |
 | `GROQ_MODEL` | `qwen/qwen3.8-27b` | model do sprawdzania tekstu i obrazków |
 | `GROQ_AUDIO_MODEL` | `whisper-large-v3` | model zamieniający dźwięki i piosenki na tekst |
@@ -124,7 +149,7 @@ Skrypt pyta o nazwę i token **DuckDNS** (darmowy adres `nazwa.duckdns.org`) ora
 - **Blokowanie:** na profilu gracza albo w grze (przycisk 👥). Zablokowany nie pisze, nie zaprasza, nie jest słyszalny na czacie głosowym, a jego wiadomości na czacie gry są ukryte.
 - **Zgłaszanie z gry i z czatu głosowego (🚩):** administrator dostaje zgłoszenie razem z ostatnimi wiadomościami z czatu tej gry.
 - **Prywatność** (Ustawienia): kto może zapraszać do znajomych, pisać, zapraszać do gier i widzieć, w co grasz.
-- **Moderacja AI (Groq), tylko na serwerze:** czat w grach, wiadomości prywatne i czat grup są sprawdzane, zanim trafią do innych. Po 3 zablokowanych wiadomościach w godzinę gracz ma czat wyłączony na 10 minut. Sprawdzane są też nicki i nazwy grup, serwerów oraz modeli. Opublikowane gry są sprawdzane po każdym zapisie: nazwa, opis, napisy w skryptach, odznaki, produkty, obrazki i miniaturka (model z widzeniem) oraz dźwięki i piosenki (Whisper zamienia je na tekst, a potem tekst jest sprawdzany). Gra z problemem jest ukrywana, a twórca dostaje powiadomienie z powodem. Po poprawce i zapisie sprawdza się jeszcze raz i publikuje sama. Każdy tekst, obrazek i dźwięk jest sprawdzany tylko raz (wynik zostaje w bazie). Gdy Groq nie odpowiada, działa zwykły filtr słów. Klucz, włączanie, próbę i dziennik zablokowanych treści znajdziesz w panelu admina → **Moderacja**. Klucz zostaje na serwerze i nigdy nie trafia do aplikacji graczy. Czat głosowy nie jest sprawdzany (dźwięk idzie bezpośrednio między graczami), na niego jest przycisk 🚩.
+- **Moderacja AI (Gemini albo Groq), tylko na serwerze:** gdy jest klucz Gemini, sprawdza Gemini - także obrazki i dźwięki / piosenki (słucha ich sam, bez Whisper). W panelu admina → Moderacja można przełączyć na Groq. czat w grach, wiadomości prywatne i czat grup są sprawdzane, zanim trafią do innych. Po 3 zablokowanych wiadomościach w godzinę gracz ma czat wyłączony na 10 minut. Sprawdzane są też nicki i nazwy grup, serwerów oraz modeli. Opublikowane gry są sprawdzane po każdym zapisie: nazwa, opis, napisy w skryptach, odznaki, produkty, obrazki i miniaturka (model z widzeniem) oraz dźwięki i piosenki (Whisper zamienia je na tekst, a potem tekst jest sprawdzany). Gra z problemem jest ukrywana, a twórca dostaje powiadomienie z powodem. Po poprawce i zapisie sprawdza się jeszcze raz i publikuje sama. Każdy tekst, obrazek i dźwięk jest sprawdzany tylko raz (wynik zostaje w bazie). Gdy Groq nie odpowiada, działa zwykły filtr słów. Klucz, włączanie, próbę i dziennik zablokowanych treści znajdziesz w panelu admina → **Moderacja**. Klucz zostaje na serwerze i nigdy nie trafia do aplikacji graczy. Czat głosowy nie jest sprawdzany (dźwięk idzie bezpośrednio między graczami), na niego jest przycisk 🚩.
 - **Ochrona przed oszustami:** serwer sprawdza ruch graczy (prędkość, teleport, latanie). Niemożliwy ruch jest cofany, a uporczywi oszuści są automatycznie zgłaszani i wyrzucani z gry.
 
 ## Aplikacje: EXE, APK i iOS

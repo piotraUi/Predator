@@ -107,11 +107,12 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function req<T>(method: string, path: string, body?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<T> {
   let res: Response;
   // bez limitu czasu telefon potrafi czekać w nieskończoność, gdy serwer jest nieosiągalny
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), method === "GET" ? 15_000 : 60_000);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs ?? (method === "GET" ? 15_000 : 60_000));
+  signal?.addEventListener("abort", () => ctrl.abort());
   try {
     res = await fetch(getServerUrl() + "/api" + path, {
       method,
@@ -123,6 +124,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
       signal: ctrl.signal,
     });
   } catch {
+    if (signal?.aborted) throw new ApiError("Przerwano", 0);
     throw new ApiError(
       ctrl.signal.aborted ? "Serwer nie odpowiada - sprawdź połączenie z siecią" : "Nie można połączyć się z serwerem",
       0,
@@ -254,6 +256,38 @@ export interface AdminWorld {
   updatedAt: number;
 }
 
+/** Gemini (Google Cloud) - status dla panelu admina */
+export interface AdminAi {
+  ready: boolean;
+  fromEnv: boolean;
+  email: string;
+  project: string;
+  model: string;
+  location: string;
+  assistant: boolean;
+  dailyLimit: number;
+  stats: { requests: number; tokens: number; users: number };
+}
+
+/** asystent AI w Studio */
+export interface AiPart {
+  text?: string;
+  inlineData?: { mimeType: string; data: string };
+  functionCall?: { name: string; args?: Record<string, unknown>; id?: string };
+  functionResponse?: { name: string; response: unknown; id?: string };
+  thought?: boolean;
+  thoughtSignature?: string;
+}
+export interface AiContent {
+  role: "user" | "model";
+  parts: AiPart[];
+}
+export const aiApi = {
+  status: () => req<{ enabled: boolean; model: string; used: number; limit: number | null }>("GET", "/ai/status"),
+  step: (mode: "3d" | "2d", contents: AiContent[], signal?: AbortSignal) =>
+    req<{ content: AiContent; finish: string; used: number; limit: number | null }>("POST", "/ai/assistant", { mode, contents }, 200_000, signal),
+};
+
 /** panel admina - serwer sprawdza, czy konto jest adminem */
 export interface AdminModeration {
   enabled: boolean;
@@ -264,6 +298,8 @@ export interface AdminModeration {
   audioModel: string;
   flaggedWorlds: number;
   limits: { tokensLeft: number | null; requestsLeft: number | null; paused: string | null };
+  provider: "gemini" | "groq" | null;
+  preferGroq: boolean;
   scanAll?: { running: boolean; checked: number; flagged: number };
   log?: { id: number; kind: string; user: string | null; world: string | null; worldId: number | null; content: string; reason: string; at: number }[];
 }
@@ -289,8 +325,13 @@ export const adminApi = {
       check: { git: boolean; branch?: string; behind?: number; commits?: string[]; error?: string } | null;
     }>("GET", "/admin/update" + (check ? "?check=1" : "")),
   updateServer: () => req<{ ok: true }>("POST", "/admin/update"),
+  ai: () => req<AdminAi>("GET", "/admin/ai"),
+  setAi: (b: { model?: string; location?: string; assistant?: boolean; dailyLimit?: number }) => req<AdminAi>("PUT", "/admin/ai", b),
+  uploadAiKey: (json: string) => req<AdminAi>("POST", "/admin/ai/key", { json }),
+  deleteAiKey: () => req<AdminAi>("DELETE", "/admin/ai/key"),
+  testAi: () => req<{ ok: boolean; text: string; ms: number }>("POST", "/admin/ai/test"),
   moderation: () => req<AdminModeration>("GET", "/admin/moderation"),
-  setModeration: (b: { key?: string; enabled?: boolean }) => req<AdminModeration>("PUT", "/admin/moderation", b),
+  setModeration: (b: { key?: string; enabled?: boolean; provider?: "gemini" | "groq" }) => req<AdminModeration>("PUT", "/admin/moderation", b),
   testModeration: (text: string) => req<{ ok: boolean; reason: string }>("POST", "/admin/moderation/test", { text }),
   scanAllWorlds: () => req<{ ok: true }>("POST", "/admin/moderation/scan"),
   scanWorld: (id: number) => req<{ ok: boolean; problems: { where: string; reason: string }[] }>("POST", `/admin/moderation/worlds/${id}`),

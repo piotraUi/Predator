@@ -137,6 +137,7 @@ echo "  Strona gry:           https://$DOMAIN"
 echo "  W aplikacjach wpisz:  https://$DOMAIN"
 echo "  (bez https też działa: http://$IP:2567)"
 echo "  Konto administratora: $DIR/data/konto-predator.txt"
+echo "  Gemini (asystent AI): panel admina → AI → Wgraj plik klucza JSON"
 echo
 echo "  Logi serwera:         sudo journalctl -u predator -f"
 echo "  Restart serwera:      sudo systemctl restart predator"

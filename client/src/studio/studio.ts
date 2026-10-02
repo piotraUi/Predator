@@ -21,6 +21,8 @@ import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
 import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
 import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
 import { openGuiEditor } from "./guiEditor.ts";
+import { chatFor, openAssistant } from "./aiAssistant.ts";
+import { tools3d } from "./aiTools3d.ts";
 import { api } from "../api.ts";
 import { desktop, pickDataUrl, pickFile, saveTextFile } from "../files.ts";
 import { session } from "../state.ts";
@@ -649,8 +651,9 @@ export function studioScreen(
     }
 
     // ---------- zmiany i cofanie ----------
-    // cofanie obejmuje klocki i teren
-    const snapshot = () => JSON.stringify({ parts: data.parts, terrain: data.terrain ?? null });
+    // cofanie obejmuje klocki, teren i to, co zmienia asystent AI (skrypty, GUI, miejsca, narzędzia, ustawienia)
+    const UNDO_KEYS = ["scripts", "guis", "places", "startPlace", "tools", "badges", "skyColor", "skybox", "light", "gravity", "pvp", "genre", "playerCharacter"] as const;
+    const snapshot = () => JSON.stringify({ parts: data.parts, terrain: data.terrain ?? null, extra: Object.fromEntries(UNDO_KEYS.map((k) => [k, data[k] ?? null])) });
     function pushUndo() {
       undo.push(snapshot());
       if (undo.length > 60) undo.shift();
@@ -659,8 +662,24 @@ export function studioScreen(
     function restore(json: string) {
       const selId = selected?.id;
       const multiIds = multi.map((p) => p.id);
-      const snap = JSON.parse(json) as { parts: Part[]; terrain: WorldData["terrain"] | null };
+      const snap = JSON.parse(json) as { parts: Part[]; terrain: WorldData["terrain"] | null; extra?: Record<string, unknown> };
       data.parts = snap.parts;
+      if (snap.extra) {
+        const before = JSON.stringify(UNDO_KEYS.map((k) => data[k] ?? null));
+        for (const k of UNDO_KEYS) {
+          const v = snap.extra[k];
+          if (v === null || v === undefined) delete (data as unknown as Record<string, unknown>)[k];
+          else (data as unknown as Record<string, unknown>)[k] = v;
+        }
+        if (before !== JSON.stringify(UNDO_KEYS.map((k) => data[k] ?? null))) {
+          view.setTools(data.tools);
+          renderScripts();
+          renderTools();
+          renderPlaces();
+          applyPlaceSky();
+          if (!allPlaces(data).some((x) => x.id === curPlace)) curPlace = MAIN_PLACE;
+        }
+      }
       const terrainChanged = JSON.stringify(snap.terrain ?? null) !== JSON.stringify(data.terrain ?? null);
       if (snap.terrain) data.terrain = snap.terrain;
       else delete data.terrain;
@@ -1624,6 +1643,7 @@ export function studioScreen(
         [90, "Obrót 90°"],
       ].map(([v, l]) => h("option", { value: String(v), selected: v === 15 }, String(l))),
     );
+    const aiBtn = h("button", { class: "tb-btn ai", onClick: () => openAi(), title: "Asystent AI - napisz, co zrobić, a zbuduje to sam" }, "🤖", h("span", null, "AI"));
     /** kto jeszcze edytuje + zarządzanie współtwórcami */
     const editorsBtn = h("button", { class: "tb-btn editors-btn", title: "Współpraca - kto edytuje i kto może edytować", onClick: () => openEditors() });
     const openEditors = () => src.worldId && openEditorsDialog(src.worldId, !!src.owner, exitScreen, "kolorowe kulki");
@@ -1653,6 +1673,7 @@ export function studioScreen(
         "▶",
         h("span", null, "Testuj"),
       ),
+      aiBtn,
       h(
         "div",
         { class: "dd-wrap" },
@@ -2544,6 +2565,70 @@ export function studioScreen(
         ),
       );
     }
+
+    // ---------- asystent AI ----------
+    let closeAi: (() => void) | null = null;
+    function openAi() {
+      if (closeAi) return closeAi();
+      const key = src.worldId ? "w" + src.worldId : "f:" + meta.name;
+      const tools = tools3d(
+        {
+          data,
+          place: () => curPlace,
+          switchPlace,
+          focusPoint: () => camera.target,
+          selection: () => selParts(),
+          showParts: (parts) => (selectMany(parts), frameParts(parts)),
+          lookAt: (x, y, z) => camera.setTarget(new Vector3(x, y, z)),
+          added: (parts) => parts.forEach((p) => view.add(p)),
+          updated: (parts) => {
+            for (const p of parts) {
+              if (!inPlace(p)) view.remove(p.id);
+              else if (view.meshes.has(p.id)) view.apply(p);
+              else view.add(p);
+            }
+            showSelection();
+          },
+          removed: (ids) => {
+            for (const id of ids) view.remove(id);
+            const gone = new Set(ids);
+            if (selected && gone.has(selected.id)) select(null);
+            else if (multi.some((p) => gone.has(p.id))) selectMany(multi.filter((p) => !gone.has(p.id)));
+          },
+          refresh: () => {
+            view.setTools(data.tools);
+            renderScripts();
+            renderTools();
+            renderCharacters();
+            renderPlaces();
+            applyPlaceSky();
+          },
+          changed: () => changed(),
+        },
+        chatFor(key).att,
+      );
+      aiBtn.classList.add("active");
+      closeAi = openAssistant(
+        el,
+        {
+          mode: "3d",
+          key,
+          run: tools.run,
+          context: tools.context,
+          begin: () => pushUndo(),
+          end: () => {
+            changed();
+            renderExplorer();
+            renderProps();
+          },
+        },
+        () => {
+          closeAi = null;
+          aiBtn.classList.remove("active");
+        },
+      );
+    }
+    cleanups.push(() => closeAi?.());
 
     // ---------- GUI ----------
     function openGuis() {

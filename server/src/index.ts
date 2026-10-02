@@ -15,6 +15,7 @@ import { demoCity } from "../../shared/demos/city.ts";
 import { MINIGAMES } from "../../shared/demos/minigames.ts";
 import { api } from "./api.ts";
 import { admin } from "./admin.ts";
+import { assistantRouter } from "./assistant.ts";
 import { social } from "./socialApi.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
 import { config } from "./config.ts";
@@ -33,6 +34,7 @@ app.use(compression());
 // aplikacje na telefon / exe łączą się z innego adresu, więc pozwalamy na CORS
 app.use(cors());
 app.use("/api/admin", admin);
+app.use("/api/ai", assistantRouter);
 app.use("/api", api);
 app.use("/api", social);
 app.get("/health", (_req, res) => res.json({ ok: true, name: "Predator" }));

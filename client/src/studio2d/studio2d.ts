@@ -23,6 +23,8 @@ import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
 import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
 import { Collab2D, type Change2D } from "./collab2d.ts";
 import { openGuiEditor } from "../studio/guiEditor.ts";
+import { chatFor, openAssistant } from "../studio/aiAssistant.ts";
+import { tools2d } from "../studio/aiTools2d.ts";
 import type { Editor } from "../studio/collab.ts";
 import { openEditorsDialog } from "../studio/editorsDialog.ts";
 
@@ -165,7 +167,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     const objById = (id: string) => w.objects.find((o) => o.id === id);
 
     // ---------- cofanie ----------
-    const snapshot = () => JSON.stringify({ levels: w.levels, objects: w.objects, characters: w.characters, startLevel: w.startLevel, scripts: data.scripts });
+    const snapshot = () => JSON.stringify({ levels: w.levels, objects: w.objects, characters: w.characters, startLevel: w.startLevel, scripts: data.scripts, guis: data.guis ?? null, physics: w.physics });
     function changed(keepRedo = false) {
       dirty = true;
       desktop?.setDirty(true);
@@ -184,6 +186,9 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       w.characters = s.characters;
       w.startLevel = s.startLevel;
       data.scripts = s.scripts;
+      if (s.physics) w.physics = s.physics;
+      if (s.guis) data.guis = s.guis;
+      else if (s.guis === null) delete data.guis;
       level = w.levels.find((l) => l.id === level.id) ?? w.levels[0];
       selected = selected ? (level.instances.find((i) => i.id === selected!.id) ?? null) : null;
       multi = multi.map((m) => level.instances.find((i) => i.id === m.id)).filter((m): m is Inst2D => !!m);
@@ -341,6 +346,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     );
     const brushInfo = h("span", { class: "tb-mode hidden" });
     /** kto jeszcze edytuje + zarządzanie współtwórcami */
+    const aiBtn = h("button", { class: "tb-btn ai", onClick: () => openAi(), title: "Asystent AI - napisz, co zrobić, a zbuduje to sam" }, "🤖", h("span", null, "AI"));
     const editorsBtn = h("button", {
       class: "tb-btn editors-btn",
       title: "Współpraca - kto edytuje i kto może edytować",
@@ -367,6 +373,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       saveBtn,
       src.online ? editorsBtn : "",
       h("button", { class: "tb-btn play", onClick: () => test(), title: src.online ? "Zapisz i zagraj na serwerze" : "Zagraj bez serwera" }, "▶", h("span", null, "Testuj")),
+      aiBtn,
       h("div", { class: "dd-wrap" }, h("button", { class: "tb-btn", onClick: (e: Event) => toggleMenu(fileMenu, e) }, "📁", h("span", null, "Plik")), fileMenu),
       h("span", { class: "tb-mode " + (src.online ? "on" : ""), title: src.online ? "Gra na serwerze" : "Gra z pliku - bez serwera" }, src.online ? "☁ serwer · 2D" : "📄 plik · 2D"),
       h("div", { class: "tb-sep" }),
@@ -1523,6 +1530,56 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     }
 
     // ---------- GUI ----------
+    // ---------- asystent AI ----------
+    let closeAi: (() => void) | null = null;
+    function openAi() {
+      if (closeAi) return closeAi();
+      const key = src.worldId ? "w" + src.worldId : "f:" + meta.name;
+      const tools = tools2d(
+        {
+          data,
+          level: () => level,
+          openLevel: (l) => switchLevel(l),
+          visible: () => {
+            const { W, H } = size();
+            const s = cam.scale || 1;
+            return { x: cam.x - W / 2 / s, y: cam.y - H / 2 / s, w: W / s, h: H / s };
+          },
+          selection: () => sel(),
+          select: (list) => {
+            setSelection(list);
+            const first = list[0];
+            if (first) {
+              cam.x = first.x + first.w / 2;
+              cam.y = first.y + first.h / 2;
+            }
+            view.invalidate();
+          },
+          assetsAdded: (list) => list.forEach((a) => void assets.add(a)),
+          refresh: () => {
+            if (!w.levels.includes(level)) level = w.levels.find((l) => l.id === level.id) ?? w.levels[0];
+            selected = selected && level.instances.includes(selected) ? selected : null;
+            multi = multi.filter((m) => level.instances.includes(m));
+            if (editObj && !w.objects.includes(editObj)) editObj = null;
+            view.refreshObjects();
+            view.setLevel(level);
+            renderAll();
+          },
+        },
+        chatFor(key).att,
+      );
+      aiBtn.classList.add("active");
+      closeAi = openAssistant(
+        el,
+        { mode: "2d", key, run: tools.run, context: tools.context, begin: () => remember(), end: () => changed() },
+        () => {
+          closeAi = null;
+          aiBtn.classList.remove("active");
+        },
+      );
+    }
+    cleanups.push(() => closeAi?.());
+
     function openGuis() {
       data.guis ??= [];
       openGuiEditor({

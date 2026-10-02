@@ -521,3 +521,14 @@ export class LuaEngine {
     lua.lua_close(this.L);
   }
 }
+
+/** błąd składni skryptu Lua (null = w porządku) - np. asystent AI sprawdza kod przed zapisem */
+export function luaSyntaxError(source: string, name = "skrypt"): string | null {
+  const L = lauxlib.luaL_newstate();
+  try {
+    if (lauxlib.luaL_loadbuffer(L, to_luastring(source), null, to_luastring("=" + name)) === lua.LUA_OK) return null;
+    return to_jsstring(lua.lua_tostring(L, -1)) as string;
+  } finally {
+    lua.lua_close(L);
+  }
+}
