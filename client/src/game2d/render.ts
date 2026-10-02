@@ -1,6 +1,6 @@
 // Rysowanie poziomu 2D na płótnie: tło, obiekty (sprite'y, kafelki, teksty), postacie,
 // światła w ciemności i napisy na ekranie (HUD). Używa go gra i edytor Studio 2D.
-import type { Inst2D, InstState2D, Level2D, Obj2D, World2D } from "../../../shared/types2d.ts";
+import type { Inst2D, InstState2D, Level2D, LevelBg2D, Obj2D, World2D } from "../../../shared/types2d.ts";
 import { drawBitmapText, type AssetStore } from "./assets.ts";
 
 /** Rozdzielczość bazowa - jak w GDevelop (1280x720), do niej dopasowujemy ekran */
@@ -157,6 +157,7 @@ export class LevelView {
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = this.background;
     ctx.fillRect(0, 0, W, H);
+    if (this.level.bg) this.drawLevelBg(ctx, W, H, cam, this.level.bg);
     const list = this.instances();
     const hs = hudScale(W, H);
     // tło: warstwa z własną kamerą (parallax 0 = stoi w miejscu jak w GDevelop)
@@ -197,6 +198,38 @@ export class LevelView {
     if (opts.hud !== false) {
       const hudCam: Camera2D = { x: W / hs / 2, y: H / hs / 2, scale: hs };
       for (const i of list) if (i.layer === "hud") this.drawInst(ctx, W, H, hudCam, i, t, opts.editor, false);
+    }
+    ctx.restore();
+  }
+
+  /** obrazek tła z ustawień poziomu - pod wszystkimi obiektami */
+  private drawLevelBg(ctx: CanvasRenderingContext2D, W: number, H: number, cam: Camera2D, bg: LevelBg2D) {
+    const img = this.assets.image(bg.image);
+    if (!img) return;
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    ctx.save();
+    ctx.globalAlpha *= bg.opacity;
+    ctx.imageSmoothingEnabled = !this.assets.isPixel(bg.image);
+    if (bg.mode === "tile" || bg.mode === "tileX") {
+      const pat = this.assets.pattern(ctx, bg.image);
+      if (pat) {
+        // parallax 0: od lewego górnego rogu ekranu; 1: jak obiekty w świecie
+        const s = cam.scale;
+        const p = bg.parallax;
+        const ox = (bg.x - cam.x * p) * s + (W / 2) * p;
+        const oy = (bg.y - cam.y * p) * s + (H / 2) * p;
+        const k = bg.scale * s;
+        pat.setTransform(new DOMMatrix([k, 0, 0, k, ox, oy]));
+        ctx.fillStyle = pat;
+        if (bg.mode === "tile") ctx.fillRect(0, 0, W, H);
+        else ctx.fillRect(0, Math.round(oy), W, Math.round(ih * k));
+      }
+    } else if (bg.mode === "stretch") {
+      ctx.drawImage(img, 0, 0, W, H);
+    } else {
+      const k = bg.mode === "cover" ? Math.max(W / iw, H / ih) : Math.min(W / iw, H / ih);
+      const dw = iw * k, dh = ih * k;
+      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
     }
     ctx.restore();
   }

@@ -53,6 +53,8 @@ export class AssetStore {
   private soundData = new Map<string, string>();
   private patterns = new Map<string, CanvasPattern>();
   private tinted = new Map<string, HTMLCanvasElement>();
+  /** obrazki pixel-art (rysowane ostro, bez wygładzania) */
+  private pixel = new Set<string>();
   readonly ready: Promise<void>;
 
   constructor(assets: Asset2D[]) {
@@ -64,6 +66,7 @@ export class AssetStore {
         img.decoding = "async";
         img.src = a.data;
         this.images.set(a.id, img);
+        if (a.pixel) this.pixel.add(a.id);
         waits.push(img.decode().catch(() => {}));
       } else if (a.type === "sound") this.soundData.set(a.id, a.data);
     }
@@ -83,6 +86,8 @@ export class AssetStore {
       img.src = a.data;
       this.images.set(a.id, img);
       this.patterns.delete(a.id);
+      if (a.pixel) this.pixel.add(a.id);
+      else this.pixel.delete(a.id);
       return img.decode().catch(() => {});
     }
     if (a.type === "sound") this.soundData.set(a.id, a.data);
@@ -91,6 +96,10 @@ export class AssetStore {
 
   static forWorld(w: World2D) {
     return new AssetStore(w.assets);
+  }
+
+  isPixel(id: string) {
+    return this.pixel.has(id);
   }
 
   image(id: string | undefined): HTMLImageElement | null {

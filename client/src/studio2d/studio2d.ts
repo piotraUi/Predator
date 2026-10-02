@@ -5,7 +5,7 @@ import { fileNameFor, GAME_EXT, makeGameFile, parseGameFile, type GameMeta } fro
 import { importGDevelop } from "../../../shared/import/gdevelop.ts";
 import type { WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
 import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
-import type { Anim2D, Asset2D, Character2D, Inst2D, Level2D, Obj2D, Role2D, Solid2D, World2D } from "../../../shared/types2d.ts";
+import type { Anim2D, Asset2D, Character2D, Inst2D, Level2D, LevelBg2D, Obj2D, Role2D, Solid2D, World2D } from "../../../shared/types2d.ts";
 import { emptyLevel, instBox, MAX_ASSET_CHARS, newId2d, sanitizeWorld2D } from "../../../shared/world2d.ts";
 import { api } from "../api.ts";
 import { desktop, pickFile, pickFiles, saveTextFile } from "../files.ts";
@@ -139,6 +139,22 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     let selected: Inst2D | null = null;
     let editObj: Obj2D | null = null;
     let brush: Obj2D | null = null;
+    /** zaznaczonych kilka naraz (Shift + klik albo ramka) - "selected" to główny z nich */
+    let multi: Inst2D[] = [];
+    /** wszystkie zaznaczone */
+    const sel = (): Inst2D[] => (multi.length ? multi : selected ? [selected] : []);
+    const isSel = (i: Inst2D) => i === selected || multi.includes(i);
+    function selectOnly(i: Inst2D | null) {
+      selected = i;
+      multi = [];
+    }
+    /** skopiowane obiekty (Ctrl+C) - można wkleić na innym poziomie */
+    let clipboard: Inst2D[] = [];
+    let showGrid = true;
+    /** telefon (bez Shift): przeciąganie po pustym zaznacza ramką */
+    let boxMode = false;
+    let levelTab: "general" | "bg" = "general";
+    let objFilter = "";
     let grid = 8;
     let dirty = false;
     const undo: string[] = [];
@@ -169,6 +185,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       data.scripts = s.scripts;
       level = w.levels.find((l) => l.id === level.id) ?? w.levels[0];
       selected = selected ? (level.instances.find((i) => i.id === selected!.id) ?? null) : null;
+      multi = multi.map((m) => level.instances.find((i) => i.id === m.id)).filter((m): m is Inst2D => !!m);
       editObj = editObj ? (objById(editObj.id) ?? null) : null;
       view.refreshObjects();
       view.setLevel(level);
@@ -378,6 +395,11 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     const small = (label: string, fn: () => void, t?: string) => h("button", { class: "btn small", onClick: fn, title: t }, label);
     // lewy panel w zakładkach - jak w Studio 3D
     const kitBody = h("div", { class: "panel-body toolbox" });
+    const objSearch = h("input", { class: "obj-search", type: "search", placeholder: "🔍 Szukaj obiektu…" });
+    objSearch.addEventListener("input", () => {
+      objFilter = objSearch.value;
+      renderObjects();
+    });
     const page = (...kids: (Node | string)[]) => h("div", { class: "ltab-page" }, ...kids);
     const LEFT_TABS: { id: string; icon: string; label: string; page: HTMLElement }[] = [
       { id: "kit", icon: "🧱", label: "Zestaw", page: page(title("Zestaw - kliknij i postaw"), h("p", { class: "panel-hint" }, "Gotowe rzeczy z zachowaniem. Kliknij, a potem planszę."), kitBody) },
@@ -385,7 +407,12 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         id: "objects",
         icon: "🖼️",
         label: "Obiekty",
-        page: page(title("Obiekty w grze", small("+ Nowy", () => newObject())), h("p", { class: "panel-hint" }, "Kliknij obiekt, a potem planszę. ✎ = obrazki, rysowanie i zachowanie."), objectsList),
+        page: page(
+          title("Obiekty w grze", small("+ Nowy", () => newObject())),
+          h("p", { class: "panel-hint" }, "Kliknij obiekt, a potem planszę (przeciągnij, żeby malować). ✎ = obrazki, rysowanie i zachowanie."),
+          objSearch,
+          objectsList,
+        ),
       },
       { id: "levels", icon: "🗺️", label: "Poziomy", page: page(title("Poziomy", small("+ Nowy", () => addLevel())), levelsList) },
       { id: "chars", icon: "🧍", label: "Postacie", page: page(title("Postacie", small("+ Nowa", () => editCharacter(null))), h("p", { class: "panel-hint" }, "Postać gracza: obrazki z obiektu i nazwy animacji (chodzenie, skok...)."), charsList) },
@@ -453,6 +480,11 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     const fab = {
       add: fabBtn("＋", "Dodaj", () => showLeftTab("kit"), "accent"),
       stop: fabBtn("✋", "Koniec", () => setBrush(null)),
+      box: fabBtn("▢", "Ramka", () => {
+        boxMode = !boxMode;
+        updateFab();
+        if (boxMode) toast("Przeciągnij palcem po planszy, żeby zaznaczyć kilka obiektów");
+      }),
       dup: fabBtn("⧉", "Kopia", () => duplicate()),
       del: fabBtn("🗑", "Usuń", () => removeSelected()),
       up: fabBtn("⬆", "Wyżej", () => zOrder(1)),
@@ -460,13 +492,66 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       props: fabBtn("🔧", "Cechy", () => togglePanel(rightPanel)),
       undo: fabBtn("↶", "Cofnij", () => doUndo()),
     };
-    const fabBar = h("div", { class: "studio-fab" }, fab.add, fab.stop, h("div", { class: "fab-sep" }), fab.dup, fab.del, fab.up, fab.down, fab.props, h("div", { class: "fab-sep" }), fab.undo);
+    const fabBar = h("div", { class: "studio-fab" }, fab.add, fab.stop, fab.box, h("div", { class: "fab-sep" }), fab.dup, fab.del, fab.up, fab.down, fab.props, h("div", { class: "fab-sep" }), fab.undo);
     function updateFab() {
       fab.stop.classList.toggle("hidden", !brush);
       fab.stop.classList.toggle("on", !!brush);
+      fab.box.classList.toggle("on", boxMode);
       for (const b of [fab.dup, fab.del, fab.up, fab.down]) (b as HTMLButtonElement).disabled = !selected;
     }
     viewport.append(fabBar);
+
+    // pasek stanu na dole planszy: pozycja kursora, przybliżenie, liczba obiektów i szybkie przyciski widoku
+    const stPos = h("span", { class: "st-pos" });
+    const stInfo = h("span", { class: "st-info" });
+    const stZoom = h("span", { class: "st-zoom" });
+    const stBtn = (label: string, title: string, fn: () => void) => h("button", { class: "st-btn", title, onClick: (e: Event) => (e.stopPropagation(), fn()) }, label);
+    const gridBtn = stBtn("▦", "Pokaż / ukryj siatkę (G)", () => ((showGrid = !showGrid), updateStatus()));
+    const statusBar = h(
+      "div",
+      { class: "studio-status" },
+      stPos,
+      stInfo,
+      h("span", { class: "st-sep" }),
+      stBtn("−", "Oddal (-)", () => zoomBy(0.8)),
+      stZoom,
+      stBtn("+", "Przybliż (+)", () => zoomBy(1.25)),
+      stBtn("⛶", "Cały poziom (0)", () => fitLevel()),
+      stBtn("⌂", "Do startu (Home)", () => centerOnLevel()),
+      gridBtn,
+      stBtn("⌨", "Skróty klawiszowe (?)", () => openShortcuts()),
+    );
+    viewport.append(statusBar);
+    function updateStatus() {
+      stPos.textContent = hover ? `X ${Math.round(hover.wx)}  Y ${Math.round(hover.wy)}` : "";
+      const n = sel().length;
+      stInfo.textContent = `${level.instances.length} obiektów` + (n > 1 ? ` · zaznaczono ${n}` : "") + (brush ? ` · stawiasz: ${brush.name}` : "");
+      gridBtn.classList.toggle("on", showGrid && grid > 1);
+    }
+    function openShortcuts() {
+      const rows: [string, string][] = [
+        ["Klik", "zaznacz obiekt (przeciągnij, żeby przesunąć)"],
+        ["Shift + klik", "dodaj / usuń z zaznaczenia"],
+        ["Shift + przeciągnij", "zaznacz ramką kilka obiektów"],
+        ["Ctrl + A", "zaznacz wszystko na poziomie"],
+        ["Ctrl + C / X / V", "kopiuj / wytnij / wklej w miejscu kursora (też na innym poziomie)"],
+        ["Ctrl + D", "duplikuj"],
+        ["Delete", "usuń zaznaczone"],
+        ["Strzałki", "przesuń o kratkę siatki (z Shift o 1 piksel)"],
+        ["R / Shift + R", "obróć o 90° w prawo / w lewo"],
+        ["F", "odbij w poziomie"],
+        ["L", "zablokuj (nie da się kliknąć - np. tło)"],
+        ["G", "pokaż / ukryj siatkę"],
+        ["Obiekt + przeciąganie", "maluj - stawia obiekt jeden obok drugiego"],
+        ["Esc", "koniec stawiania, odznacz"],
+        ["Kółko / + / -", "przybliż / oddal"],
+        ["0 / Home", "cały poziom / do startu"],
+        ["Prawy przycisk", "przesuwanie widoku"],
+        ["Ctrl + Z / Y", "cofnij / ponów"],
+        ["Ctrl + S", "zapisz"],
+      ];
+      modal("Skróty w Studio 2D", h("table", { class: "shortcuts" }, rows.map(([k, v]) => h("tr", null, h("td", null, h("kbd", null, k)), h("td", null, v)))));
+    }
     el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
 
     // ---------- listy ----------
@@ -490,8 +575,11 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       );
     }
     function renderObjects() {
+      const q = objFilter.trim().toLowerCase();
+      const list = q ? w.objects.filter((o) => o.name.toLowerCase().includes(q)) : w.objects;
       objectsList.replaceChildren(
-        ...w.objects.map((o) =>
+        ...(list.length ? [] : [h("p", { class: "panel-hint" }, "Brak obiektów o tej nazwie")]),
+        ...list.map((o) =>
           h(
             "div",
             { class: "obj-row " + (brush?.id === o.id ? "brush " : "") + (editObj?.id === o.id && !selected ? "active" : "") },
@@ -502,7 +590,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
                 title: "Kliknij, a potem planszę, żeby postawić",
                 onClick: () => {
                   setBrush(brush?.id === o.id ? null : o);
-                  selected = null;
+                  selectOnly(null);
                   editObj = o;
                   renderAll();
                 },
@@ -511,7 +599,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
               h("span", { class: "obj-name" }, o.name),
               o.role !== "none" ? h("span", { class: "tree-kind" }, ROLE_LABELS[o.role].split(" ")[0]) : null,
             ),
-            h("button", { class: "icon-btn", title: "Edytuj obiekt", onClick: () => ((editObj = o), (selected = null), setBrush(null), renderAll()) }, "✎"),
+            h("button", { class: "icon-btn", title: "Edytuj obiekt", onClick: () => ((editObj = o), selectOnly(null), setBrush(null), renderAll()) }, "✎"),
           ),
         ),
       );
@@ -620,7 +708,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       w.objects.push(o);
       view.refreshObjects();
       editObj = o;
-      selected = null;
+      selectOnly(null);
       setBrush(o);
       renderAll();
       if (!isCompact()) toast(`Kliknij na planszy, żeby postawić: ${o.name}. Esc = koniec`);
@@ -642,6 +730,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       canvas.style.cursor = o ? "copy" : "";
       renderObjects();
       updateFab();
+      updateStatus();
       // na telefonie od razu pokazujemy planszę, żeby stuknięciem stawiać obiekt
       if (o && isCompact()) {
         closePanels();
@@ -651,7 +740,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
 
     function switchLevel(l: Level2D) {
       level = l;
-      selected = null;
+      selectOnly(null);
       view.setLevel(l);
       centerOnLevel();
       renderAll();
@@ -725,17 +814,105 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
 
     function renderProps() {
       updateFab();
+      updateStatus();
+      if (multi.length > 1) return renderMultiProps(multi);
       if (selected) return renderInstProps(selected);
       if (editObj) return renderObjProps(editObj);
       renderLevelProps();
     }
 
+    function levelTabs() {
+      const tab = (id: typeof levelTab, label: string) =>
+        h("button", { class: "ptab " + (levelTab === id ? "active" : ""), onClick: () => ((levelTab = id), renderProps()) }, label);
+      return h("div", { class: "ptabs" }, tab("general", "⚙ Poziom"), tab("bg", "🖼 Tło"));
+    }
+
+    /** zakładka "Tło": kolor i obrazek tła poziomu (bez stawiania obiektu na planszy) */
+    function renderBgProps() {
+      const l = level;
+      const bg = l.bg;
+      const images = w.assets.filter((a) => a.type === "image");
+      const setImage = (id: string) => {
+        remember();
+        l.bg = { ...(l.bg ?? { mode: "cover", parallax: 0, scale: 1, x: 0, y: 0, opacity: 1 }), image: id };
+        renderProps();
+      };
+      const upload = async () => {
+        const picked = await pickImages("Obrazek tła", false);
+        const a = picked?.list[0];
+        if (!a) return;
+        a.name = "tło " + l.name;
+        w.assets.push(a);
+        await assets.add(a);
+        setImage(a.id);
+      };
+      const cur = bg && w.assets.find((a) => a.id === bg.image);
+      const tiled = bg && (bg.mode === "tile" || bg.mode === "tileX");
+      const MODES: [LevelBg2D["mode"], string][] = [
+        ["cover", "Wypełnij ekran (przycięte brzegi)"],
+        ["fit", "Cały obrazek (bez przycinania)"],
+        ["stretch", "Rozciągnij na ekran"],
+        ["tile", "Kafelki na cały ekran"],
+        ["tileX", "Pas kafelków w poziomie (góry, chmury)"],
+      ];
+      props.replaceChildren(
+        levelTabs(),
+        h("div", { class: "prop-group" }, "Tło poziomu"),
+        field("Kolor tła", colorIn(l.background, (v) => (l.background = v)), "Widać go tam, gdzie nie ma obrazka"),
+        h(
+          "div",
+          { class: "bg-current" },
+          cur ? h("img", { class: "bg-preview", src: cur.data, alt: cur.name }) : h("div", { class: "bg-preview empty" }, "Bez obrazka"),
+          h(
+            "div",
+            { class: "bg-buttons" },
+            h("button", { class: "btn small primary", onClick: upload }, cur ? "Zmień obrazek" : "📁 Wgraj / 🎨 narysuj"),
+            cur ? h("button", { class: "btn small", onClick: () => (remember(), delete l.bg, renderProps()) }, "Usuń obrazek") : null,
+          ),
+        ),
+        bg
+          ? h(
+              "div",
+              null,
+              field("Jak ułożyć", selectIn(MODES, bg.mode, (v) => (bg.mode = v as LevelBg2D["mode"]))),
+              tiled
+                ? h(
+                    "div",
+                    null,
+                    field("Przesuwanie z kamerą (0 - 1)", numIn(bg.parallax, (v) => (bg.parallax = Math.min(1, Math.max(0, v))), 0.1), "0 = stoi w miejscu, 0.3 = daleko (parallax), 1 = jak świat"),
+                    field("Skala kafelków", numIn(bg.scale, (v) => (bg.scale = Math.min(50, Math.max(0.05, v))), 0.1)),
+                    field("Przesunięcie X / Y", pair(numIn(bg.x, (v) => (bg.x = v)), numIn(bg.y, (v) => (bg.y = v)))),
+                  )
+                : h("p", { class: "hint" }, "Obrazek jest przyklejony do ekranu - nie przesuwa się z kamerą. Do przesuwania wybierz kafelki."),
+              field("Nieprzezroczystość (0 - 1)", numIn(bg.opacity, (v) => (bg.opacity = Math.min(1, Math.max(0, v))), 0.1)),
+            )
+          : "",
+        images.length
+          ? h(
+              "div",
+              { class: "prop" },
+              h("span", null, "Albo wybierz obrazek z gry"),
+              h(
+                "div",
+                { class: "bg-gallery" },
+                images.slice(0, 120).map((a) =>
+                  h("button", { class: "bg-pick " + (bg?.image === a.id ? "active" : ""), title: a.name, onClick: () => setImage(a.id) }, h("img", { src: a.data, alt: a.name, loading: "lazy" })),
+                ),
+              ),
+            )
+          : "",
+        h("p", { class: "hint" }, "Tło jest w ustawieniach poziomu - nie trzeba stawiać obiektu na planszy. Widać je w Studio i w grze."),
+      );
+    }
+
     function renderLevelProps() {
       const l = level;
+      if (levelTab === "bg") return renderBgProps();
+      const locked = l.instances.filter((i) => i.locked).length;
       props.replaceChildren(
+        levelTabs(),
         h("div", { class: "prop-group" }, "Poziom"),
         field("Nazwa", textIn(l.name, (v) => (l.name = v.trim().slice(0, 40) || l.name))),
-        field("Kolor tła", colorIn(l.background, (v) => (l.background = v))),
         field("Przybliżenie widoku", numIn(l.zoom, (v) => (l.zoom = Math.min(10, Math.max(0.2, v))), 0.1), "2 = piksele 2x większe (jak w GDevelop: zoom kamery)"),
         field("Śmierć poniżej Y", h("div", { class: "xy" }, numIn(l.killY ?? 0, (v) => (l.killY = v)), h("button", { class: "btn small", onClick: () => (remember(), (l.killY = null), renderProps()) }, "brak")), l.killY === null ? "Brak - spadanie nie zabija" : "Czerwona linia na planszy"),
         field("Kamera nie niżej niż Y", h("div", { class: "xy" }, numIn(l.cameraBottom ?? 0, (v) => (l.cameraBottom = v)), h("button", { class: "btn small", onClick: () => (remember(), (l.cameraBottom = null), renderProps()) }, "brak")), l.cameraBottom === null ? "Brak ograniczenia" : "Niebieska linia na planszy"),
@@ -779,7 +956,10 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           },
           "Usuń poziom",
         ),
-        h("p", { class: "hint" }, "Przesuwanie widoku: prawy / środkowy przycisk myszy albo przeciągnij puste miejsce. Kółko = przybliżenie. Na telefonie dwa palce."),
+        locked
+          ? h("button", { class: "btn small", onClick: () => (remember(), l.instances.forEach((i) => delete i.locked), renderProps()) }, `🔓 Odblokuj wszystkie (${locked})`)
+          : "",
+        h("p", { class: "hint" }, "Przesuwanie widoku: prawy / środkowy przycisk myszy albo przeciągnij puste miejsce. Kółko = przybliżenie. Shift + przeciągnij = zaznacz ramką. ⌨ na dole planszy = wszystkie skróty. Na telefonie dwa palce."),
       );
     }
 
@@ -797,13 +977,80 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         i.layer === "bg" ? field("Przesuwanie tła (0 = stoi, 1 = jak świat)", numIn(i.parallax ?? 0, (v) => (i.parallax = Math.min(1, Math.max(0, v))), 0.1)) : "",
         field("Nieprzezroczystość (0 - 1)", numIn(i.opacity ?? 1, (v) => (i.opacity = v >= 1 ? undefined : Math.max(0, v)), 0.1)),
         checkIn("Odbity w poziomie", !!i.flip, (v) => (i.flip = v || undefined)),
+        checkIn("🔒 Zablokowany (nie da się kliknąć na planszy)", !!i.locked, (v) => {
+          i.locked = v || undefined;
+          if (v) selectOnly(null);
+        }),
         animNames.length > 1 ? field("Animacja", selectIn(animNames, i.anim ?? o.anims[0].name, (v) => (i.anim = v === o.anims[0].name ? undefined : v))) : "",
         o.role === "button" || o.role === "gate" ? field("Klucz (przycisk otwiera bramy z tym samym)", numIn(i.key ?? 0, (v) => (i.key = Math.round(v)))) : "",
         h(
           "div",
           { class: "row" },
-          h("button", { class: "btn small", onClick: () => ((editObj = o), (selected = null), renderAll()) }, "✎ Edytuj obiekt"),
+          h("button", { class: "btn small", onClick: () => ((editObj = o), selectOnly(null), renderAll()) }, "✎ Edytuj obiekt"),
           h("button", { class: "btn small", onClick: () => resetSize(i, o) }, "Rozmiar obrazka"),
+        ),
+      );
+    }
+
+    /** kilka zaznaczonych: wyrównanie, równe odstępy i wspólne cechy */
+    function renderMultiProps(list: Inst2D[]) {
+      const box = (i: Inst2D) => ({ x0: i.x, y0: i.y, x1: i.x + i.w, y1: i.y + i.h });
+      const all = list.map(box);
+      const L = Math.min(...all.map((b) => b.x0)), R = Math.max(...all.map((b) => b.x1));
+      const T = Math.min(...all.map((b) => b.y0)), B = Math.max(...all.map((b) => b.y1));
+      const act = (fn: () => void) => () => {
+        remember();
+        fn();
+        view.invalidate();
+        renderProps();
+      };
+      const align = (label: string, title: string, fn: (i: Inst2D) => void) => h("button", { class: "btn small", title, onClick: act(() => list.forEach(fn)) }, label);
+      const distribute = (axis: "x" | "y") =>
+        act(() => {
+          const sorted = [...list].sort((a, b) => a[axis] - b[axis]);
+          const size = axis === "x" ? "w" : "h";
+          const total = sorted.reduce((n, i) => n + i[size], 0);
+          const span = axis === "x" ? R - L : B - T;
+          const gap = (span - total) / Math.max(1, sorted.length - 1);
+          let pos = axis === "x" ? L : T;
+          for (const i of sorted) {
+            i[axis] = Math.round(pos);
+            pos += i[size] + gap;
+          }
+        });
+      const same = <K extends keyof Inst2D>(k: K) => list.every((i) => i[k] === list[0][k]);
+      props.replaceChildren(
+        h("div", { class: "prop-group" }, `Zaznaczono ${list.length}`),
+        h("p", { class: "hint" }, "Przeciągnij jeden z nich, żeby przesunąć wszystkie. Strzałki przesuwają, Delete usuwa, Ctrl+C / Ctrl+V kopiuje."),
+        h("span", { class: "prop-label" }, "Wyrównaj"),
+        h(
+          "div",
+          { class: "row wrap" },
+          align("⇤", "Do lewej", (i) => (i.x = L)),
+          align("↔", "Środki w poziomie", (i) => (i.x = Math.round((L + R) / 2 - i.w / 2))),
+          align("⇥", "Do prawej", (i) => (i.x = R - i.w)),
+          align("⤒", "Do góry", (i) => (i.y = T)),
+          align("↕", "Środki w pionie", (i) => (i.y = Math.round((T + B) / 2 - i.h / 2))),
+          align("⤓", "Do dołu", (i) => (i.y = B - i.h)),
+        ),
+        h("span", { class: "prop-label" }, "Równe odstępy"),
+        h(
+          "div",
+          { class: "row" },
+          h("button", { class: "btn small", onClick: distribute("x"), disabled: list.length < 3 }, "↔ w poziomie"),
+          h("button", { class: "btn small", onClick: distribute("y"), disabled: list.length < 3 }, "↕ w pionie"),
+        ),
+        field("Warstwa", selectIn([...(same("layer") ? [] : [["", "(różne)"] as [string, string]]), ...(Object.entries(LAYER_LABELS) as [string, string][])], same("layer") ? list[0].layer : "", (v) => v && list.forEach((i) => (i.layer = v as Inst2D["layer"])))),
+        field("Nieprzezroczystość (0 - 1)", numIn(same("opacity") ? (list[0].opacity ?? 1) : 1, (v) => list.forEach((i) => (i.opacity = v >= 1 ? undefined : Math.max(0, v))), 0.1)),
+        h(
+          "div",
+          { class: "row wrap" },
+          h("button", { class: "btn small", onClick: act(() => list.forEach((i) => (i.flip = !i.flip || undefined))) }, "↔ Odbij"),
+          h("button", { class: "btn small", onClick: act(() => list.forEach((i) => (i.angle = (((i.angle ?? 0) + 90) % 360) || undefined))) }, "⟳ Obróć 90°"),
+          h("button", { class: "btn small", onClick: () => duplicate() }, "⧉ Duplikuj"),
+          h("button", { class: "btn small", onClick: () => copySel() }, "📋 Kopiuj"),
+          h("button", { class: "btn small", onClick: act(() => (list.forEach((i) => (i.locked = true)), selectOnly(null))) }, "🔒 Zablokuj"),
+          h("button", { class: "btn small danger", onClick: () => removeSelected() }, "🗑 Usuń"),
         ),
       );
     }
@@ -1084,7 +1331,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         w.objects.push(o);
         view.refreshObjects();
         editObj = o;
-        selected = null;
+        selectOnly(null);
         setBrush(o);
         renderAll();
         toast("Kliknij na planszy, żeby postawić " + o.name);
@@ -1380,6 +1627,39 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       if (!W || !H) return;
       view.background = level.background;
       view.draw(ctx, W, H, cam, (performance.now() - t0) / 1000, [], { editor: true });
+      const zoomText = Math.round((cam.scale / dpr) * 100) + "%";
+      if (stZoom.textContent !== zoomText) stZoom.textContent = zoomText;
+      // siatka (gdy kratki nie są za drobne)
+      const step = grid * cam.scale;
+      if (showGrid && grid > 1 && step >= 6 * dpr) {
+        ctx.save();
+        ctx.lineWidth = 1;
+        const x0 = cam.x - W / 2 / cam.scale, y0 = cam.y - H / 2 / cam.scale;
+        const gx = Math.floor(x0 / grid), gy = Math.floor(y0 / grid);
+        ctx.beginPath();
+        for (let k = gx; k * grid < x0 + W / cam.scale; k++) {
+          const sx = Math.round((k * grid - cam.x) * cam.scale + W / 2) + 0.5;
+          ctx.moveTo(sx, 0);
+          ctx.lineTo(sx, H);
+        }
+        for (let k = gy; k * grid < y0 + H / cam.scale; k++) {
+          const sy = Math.round((k * grid - cam.y) * cam.scale + H / 2) + 0.5;
+          ctx.moveTo(0, sy);
+          ctx.lineTo(W, sy);
+        }
+        ctx.strokeStyle = "rgba(255,255,255,0.07)";
+        ctx.stroke();
+        // osie świata (x = 0, y = 0)
+        ctx.beginPath();
+        const ax = Math.round(-cam.x * cam.scale + W / 2) + 0.5, ay = Math.round(-cam.y * cam.scale + H / 2) + 0.5;
+        ctx.moveTo(ax, 0);
+        ctx.lineTo(ax, H);
+        ctx.moveTo(0, ay);
+        ctx.lineTo(W, ay);
+        ctx.strokeStyle = "rgba(255,255,255,0.18)";
+        ctx.stroke();
+        ctx.restore();
+      }
       // linie śmierci i kamery
       const lineY = (y: number, color: string) => {
         const sy = (y - cam.y) * cam.scale + H / 2;
@@ -1434,10 +1714,44 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         }
         ctx.fillStyle = "#fff";
         ctx.strokeStyle = "#3a86ff";
-        for (const [hx, hy] of handles(r)) {
+        for (const [hx, hy] of multi.length > 1 ? [] : handles(r)) {
           ctx.fillRect(hx - HANDLE * dpr, hy - HANDLE * dpr, HANDLE * 2 * dpr, HANDLE * 2 * dpr);
           ctx.strokeRect(hx - HANDLE * dpr, hy - HANDLE * dpr, HANDLE * 2 * dpr, HANDLE * 2 * dpr);
         }
+      }
+      // pozostałe zaznaczone (kilka naraz)
+      if (multi.length > 1) {
+        ctx.strokeStyle = "#3a86ff";
+        ctx.lineWidth = 2 * dpr;
+        for (const i of multi) {
+          if (i === selected) continue;
+          const r = screenRect(i);
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+        }
+      }
+      // obiekt pod kursorem
+      if (!drag && !brush && hoverScreen) {
+        const hv = hitTest(hoverScreen.x, hoverScreen.y);
+        if (hv && !isSel(hv)) {
+          const r = screenRect(hv);
+          ctx.strokeStyle = "rgba(255,255,255,0.55)";
+          ctx.lineWidth = dpr;
+          ctx.setLineDash([4 * dpr, 3 * dpr]);
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+          ctx.setLineDash([]);
+        }
+      }
+      // ramka zaznaczania
+      if (drag?.kind === "box") {
+        const x = Math.min(drag.sx, drag.ex) * dpr, y = Math.min(drag.sy, drag.ey) * dpr;
+        const bw = Math.abs(drag.ex - drag.sx) * dpr, bh = Math.abs(drag.ey - drag.sy) * dpr;
+        ctx.fillStyle = "rgba(58,134,255,0.15)";
+        ctx.fillRect(x, y, bw, bh);
+        ctx.strokeStyle = "#3a86ff";
+        ctx.lineWidth = dpr;
+        ctx.setLineDash([5 * dpr, 3 * dpr]);
+        ctx.strokeRect(x, y, bw, bh);
+        ctx.setLineDash([]);
       }
       drawEditors(W, H, dpr);
       // podgląd stawianego obiektu
@@ -1504,9 +1818,12 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     const snap = (v: number) => (grid > 1 ? Math.round(v / grid) * grid : Math.round(v));
     const snapPt = (x: number, y: number) => ({ x: snap(x), y: snap(y) });
     let hover: { wx: number; wy: number } | null = null;
+    let hoverScreen: { x: number; y: number } | null = null;
     type Drag =
       | { kind: "pan"; sx: number; sy: number; cx: number; cy: number }
-      | { kind: "move"; inst: Inst2D; ox: number; oy: number; wx: number; wy: number; moved: boolean }
+      | { kind: "move"; inst: Inst2D; items: { inst: Inst2D; ox: number; oy: number }[]; ox: number; oy: number; wx: number; wy: number; moved: boolean }
+      | { kind: "box"; sx: number; sy: number; ex: number; ey: number; add: Inst2D[] }
+      | { kind: "paint"; obj: Obj2D; x0: number; y0: number; done: Set<string> }
       | { kind: "resize"; inst: Inst2D; corner: number; start: Inst2D; wx: number; wy: number };
     let drag: Drag | null = null;
     const pointers = new Map<number, { x: number; y: number }>();
@@ -1525,6 +1842,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       const list = view.instances();
       for (let k = list.length - 1; k >= 0; k--) {
         const i = list[k];
+        if (i.locked) continue;
         const r = screenRect(i);
         const o = objById(i.obj);
         const rr = o?.kind === "light" ? { x: r.x - 12, y: r.y - 12, w: 24, h: 24 } : r;
@@ -1559,7 +1877,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       }
       const { dpr } = size();
       // uchwyty zmiany rozmiaru
-      if (selected) {
+      if (selected && multi.length < 2 && !e.shiftKey) {
         const r = screenRect(selected);
         const hs = handles(r);
         for (let k = 0; k < 4; k++) {
@@ -1575,39 +1893,60 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         const wp = toWorld(p.x, p.y);
         const pos = snapPt(wp.x, wp.y);
         remember();
-        const maxZ = level.instances.reduce((m, i) => Math.max(m, i.z), 0);
-        const inst: Inst2D = { id: newId2d(), obj: brush.id, x: pos.x, y: pos.y, w: brush.w, h: brush.h, z: maxZ + 1, layer: "main" };
-        // przycisk i brama od razu połączone (klucz 1) - można zmienić we właściwościach
-        if (brush.role === "button" || brush.role === "gate") inst.key = 1;
-        level.instances.push(inst);
-        view.invalidate();
-        selected = inst;
+        const inst = placeBrush(brush, pos.x, pos.y);
+        selectOnly(inst);
+        // przeciąganie z obiektem = malowanie (np. kafelki ziemi jeden obok drugiego)
+        drag = { kind: "paint", obj: brush, x0: pos.x, y0: pos.y, done: new Set(["0,0"]) };
         renderLevels();
         renderProps();
         return;
       }
       const hit = hitTest(p.x, p.y);
+      if (e.shiftKey && hit) {
+        // Shift + klik: dodaj / usuń z zaznaczenia
+        const list = sel();
+        setSelection(list.includes(hit) ? list.filter((i) => i !== hit) : [...list, hit]);
+        return;
+      }
+      if (e.shiftKey || (!hit && (e.altKey || boxMode))) {
+        // Shift + przeciąganie po pustym = ramka zaznaczenia
+        drag = { kind: "box", sx: p.x, sy: p.y, ex: p.x, ey: p.y, add: e.shiftKey ? sel() : [] };
+        return;
+      }
       if (hit) {
-        selected = hit;
-        editObj = objById(hit.obj) ?? null;
+        if (!isSel(hit)) {
+          selectOnly(hit);
+          editObj = objById(hit.obj) ?? null;
+        } else selected = hit;
         const r = screenRect(hit);
         const wp = toWorld(p.x, p.y, r.c);
-        drag = { kind: "move", inst: hit, ox: hit.x, oy: hit.y, wx: wp.x, wy: wp.y, moved: false };
+        drag = { kind: "move", inst: hit, items: sel().map((i) => ({ inst: i, ox: i.x, oy: i.y })), ox: hit.x, oy: hit.y, wx: wp.x, wy: wp.y, moved: false };
         renderProps();
         renderObjects();
       } else {
-        if (selected) {
-          selected = null;
+        if (sel().length) {
+          selectOnly(null);
           renderProps();
         }
         drag = { kind: "pan", sx: p.x, sy: p.y, cx: cam.x, cy: cam.y };
       }
     });
+    function placeBrush(o: Obj2D, x: number, y: number): Inst2D {
+      const maxZ = level.instances.reduce((m, i) => Math.max(m, i.z), 0);
+      const inst: Inst2D = { id: newId2d(), obj: o.id, x, y, w: o.w, h: o.h, z: maxZ + 1, layer: "main" };
+      // przycisk i brama od razu połączone (klucz 1) - można zmienić we właściwościach
+      if (o.role === "button" || o.role === "gate") inst.key = 1;
+      level.instances.push(inst);
+      view.invalidate();
+      return inst;
+    }
     canvas.addEventListener("pointermove", (e) => {
       const p = local(e);
       if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
       const wp = toWorld(p.x, p.y);
       hover = { wx: wp.x, wy: wp.y };
+      hoverScreen = p;
+      updateStatus();
       if (!drag) return;
       const { dpr } = size();
       if (pinch && pointers.size === 2) {
@@ -1632,8 +1971,24 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           remember();
           drag.moved = true;
         }
-        drag.inst.x = nx;
-        drag.inst.y = ny;
+        // cała grupa przesuwa się o tyle samo, co chwycony obiekt
+        const dx = nx - drag.ox, dy = ny - drag.oy;
+        for (const it of drag.items) {
+          it.inst.x = it.ox + dx;
+          it.inst.y = it.oy + dy;
+        }
+      } else if (drag.kind === "box") {
+        drag.ex = p.x;
+        drag.ey = p.y;
+      } else if (drag.kind === "paint") {
+        const o = drag.obj;
+        const pos = snapPt(wp.x, wp.y);
+        const cx = Math.round((pos.x - drag.x0) / o.w), cy = Math.round((pos.y - drag.y0) / o.h);
+        const key = cx + "," + cy;
+        if (!drag.done.has(key)) {
+          drag.done.add(key);
+          selectOnly(placeBrush(o, drag.x0 + cx * o.w, drag.y0 + cy * o.h));
+        }
       } else if (drag.kind === "resize") {
         const c = view.camFor(drag.inst, cam, canvas.width, canvas.height);
         const wpp = toWorld(p.x, p.y, c);
@@ -1656,8 +2011,20 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinch = null;
       if (pointers.size === 0) {
-        if (drag && (drag.kind === "move" || drag.kind === "resize")) {
+        if (drag?.kind === "box") {
+          const { dpr } = size();
+          const x0 = Math.min(drag.sx, drag.ex) * dpr, x1 = Math.max(drag.sx, drag.ex) * dpr;
+          const y0 = Math.min(drag.sy, drag.ey) * dpr, y1 = Math.max(drag.sy, drag.ey) * dpr;
+          const inside = view.instances().filter((i) => {
+            if (i.locked || !objById(i.obj)) return false;
+            const r = screenRect(i);
+            return r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.h > y0;
+          });
+          setSelection([...new Set([...drag.add, ...inside])]);
+        }
+        if (drag && (drag.kind === "move" || drag.kind === "resize" || drag.kind === "paint")) {
           view.invalidate();
+          renderLevels();
           renderProps();
         }
         drag = null;
@@ -1665,7 +2032,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     };
     canvas.addEventListener("pointerup", endPointer);
     canvas.addEventListener("pointercancel", endPointer);
-    canvas.addEventListener("pointerleave", () => (hover = null));
+    canvas.addEventListener("pointerleave", () => ((hover = null), (hoverScreen = null)));
     canvas.addEventListener(
       "wheel",
       (e) => {
@@ -1681,32 +2048,109 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     );
 
     // ---------- operacje ----------
-    function duplicate() {
-      if (!selected) return;
-      remember();
-      const copy: Inst2D = { ...structuredClone(selected), id: newId2d(), x: selected.x + Math.max(grid, 16), y: selected.y };
-      level.instances.push(copy);
-      selected = copy;
+    /** po zmianie zaznaczenia / obiektów */
+    function afterEdit() {
       view.invalidate();
       renderLevels();
       renderProps();
+    }
+    function setSelection(list: Inst2D[]) {
+      selected = list.at(-1) ?? null;
+      multi = list.length > 1 ? list : [];
+      if (selected) editObj = objById(selected.obj) ?? editObj;
+      renderProps();
+      renderObjects();
+    }
+    function duplicate() {
+      const list = sel();
+      if (!list.length) return;
+      remember();
+      const maxZ = level.instances.reduce((m, i) => Math.max(m, i.z), 0);
+      const copies = list.map((i, k): Inst2D => ({ ...structuredClone(i), id: newId2d(), x: i.x + Math.max(grid, 16), y: i.y, z: maxZ + 1 + k }));
+      level.instances.push(...copies);
+      setSelection(copies);
+      afterEdit();
     }
     function removeSelected() {
-      if (!selected) return;
+      const list = sel();
+      if (!list.length) return;
       remember();
-      const id = selected.id;
-      level.instances = level.instances.filter((i) => i.id !== id);
-      selected = null;
-      view.invalidate();
-      renderLevels();
-      renderProps();
+      const ids = new Set(list.map((i) => i.id));
+      level.instances = level.instances.filter((i) => !ids.has(i.id));
+      selectOnly(null);
+      afterEdit();
     }
     function zOrder(dir: number) {
-      if (!selected) return;
+      const list = sel();
+      if (!list.length) return;
       remember();
-      const zs = level.instances.filter((i) => i.layer === selected!.layer).map((i) => i.z);
-      selected.z = dir > 0 ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
+      for (const s of [...list].sort((a, b) => (a.z - b.z) * dir)) {
+        const zs = level.instances.filter((i) => i.layer === s.layer && i !== s).map((i) => i.z);
+        s.z = dir > 0 ? Math.max(s.z, ...zs) + 1 : Math.min(s.z, ...zs) - 1;
+      }
       view.invalidate();
+    }
+    function copySel(cut = false) {
+      const list = sel();
+      if (!list.length) return;
+      clipboard = structuredClone(list);
+      toast(cut ? `Wycięto: ${list.length}` : `Skopiowano: ${list.length} - Ctrl+V wkleja (też na innym poziomie)`);
+      if (cut) removeSelected();
+    }
+    function paste() {
+      if (!clipboard.length) return toast("Najpierw skopiuj coś (Ctrl+C)");
+      const known = clipboard.filter((i) => objById(i.obj));
+      if (!known.length) return;
+      remember();
+      // wklejamy w miejscu kursora (lewy górny róg skopiowanych), bez kursora - obok oryginału
+      const x0 = Math.min(...known.map((i) => i.x)), y0 = Math.min(...known.map((i) => i.y));
+      const at = hover ? snapPt(hover.wx, hover.wy) : { x: x0 + Math.max(grid, 16), y: y0 + Math.max(grid, 16) };
+      const maxZ = level.instances.reduce((m, i) => Math.max(m, i.z), 0);
+      const pasted = known.map((i, k): Inst2D => ({ ...structuredClone(i), id: newId2d(), x: i.x - x0 + at.x, y: i.y - y0 + at.y, z: maxZ + 1 + k }));
+      level.instances.push(...pasted);
+      setSelection(pasted);
+      afterEdit();
+    }
+    function selectAll() {
+      setSelection(level.instances.filter((i) => !i.locked));
+      view.invalidate();
+    }
+    function rotateSel(deg: number) {
+      const list = sel();
+      if (!list.length) return;
+      remember();
+      for (const i of list) i.angle = ((((i.angle ?? 0) + deg) % 360) + 360) % 360 || undefined;
+      afterEdit();
+    }
+    function flipSel() {
+      const list = sel();
+      if (!list.length) return;
+      remember();
+      for (const i of list) i.flip = !i.flip || undefined;
+      afterEdit();
+    }
+    function lockSel() {
+      const list = sel();
+      if (!list.length) return;
+      remember();
+      for (const i of list) i.locked = true;
+      selectOnly(null);
+      toast(`Zablokowano: ${list.length}. Odblokujesz w ustawieniach poziomu.`);
+      afterEdit();
+    }
+    /** widok na cały poziom */
+    function fitLevel() {
+      const list = level.instances.filter((i) => i.layer === "main");
+      if (!list.length) return centerOnLevel();
+      const x0 = Math.min(...list.map((i) => i.x)), x1 = Math.max(...list.map((i) => i.x + i.w));
+      const y0 = Math.min(...list.map((i) => i.y)), y1 = Math.max(...list.map((i) => i.y + i.h));
+      const { W, H } = size();
+      cam.x = (x0 + x1) / 2;
+      cam.y = (y0 + y1) / 2;
+      cam.scale = Math.min(20, Math.max(0.02, Math.min(W / Math.max(1, x1 - x0), H / Math.max(1, y1 - y0)) * 0.9));
+    }
+    function zoomBy(k: number) {
+      cam.scale = Math.min(20, Math.max(0.02, cam.scale * k));
     }
 
     // ---------- klawiatura ----------
@@ -1726,19 +2170,41 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       } else if (ctrl && e.key.toLowerCase() === "d") {
         e.preventDefault();
         duplicate();
-      } else if (e.key === "Delete" || e.key === "Backspace") removeSelected();
+      } else if (ctrl && e.key.toLowerCase() === "c") copySel();
+      else if (ctrl && e.key.toLowerCase() === "x") copySel(true);
+      else if (ctrl && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        paste();
+      } else if (ctrl && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        selectAll();
+      } else if (ctrl) return;
+      else if (e.key === "Delete" || e.key === "Backspace") removeSelected();
       else if (e.key === "Escape") {
         setBrush(null);
-        selected = null;
+        selectOnly(null);
         renderProps();
-      } else if (selected && e.key.startsWith("Arrow")) {
+      } else if (e.key.toLowerCase() === "r") rotateSel(e.shiftKey ? -90 : 90);
+      else if (e.key.toLowerCase() === "f") flipSel();
+      else if (e.key.toLowerCase() === "l") lockSel();
+      else if (e.key.toLowerCase() === "g") {
+        showGrid = !showGrid;
+        updateStatus();
+      } else if (e.key === "Home") centerOnLevel();
+      else if (e.key === "0") fitLevel();
+      else if (e.key === "+" || e.key === "=") zoomBy(1.25);
+      else if (e.key === "-") zoomBy(0.8);
+      else if (e.key === "?") openShortcuts();
+      else if (sel().length && e.key.startsWith("Arrow")) {
         e.preventDefault();
         remember();
         const s = e.shiftKey ? 1 : Math.max(1, grid);
-        if (e.key === "ArrowLeft") selected.x -= s;
-        if (e.key === "ArrowRight") selected.x += s;
-        if (e.key === "ArrowUp") selected.y -= s;
-        if (e.key === "ArrowDown") selected.y += s;
+        for (const i of sel()) {
+          if (e.key === "ArrowLeft") i.x -= s;
+          if (e.key === "ArrowRight") i.x += s;
+          if (e.key === "ArrowUp") i.y -= s;
+          if (e.key === "ArrowDown") i.y += s;
+        }
         view.invalidate();
         renderProps();
       }
@@ -1762,6 +2228,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         switchLevel(w.levels.find((l) => l.id === w.startLevel) ?? w.levels[0]);
       } else {
         if (selected && !level.instances.includes(selected)) selected = level.instances.find((i) => i.id === selected!.id) ?? null;
+        multi = multi.map((m) => level.instances.find((i) => i.id === m.id)).filter((m): m is Inst2D => !!m);
         if (drag && (drag.kind === "move" || drag.kind === "resize") && !level.instances.includes(drag.inst)) drag = null;
       }
       if (editObj && !w.objects.includes(editObj)) editObj = objById(editObj.id) ?? null;

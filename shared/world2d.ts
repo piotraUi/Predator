@@ -1,6 +1,6 @@
 // Świat 2D: wartości domyślne, sprawdzanie danych z pliku / sieci i pomocnicze obliczenia.
 import type {
-  Anim2D, Asset2D, Character2D, Inst2D, Level2D, Obj2D, Physics2D, Role2D, Solid2D, World2D,
+  Anim2D, Asset2D, Character2D, Inst2D, Level2D, LevelBg2D, Obj2D, Physics2D, Role2D, Solid2D, World2D,
 } from "./types2d.ts";
 
 export const MAX_ASSETS_2D = 1500;
@@ -110,10 +110,27 @@ function sanitizeInst(raw: unknown, objIds: Set<string>): Inst2D | null {
     const op = Math.round(num(i.opacity, 0, 1, 1) * 100) / 100;
     if (op < 1) out.opacity = op;
   }
+  if (i.locked === true) out.locked = true;
   return out;
 }
 
-function sanitizeLevel(raw: unknown, objIds: Set<string>, charIds: Set<string>, budget: { left: number }): Level2D {
+const BG_MODES: LevelBg2D["mode"][] = ["cover", "fit", "stretch", "tile", "tileX"];
+
+function sanitizeBg(raw: unknown, imageIds: Set<string>): LevelBg2D | undefined {
+  const b = obj(raw);
+  if (typeof b.image !== "string" || !imageIds.has(b.image)) return undefined;
+  return {
+    image: b.image,
+    mode: BG_MODES.includes(b.mode as LevelBg2D["mode"]) ? (b.mode as LevelBg2D["mode"]) : "cover",
+    parallax: num(b.parallax, 0, 1, 0),
+    scale: num(b.scale, 0.05, 50, 1),
+    x: num(b.x, -COORD, COORD, 0),
+    y: num(b.y, -COORD, COORD, 0),
+    opacity: num(b.opacity, 0, 1, 1),
+  };
+}
+
+function sanitizeLevel(raw: unknown, objIds: Set<string>, charIds: Set<string>, budget: { left: number }, imageIds: Set<string> = new Set()): Level2D {
   const l = obj(raw);
   const instances: Inst2D[] = [];
   for (const r of arr(l.instances, budget.left)) {
@@ -142,6 +159,8 @@ function sanitizeLevel(raw: unknown, objIds: Set<string>, charIds: Set<string>, 
   if (l.topDown === true) out.topDown = true;
   if (typeof l.cameraX === "number" && Number.isFinite(l.cameraX)) out.cameraX = num(l.cameraX, -COORD, COORD, 0);
   if (typeof l.cameraY === "number" && Number.isFinite(l.cameraY)) out.cameraY = num(l.cameraY, -COORD, COORD, 0);
+  const bg = l.bg !== undefined ? sanitizeBg(l.bg, imageIds) : undefined;
+  if (bg) out.bg = bg;
   return out;
 }
 
@@ -200,7 +219,8 @@ export function sanitizeWorld2D(raw: unknown): World2D {
   const charIds = new Set(characters.map((c) => c.id));
   for (const c of characters) if (c.companion && !charIds.has(c.companion)) delete c.companion;
   const budget = { left: MAX_INSTANCES_2D };
-  const levels = arr(w.levels, MAX_LEVELS_2D).map((l) => sanitizeLevel(l, objIds, charIds, budget));
+  const imageIds = new Set(assets.filter((a) => a.type === "image").map((a) => a.id));
+  const levels = arr(w.levels, MAX_LEVELS_2D).map((l) => sanitizeLevel(l, objIds, charIds, budget, imageIds));
   if (!levels.length) levels.push(emptyLevel("Poziom 1"));
   const p = obj(w.physics);
   const d = DEFAULT_PHYSICS_2D;

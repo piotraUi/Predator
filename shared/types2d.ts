@@ -112,12 +112,38 @@ export interface Inst2D {
   parallax?: number;
   /** nieprzezroczystość 0 - 1 (brak = 1) */
   opacity?: number;
+  /** zablokowany w Studio (nie da się go kliknąć ani przesunąć myszą) */
+  locked?: boolean;
+}
+
+/**
+ * Obrazek tła poziomu (ustawienia poziomu, nie obiekt na planszy).
+ *  cover   - wypełnia cały ekran (brzegi mogą być przycięte)
+ *  fit     - cały obrazek widoczny (wolne miejsce w kolorze tła)
+ *  stretch - rozciągnięty na cały ekran
+ *  tile    - kafelki na cały ekran
+ *  tileX   - jeden pas kafelków w poziomie (np. góry, chmury)
+ */
+export interface LevelBg2D {
+  image: string;
+  mode: "cover" | "fit" | "stretch" | "tile" | "tileX";
+  /** kafelki: przesuwanie z kamerą (0 = stoi, 1 = jak świat) */
+  parallax: number;
+  /** kafelki: skala obrazka */
+  scale: number;
+  /** kafelki: przesunięcie (przy parallax 0 od lewego górnego rogu ekranu) */
+  x: number;
+  y: number;
+  /** nieprzezroczystość 0 - 1 */
+  opacity: number;
 }
 
 export interface Level2D {
   id: string;
   name: string;
   background: string;
+  /** obrazek tła (pod wszystkimi obiektami) */
+  bg?: LevelBg2D;
   /** ile razy przybliżony widok (2 = piksele 2x większe) */
   zoom: number;
   instances: Inst2D[];

@@ -142,6 +142,14 @@ Gra 2D działa tak samo jak 3D: na serwerze z multiplayerem, w przeglądarce, na
 - **Zachowania bez kodu:** platforma, platforma przenikalna od dołu, drabina. Do tego: zabija, moneta (dla każdego osobno albo wspólna), checkpoint, przejście na inny poziom, potwór chodzący w lewo i prawo, przycisk i brama, start i miejsce odrodzenia.
 - **Fizyka jak w GDevelop:** przyspieszanie, skok z przytrzymaniem, drabiny, ta sama grawitacja. Gry przeniesione z GDevelopa zachowują się tak samo.
 - **Postacie:** sprite z animacjami (stoi, idzie, skacze, spada, wspina się, ginie). Postać może mieć **towarzysza**, który biegnie za graczem i powtarza jego ruchy (jak pies w Ludziku).
+- **Tło poziomu:** w ustawieniach poziomu (zakładka „🖼 Tło”) kolor i obrazek tła, bez stawiania obiektu na planszy. Obrazek można ułożyć na kilka sposobów: wypełnić ekran, pokazać w całości, rozciągnąć, ułożyć kafelki na całym ekranie albo pas kafelków w poziomie. Kafelki mogą przesuwać się wolniej niż świat (parallax). Tło widać w Studio i w grze.
+- **Obrót i przezroczystość:** obrócone obiekty mają obróconą kolizję (deska obrócona o 90° to ściana), a każdy obiekt może być półprzezroczysty.
+- **Studio 2D:**
+  - zaznaczanie wielu obiektów (Shift + klik, ramka, Ctrl + A), przesuwanie całej grupy, wyrównywanie i równe odstępy;
+  - kopiuj / wklej (także między poziomami) i malowanie obiektem przez przeciąganie;
+  - obrót o 90° (R), odbicie (F) i blokada obiektów (L), widoczna siatka;
+  - pasek stanu z pozycją kursora, przybliżeniem i przyciskiem „cały poziom”;
+  - wyszukiwarka obiektów i lista skrótów (⌨).
 - **Ciemność i światła** (poziomy nocne), **napisy na ekranie** z `{coins}`, `{left}` i `{time}`, a także **czcionki bitmapowe** i dźwięki.
 - **Skrypty Lua** z dodatkowymi funkcjami 2D:
   - poziomy i obiekty: `setLevel`, `playSound`, `setAnimation`, `countObjects`, `showFor`;
