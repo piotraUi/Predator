@@ -209,6 +209,17 @@ export class LevelView {
   }
 
   private drawInst(ctx: CanvasRenderingContext2D, W: number, H: number, cam: Camera2D, i: Inst2D, t: number, editor = false, world = true) {
+    if (i.opacity !== undefined && i.opacity < 1) {
+      const a = ctx.globalAlpha;
+      ctx.globalAlpha = a * i.opacity;
+      this.drawInstTurned(ctx, W, H, cam, i, t, editor, world);
+      ctx.globalAlpha = a;
+      return;
+    }
+    this.drawInstTurned(ctx, W, H, cam, i, t, editor, world);
+  }
+
+  private drawInstTurned(ctx: CanvasRenderingContext2D, W: number, H: number, cam: Camera2D, i: Inst2D, t: number, editor = false, world = true) {
     if (!i.angle) return this.drawInstFlat(ctx, W, H, cam, i, t, editor, world);
     // obrót wokół środka obiektu (np. latarnie w GDevelopie obrócone o 90°)
     const p = this.pos(i);

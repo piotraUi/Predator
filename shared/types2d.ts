@@ -110,6 +110,8 @@ export interface Inst2D {
   key?: number;
   /** tło: przesuwa się wolniej (0 - 1) */
   parallax?: number;
+  /** nieprzezroczystość 0 - 1 (brak = 1) */
+  opacity?: number;
 }
 
 export interface Level2D {

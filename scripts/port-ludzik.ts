@@ -37,6 +37,11 @@ const removeInstances = (level: Level2D, names: string[]) => {
   level.instances = level.instances.filter((i) => !ids.has(i.obj));
 };
 
+const L2Instances = (name: string) => {
+  const id = O(name, "Level 1 Cz2").id;
+  return L2.instances.filter((i) => i.obj === id);
+};
+
 // ---------- sterowanie dotykowe z GDevelopa - Predator ma własne ----------
 for (const l of [L1, L2]) removeInstances(l, ["MoveJoystick", "JumpButton"]);
 removeInstances(MP, ["RightArrowButton", "LeftArrowButton", "JumpArrowButton", "UpArrowButton", "DownArrowButton"]);
@@ -57,6 +62,14 @@ set("Czaslicznik", { text: "Czas: {time}" });
 
 // ---------- część 2 (noc) ----------
 set("Koniec_sily", { hidden: true }, "Level 1 Cz2");
+// kolce zabijają (jak ogień i potwór), żółta sprężyna wyrzuca w górę, gdy się na nią spadnie
+set("Kolec", { role: "hazard" }, "Level 1 Cz2");
+set("Sprężynazolta", {
+  role: "spring", push: [0, -800], pushAnim: "Cylinder pionowy i sprężyna",
+  sound: importSound(files, res.project, w, "Confirm_03.aac")?.id,
+}, "Level 1 Cz2");
+// kamienny słup pod czarną postacią jest półprzezroczysty (w GDevelopie krycie 100/255 na starcie sceny)
+for (const i of L2Instances("Unnamed")) i.opacity = Math.round((100 / 255) * 100) / 100;
 
 // ---------- mapa multiplayer ----------
 set("Coin", { role: "pickup", coin: true }, "Multiplayergame");
@@ -136,6 +149,7 @@ const usedAssets = new Set<string>(Object.values(w.sounds).filter(Boolean) as st
 for (const o of w.objects) {
   for (const a of o.anims) for (const f of a.frames) usedAssets.add(f);
   if (o.font) usedAssets.add(o.font);
+  if (o.sound) usedAssets.add(o.sound);
 }
 for (const a of w.assets) if (a.type === "font" && usedAssets.has(a.id) && a.image) usedAssets.add(a.image);
 for (const a of w.assets) if (a.name === "HeHe.mp3") usedAssets.add(a.id);

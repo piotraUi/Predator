@@ -106,6 +106,10 @@ function sanitizeInst(raw: unknown, objIds: Set<string>): Inst2D | null {
   if (typeof i.anim === "string" && i.anim) out.anim = i.anim.slice(0, 40);
   if (i.key !== undefined) out.key = Math.round(num(i.key, -1e6, 1e6, 0));
   if (i.parallax !== undefined) out.parallax = num(i.parallax, 0, 1, 1);
+  if (i.opacity !== undefined) {
+    const op = Math.round(num(i.opacity, 0, 1, 1) * 100) / 100;
+    if (op < 1) out.opacity = op;
+  }
   return out;
 }
 

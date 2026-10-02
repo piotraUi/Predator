@@ -795,6 +795,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         field("Warstwa", selectIn(Object.entries(LAYER_LABELS) as [string, string][], i.layer, (v) => (i.layer = v as Inst2D["layer"]))),
         field("Obrót (stopnie, tylko wygląd)", numIn(i.angle ?? 0, (v) => (i.angle = ((v % 360) + 360) % 360 || undefined), 15)),
         i.layer === "bg" ? field("Przesuwanie tła (0 = stoi, 1 = jak świat)", numIn(i.parallax ?? 0, (v) => (i.parallax = Math.min(1, Math.max(0, v))), 0.1)) : "",
+        field("Nieprzezroczystość (0 - 1)", numIn(i.opacity ?? 1, (v) => (i.opacity = v >= 1 ? undefined : Math.max(0, v)), 0.1)),
         checkIn("Odbity w poziomie", !!i.flip, (v) => (i.flip = v || undefined)),
         animNames.length > 1 ? field("Animacja", selectIn(animNames, i.anim ?? o.anims[0].name, (v) => (i.anim = v === o.anims[0].name ? undefined : v))) : "",
         o.role === "button" || o.role === "gate" ? field("Klucz (przycisk otwiera bramy z tym samym)", numIn(i.key ?? 0, (v) => (i.key = Math.round(v)))) : "",

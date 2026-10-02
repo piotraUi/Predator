@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import type { WorldData } from "../../shared/types.ts";
 import { demoArena, demoObby, sanitizeWorld, welcomeBadge } from "../../shared/world.ts";
-import { upgradeAngles, upgradeLudzikCharacters } from "../../shared/import/upgrades.ts";
+import { upgradeAngles, upgradeLudzikCharacters, upgradeLudzikPart2 } from "../../shared/import/upgrades.ts";
 import { demoCity } from "../../shared/demos/city.ts";
 import { MINIGAMES } from "../../shared/demos/minigames.ts";
 import { api } from "./api.ts";
@@ -150,7 +150,9 @@ for (const [name, description, make, thumb] of demos) {
     if (chars) (cur = chars), console.log("Ludzik 4: dodano wybór postaci na mapie multiplayer");
     const angles = cur && upgradeAngles(cur, fresh);
     if (angles) (cur = angles), console.log("Ludzik 4: latarnie w Level 1 Cz2 stoją pionowo");
-    if (cur && (chars || angles)) worlds.setData(id, sanitizeWorld(cur));
+    const part2 = cur && upgradeLudzikPart2(cur, fresh);
+    if (part2) (cur = part2), console.log("Ludzik 4: nowa część 2 (sprężyna, kolce, beczka, monety)");
+    if (cur && (chars || angles || part2)) worlds.setData(id, sanitizeWorld(cur));
   }
   // nowa wersja gry z pliku (np. straszniejszy Tunnel Escape) - podmieniamy, póki gra jest na koncie Predator
   const hash = fileHashes.get(name);

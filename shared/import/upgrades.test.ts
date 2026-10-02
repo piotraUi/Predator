@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { parseGameFile } from "../gamefile.ts";
 import { sanitizeWorld } from "../world.ts";
-import { upgradeAngles, upgradeLudzikCharacters } from "./upgrades.ts";
+import { upgradeAngles, upgradeLudzikCharacters, upgradeLudzikPart2 } from "./upgrades.ts";
 
 const file = [path.resolve("games", "Ludzik 4.pgame"), path.resolve("..", "games", "Ludzik 4.pgame")].find((f) => fs.existsSync(f)) ?? "";
 
@@ -48,6 +48,39 @@ test("Ludzik 4: stara gra dostaje pionowe latarnie w Level 1 Cz2", () => {
   const up = upgradeAngles(old, fresh);
   assert.ok(up);
   const l2 = sanitizeWorld(up).world2d!.levels.find((l) => l.name === "Level 1 Cz2")!;
-  assert.equal(l2.instances.filter((i) => i.angle === 90).length, 5);
+  assert.equal(l2.instances.filter((i) => i.angle === 90).length, n);
   assert.equal(upgradeAngles(up, fresh), null);
+});
+
+test("Ludzik 4: stara część 2 dostaje sprężynę, kolce, beczkę i monety", () => {
+  const fresh = parseGameFile(fs.readFileSync(file, "utf8")).data;
+  const old = structuredClone(fresh);
+  const w = old.world2d!;
+  const NEW = new Set(["Sprężynazolta", "Kolec", "Beczka", "Kamien", "Unnamed", "NewSprite5"]);
+  const newIds = new Set(w.objects.filter((o) => NEW.has(o.name)).map((o) => o.id));
+  const l2 = w.levels.find((l) => l.name === "Level 1 Cz2")!;
+  const coins = w.objects.find((o) => o.name === "Coins")!.id;
+  const before = l2.instances.length;
+  l2.instances = l2.instances.filter((i) => !newIds.has(i.obj) && i.obj !== coins);
+  w.objects = w.objects.filter((o) => !newIds.has(o.id));
+  for (const o of w.objects) o.anims = o.anims.filter((a) => a.name !== "Cylinder pionowy i sprężyna");
+
+  const up = upgradeLudzikPart2(old, fresh);
+  assert.ok(up);
+  const uw = sanitizeWorld(up).world2d!;
+  const ul2 = uw.levels.find((l) => l.name === "Level 1 Cz2")!;
+  assert.equal(ul2.instances.length, before);
+  const byName = (n: string) => uw.objects.find((o) => o.name === n)!;
+  assert.equal(byName("Sprężynazolta").role, "spring");
+  assert.deepEqual(byName("Sprężynazolta").push, [0, -800]);
+  assert.ok(uw.assets.some((a) => a.id === byName("Sprężynazolta").sound && a.type === "sound"), "dźwięk sprężyny");
+  assert.equal(byName("Kolec").role, "hazard");
+  assert.equal(ul2.instances.filter((i) => i.obj === coins).length, 9, "monety w części 2");
+  assert.ok(ul2.instances.some((i) => i.opacity && i.opacity < 1), "półprzezroczysty słup");
+  // obrazki nowych obiektów są w grze, a postać umie się wybić ze sprężyny
+  for (const o of uw.objects) for (const a of o.anims) for (const fr of a.frames) assert.ok(uw.assets.some((x) => x.id === fr), `${o.name}/${a.name}`);
+  const player = uw.objects.find((o) => o.id === uw.characters.find((c) => c.name === "Ludzik")!.obj)!;
+  assert.ok(player.anims.some((a) => a.name === "Cylinder pionowy i sprężyna"));
+  // drugi raz nic nie zmienia
+  assert.equal(upgradeLudzikPart2(up, fresh), null);
 });
