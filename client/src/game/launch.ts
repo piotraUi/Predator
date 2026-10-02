@@ -19,6 +19,8 @@ export interface LaunchParams {
   /** kod prywatnego serwera */
   privateCode?: string;
   offline?: { name: string; data: WorldData };
+  /** gry 3D z kilkoma miejscami: do którego miejsca wejść (brak = startowe) */
+  place?: string;
   back?: { screen: string; params?: Record<string, unknown> };
 }
 
@@ -41,14 +43,14 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
 
   const offline = params.offline;
   const joining: Promise<GameConnection> = offline
-    ? import("./connection.ts").then(({ LocalRoom }) => new LocalRoom(offline.data, offline.name, me))
+    ? import("./connection.ts").then(({ LocalRoom }) => new LocalRoom(offline.data, offline.name, me, params.place))
     : (() => {
         const client = new Client(wsUrl());
         const r = params.roomId
           ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL, ...(params.privateCode ? { privateCode: params.privateCode } : {}) })
           : params.privateCode
-            ? client.joinOrCreate("private", { worldId: params.worldId, privateCode: params.privateCode, token: getToken(), v: GAME_PROTOCOL })
-            : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL });
+            ? client.joinOrCreate("private", { worldId: params.worldId, privateCode: params.privateCode, token: getToken(), v: GAME_PROTOCOL, ...(params.place ? { placeId: params.place } : {}) })
+            : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL, ...(params.place ? { placeId: params.place } : {}) });
         return r.then((x) => x as unknown as GameConnection);
       })();
 

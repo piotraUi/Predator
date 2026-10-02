@@ -16,7 +16,7 @@ import { getToken, wsUrl } from "../api.ts";
 
 const FIELDS = [
   "scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter",
-  "badges", "products", "sounds", "music", "light", "genre", "terrain",
+  "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace",
 ] as const;
 type Field = (typeof FIELDS)[number];
 

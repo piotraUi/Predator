@@ -157,6 +157,7 @@ function sanitizeLevel(raw: unknown, objIds: Set<string>, charIds: Set<string>, 
   if (l.stackPlayers === true) out.stackPlayers = true;
   if (l.selectable === true) out.selectable = true;
   if (l.topDown === true) out.topDown = true;
+  if (l.menu === true) out.menu = true;
   if (typeof l.cameraX === "number" && Number.isFinite(l.cameraX)) out.cameraX = num(l.cameraX, -COORD, COORD, 0);
   if (typeof l.cameraY === "number" && Number.isFinite(l.cameraY)) out.cameraY = num(l.cameraY, -COORD, COORD, 0);
   const bg = l.bg !== undefined ? sanitizeBg(l.bg, imageIds) : undefined;

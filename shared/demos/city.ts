@@ -262,7 +262,7 @@ export function demoCity(): WorldData {
   const medkit = makeTool("Apteczka", { name: "Apteczka" });
   const hotdog = makeTool("Mikstura", { name: "Hot-dog", model: "potion", color: "#d9822b", heal: 25, cooldown: 4 });
   const badge: ToolDef = { ...makeTool("Różdżka"), name: "Odznaka", type: "custom", model: "wand", color: "#ffd700", cooldown: 2 };
-  const phone: ToolDef = { ...makeTool("Pistolet"), name: "Telefon", type: "custom", model: "medkit", color: "#263238", cooldown: 3, starter: true };
+  const phone: ToolDef = { ...makeTool("Pistolet"), name: "Telefon", type: "custom", model: "phone", color: "#263238", cooldown: 3, starter: true };
   const tools = [coffee, medkit, hotdog, badge, phone];
   box("Kawa na ladzie", 46, 4.25, -38.5, 2.5, 0.4, 4, "#ffd24a", { kind: "pickup", toolId: coffee.id, material: "neon", collide: false });
 

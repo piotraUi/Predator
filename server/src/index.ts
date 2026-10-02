@@ -71,9 +71,9 @@ if (fs.existsSync(config.clientDist)) {
 
 const server = http.createServer(app);
 const gameServer = new Server({ greet: false, transport: new WebSocketTransport({ server, maxPayload: 16 * 1024 * 1024 }) });
-gameServer.define("world", WorldRoom).filterBy(["worldId"]);
+gameServer.define("world", WorldRoom).filterBy(["worldId", "placeId"]);
 // prywatne serwery - osobna nazwa, żeby zwykłe "Graj" nigdy do nich nie trafiło
-gameServer.define("private", WorldRoom).filterBy(["worldId", "privateCode"]);
+gameServer.define("private", WorldRoom).filterBy(["worldId", "privateCode", "placeId"]);
 // wspólna edycja w Studiu - jeden pokój na grę
 gameServer.define("studio", StudioRoom).filterBy(["worldId"]);
 

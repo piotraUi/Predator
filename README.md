@@ -16,6 +16,10 @@ Serwer uruchamiasz **na swojej maszynie**, bez Firebase i bez zewnętrznych usł
 | 🧸 **Łatwe Studio** | zakładka **Zestaw** z gotowymi modelami (drzewo, dom, most, samochód, latarnia, zjeżdżalnia, meta…) wstawianymi jednym kliknięciem w wolne miejsce; części modelu przesuwają się, obracają i kopiują razem; **Zachowania** - kliknij „💰 Daje punkt”, „👻 Znika”, „↕️ Jeździ”, „🌀 Teleport”, „🚪 Drzwi”… i skrypt pisze się sam; szybkie kolory, wyszukiwarka obiektów, podpowiedzi na dole ekranu i przewodnik „Pierwsze kroki” (❓ Pomoc) |
 | 🧱 **Studio** | dodawanie klocków, kul, walców, klinów, spawnów, lawy, trampolin i pól z narzędziami; przesuwanie i skalowanie z siatką, obracanie, kolory, materiały, cofanie (Ctrl+Z), edytor narzędzi i broni, włączanie PvP, publikowanie |
 | 🛠 **Studio - praca z wieloma klockami** | zaznaczanie kilku naraz (Shift / Ctrl + klik, ramka myszką, Ctrl + A, na telefonie przycisk „Wiele”); przesuwanie i obracanie całego zaznaczenia gizmem, strzałkami i PageUp / PageDown; łączenie w model (Ctrl + G); wyrównywanie i równe odstępy; wspólny kolor, materiał, przezroczystość i kolizja; kopiowanie wielu obiektów (także do innej gry); **🔁 Powiel w rzędzie** (płoty, schody, kolumny); **⬇ Na ziemię** (End); blokada (L) i chowanie w Studio (H) z Eksploratora; siatka na ziemi (G), widok z góry (T), cała mapa (Home), obrys klocka pod kursorem, pasek stanu i lista skrótów (?) |
+| 🪟 **GUI (2D i 3D)** | edytor GUI w Studio (przycisk **🪟 GUI**): menu, okienka, liczniki, napisy, przyciski, ramki i obrazki na ekranie gracza; przeciąganie i zmiana rozmiaru na podglądzie 16:9; gotowe szablony (menu z przyciskiem Graj, okienko z OK, licznik w rogu); przycisk bez skryptu może zamknąć GUI, otworzyć inne, przenieść na poziom 2D albo do miejsca 3D; GUI widoczne od startu, tylko na wybranym poziomie / w miejscu, z przyciemnieniem gry (wtedy postać stoi); skrypty: `showGui`, `hideGui`, `toggleGui`, `setGuiText`, `isGuiOpen`, `onGuiClick` i bloczki w kategorii „GUI”; napisy i obrazki przechodzą przez filtr i moderację |
+| 🗺 **Miejsca (places) w grach 3D** | jedna gra może mieć kilka map (np. Menu, Lobby, Arena) - przycisk **🗺 Miejsca** i lista miejsc na pasku Studio; każde miejsce ma własny serwer, klocki, niebo i skrypty (skrypt działa w wybranym miejscu albo „wszędzie”); przejście skryptem `teleportToPlace(player, "Arena")`, bloczkiem albo przyciskiem GUI; miejsce startowe (⭐) i **miejsce tylko na GUI** (menu gry: bez postaci i sterowania, kamera powoli krąży); test ze Studio zaczyna się w edytowanym miejscu |
+| 🪟 **Poziomy menu w grach 2D** | poziom oznaczony „Poziom menu / GUI” nie ma postaci ani sterowania, kamera stoi (na starcie albo w „Kamera stoi w X / Y”) - z GUI z przyciskiem „Idź na poziom” robisz menu główne gry |
+| 📸 **Wygoda** | **F2** w grze zapisuje zrzut ekranu (2D i 3D), **Ctrl + F** w Studio szuka obiektu, telefon w Predator City ma własny model 📱 |
 | 📜 **Skrypty Lua** | uruchamiane na serwerze w piaskownicy (nieskończona pętla nie zawiesi serwera), zdarzenia, `wait()`, punkty, teleporty |
 | 🧩 **Bloczki** | programowanie jak w Scratchu (Blockly); bloczki zamieniają się w kod Lua |
 | 💬 **Czat** | dymki nad głowami, filtr wulgaryzmów (PL + EN), ochrona przed spamem |
@@ -222,6 +226,19 @@ end)
 onChat(function(player, message)
   if message == "szybko" then setSpeed(player, 40) end
 end)
+
+-- GUI: menu z przyciskiem "Graj" i licznik (zrobione w edytorze GUI)
+onGuiClick(function(player, gui, button)
+  if gui == "Menu" and button == "Graj" then
+    hideGui(player, "Menu")
+    showGui(player, "Licznik")
+  end
+end)
+setGuiText(player, "Licznik", "Napis", "⭐ " .. getScore(player))
+
+-- gry 3D z kilkoma miejscami
+onTouch("Portal", function(player) teleportToPlace(player, "Arena") end)
+say("Ten serwer to: " .. getPlace())
 
 every(1, function()
   setColor("Lampa", string.format("#%06x", math.random(0, 16777215)))

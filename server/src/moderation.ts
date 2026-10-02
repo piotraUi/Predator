@@ -455,6 +455,13 @@ export function worldContent(name: string, description: string, data: WorldData,
   const sounds: { where: string; url: string }[] = [];
   if (thumbnail) images.push({ where: "miniaturka", url: thumbnail });
   for (const s of data.sounds ?? []) sounds.push({ where: `dźwięk "${s.name}"`, url: s.url });
+  // GUI: napisy i obrazki na ekranie gracza; nazwy miejsc gier 3D
+  for (const g of data.guis ?? []) {
+    const t = g.elements.map((e) => e.text).filter(Boolean).join(" | ");
+    if (t) texts.push({ where: `GUI "${g.name}"`, text: t });
+    for (const e of g.elements) if (e.image) images.push({ where: `obrazek w GUI "${g.name}"`, url: e.image });
+  }
+  for (const p of data.places ?? []) texts.push({ where: "nazwa miejsca", text: p.name });
   const w = data.world2d;
   if (w) {
     for (const a of w.assets) {

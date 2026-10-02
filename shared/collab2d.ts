@@ -7,7 +7,7 @@ import type { Asset2D, Character2D, Inst2D, Level2D, Obj2D, World2D } from "./ty
 /** pola gry (poza światem 2D) synchronizowane w całości */
 export const FIELDS_2D = [
   "scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter",
-  "badges", "products", "sounds", "music", "light", "genre",
+  "badges", "products", "sounds", "music", "light", "genre", "guis",
 ] as const;
 
 type LevelMeta = Omit<Level2D, "instances"> & { ids: string[] };

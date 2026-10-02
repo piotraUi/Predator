@@ -20,6 +20,7 @@ export const TOOL_MODELS: Record<ToolModel, { label: string; icon: string }> = {
   medkit: { label: "Apteczka", icon: "🩹" },
   potion: { label: "Mikstura", icon: "🧪" },
   coffee: { label: "Kawa", icon: "☕" },
+  phone: { label: "Telefon", icon: "📱" },
 };
 
 type Template = Omit<ToolDef, "id">;

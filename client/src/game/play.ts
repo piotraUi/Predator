@@ -1,4 +1,6 @@
 // Ekran gry - łączy się z serwerem, steruje postacią i pokazuje innych graczy.
+import { GuiOverlay } from "../ui/guiOverlay.ts";
+import { MAIN_PLACE } from "../../../shared/places.ts";
 import {
   ArcRotateCamera,
   Color3,
@@ -9,6 +11,7 @@ import {
   Scene,
   SpotLight,
   StandardMaterial,
+  Tools,
   Vector3,
   type AbstractMesh,
 } from "@babylonjs/core";
@@ -415,6 +418,15 @@ export function playScreen(
       remotes.delete(sid);
     };
     init.players.forEach(addRemote);
+    // miejsce tylko na GUI (np. menu gry): bez postaci, sterowania i innych graczy - kamera powoli krąży
+    const guiPlace = !!init.world.currentPlace?.gui;
+    if (guiPlace) {
+      wrap.classList.add("gui-place");
+      local.root.setEnabled(false);
+      input.enabled = false;
+      camera.radius = 30;
+      camera.beta = 1.15;
+    }
 
     // ---------- siedzenia i pojazdy ----------
     const rides = new Rides(world, collisions, parts);
@@ -789,7 +801,7 @@ export function playScreen(
       chatBox.classList.add("open");
     });
     chatInput.addEventListener("blur", () => {
-      input.enabled = true;
+      input.enabled = !guiPlace;
       chatBox.classList.remove("open");
     });
     const onKey = (e: KeyboardEvent) => {
@@ -802,6 +814,17 @@ export function playScreen(
       else if (e.code === "Digit0" || e.code === "Backquote") hotbar.select(null);
       else if (e.key === "Escape") menu.classList.toggle("hidden");
       else if (e.key === "F9" && init.info.isOwner) consoleBox.classList.toggle("hidden");
+      else if (e.key === "F2") {
+        // zrzut ekranu gry do pliku PNG
+        e.preventDefault();
+        Tools.CreateScreenshot(engine, camera, { width: canvas.width, height: canvas.height }, (data) => {
+          const a = document.createElement("a");
+          a.href = data;
+          a.download = `${init.info.name || "predator"}-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.png`;
+          a.click();
+          toast("📸 Zapisano zrzut ekranu", "good");
+        });
+      }
     };
     window.addEventListener("keydown", onKey);
     cleanups.push(() => window.removeEventListener("keydown", onKey));
@@ -886,6 +909,26 @@ export function playScreen(
         return;
       }
       remotes.get(m.sid)?.model.playCustom(m.anim ? (animsById.get(m.anim) ?? null) : null);
+    });
+    // ---------- GUI gry i miejsca (places) ----------
+    const guiLayer = new GuiOverlay(wrap, init.world.guis ?? [], (g, e) => r.send("gui", { g, e }));
+    guiLayer.setWhere(init.world.currentPlace?.id ?? MAIN_PLACE);
+    cleanups.push(() => guiLayer.dispose());
+    r.onMessage("gui", (m: { open: string[]; text: Record<string, string> }) => guiLayer.setState(m));
+    // skrypt albo przycisk GUI przenosi do innego miejsca gry: łączymy się z serwerem tamtego miejsca
+    r.onMessage("place", (m: { id: string; name: string }) => {
+      if (leaving) return;
+      leaving = true;
+      toast(`➡ ${m.name}`, "info");
+      // miejsce startowe gry = bez id (ten sam serwer co dla nowych graczy)
+      const start = init.world.startPlace ?? MAIN_PLACE;
+      go("play", {
+        ...(params.worldId !== undefined ? { worldId: params.worldId } : {}),
+        ...(params.privateCode ? { privateCode: params.privateCode } : {}),
+        ...(params.offline ? { offline: params.offline } : {}),
+        ...(params.back ? { back: params.back } : {}),
+        ...(m.id !== start ? { place: m.id } : params.offline ? { place: m.id } : {}),
+      });
     });
     r.onMessage("sky", (c: string) => world.setSky(c));
     r.onMessage("skybox", (id: string) => (id ? world.setSkybox(id) : world.setSky(init.world.skyColor)));
@@ -1003,7 +1046,17 @@ export function playScreen(
     // ---------- pętla gry ----------
     scene.onBeforeRenderObservable.add(() => {
       const dt = Math.min(engine.getDeltaTime() / 1000, 0.1);
+      if (guiPlace) {
+        camera.alpha += dt * 0.05;
+        for (const rm of remotes.values()) rm.model.root.setEnabled(false);
+        return;
+      }
       input.update();
+      // otwarte menu / okienko GUI: postać stoi
+      if (guiLayer.modal) {
+        input.moveX = input.moveY = 0;
+        input.jump = false;
+      }
 
       // kierunek ruchu względem kamery
       const fx = camera.target.x - camera.position.x;

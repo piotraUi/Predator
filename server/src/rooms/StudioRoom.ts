@@ -12,7 +12,7 @@ import { queueWorldScan } from "../moderation.ts";
 /** pola gry (poza klockami), które synchronizujemy w całości */
 export const STUDIO_FIELDS = [
   "scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter",
-  "badges", "products", "sounds", "music", "light", "genre", "terrain",
+  "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace",
 ] as const;
 type Field = (typeof STUDIO_FIELDS)[number];
 
@@ -90,7 +90,9 @@ export class StudioRoom extends Room {
     const out: { from: string; parts?: Part[]; del?: string[]; fields?: Partial<Record<Field, unknown>> } = { from: client.sessionId };
     if (Array.isArray(m?.parts) && m.parts.length) {
       // każdy klocek czyścimy tak samo jak przy zapisie gry (id zostaje)
-      const clean = sanitizeWorld({ parts: m.parts.slice(0, 5000) }).parts;
+      // miejsca (places) z tej samej wiadomości albo z gry - inaczej klocek straciłby swoje miejsce
+      const f = (m.fields && typeof m.fields === "object" ? m.fields : {}) as Record<string, unknown>;
+      const clean = sanitizeWorld({ parts: m.parts.slice(0, 5000), places: "places" in f ? f.places : this.data.places }).parts;
       const byId = new Map(this.data.parts.map((p, i) => [p.id, i]));
       for (const p of clean) {
         const i = byId.get(p.id);

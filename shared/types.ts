@@ -1,5 +1,6 @@
 // Typy wspólne dla serwera i klienta.
 import type { World2D } from "./types2d.ts";
+import type { GuiDef } from "./gui.ts";
 
 export type PartShape = "box" | "sphere" | "cylinder" | "wedge";
 /** normal = zwykły klocek, spawn = miejsce pojawienia się, kill = zabija (lawa), bounce = trampolina,
@@ -45,6 +46,8 @@ export interface Part {
   label?: string;
   /** zablokowany w Studio (nie da się go kliknąć na planszy - np. podłoga, tło) */
   locked?: boolean;
+  /** miejsce (place) gry 3D, w którym stoi klocek - brak = główne miejsce */
+  place?: string;
 }
 
 // ---------- Postacie ----------
@@ -113,7 +116,7 @@ export interface AnimDef {
 /** melee = wręcz (miecz), ranged = strzela, heal = leczy, boost = przyspiesza, custom = tylko dla skryptów */
 export type ToolType = "melee" | "ranged" | "heal" | "boost" | "custom";
 export type ToolModel =
-  | "sword" | "axe" | "hammer" | "pistol" | "rifle" | "blaster" | "wand" | "medkit" | "potion" | "coffee";
+  | "sword" | "axe" | "hammer" | "pistol" | "rifle" | "blaster" | "wand" | "medkit" | "potion" | "coffee" | "phone";
 
 /** Narzędzie / broń zrobiona w Studio */
 export interface ToolDef {
@@ -147,6 +150,8 @@ export interface WorldScript {
   /** Zapis bloczków Blockly (tylko type=blocks) */
   blocks?: unknown;
   enabled: boolean;
+  /** gry 3D z kilkoma miejscami: gdzie działa skrypt (id miejsca, "*" = wszędzie, brak = główne miejsce) */
+  place?: string;
 }
 
 export interface WorldData {
@@ -180,6 +185,24 @@ export interface WorldData {
   /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste */
   mode?: "3d" | "2d";
   world2d?: World2D;
+  /** GUI na ekranie gracza (2D i 3D) */
+  guis?: GuiDef[];
+  /** gry 3D: dodatkowe miejsca (places) - klocki mają pole "place" */
+  places?: Place3D[];
+  /** gry 3D: miejsce, w którym gracz zaczyna (np. menu) - brak = główne */
+  startPlace?: string;
+  /** tylko w grze: miejsce, w którym jest ten serwer */
+  currentPlace?: { id: string; name: string; gui?: boolean };
+}
+
+/** Miejsce (place) gry 3D - osobna mapa w tej samej grze; gracz przechodzi skryptem albo przyciskiem GUI */
+export interface Place3D {
+  id: string;
+  name: string;
+  skyColor?: string;
+  skybox?: string;
+  /** miejsce tylko na GUI (np. menu): bez postaci gracza i sterowania */
+  gui?: boolean;
 }
 
 /** Dźwięk w grze 3D: plik w danych gry (data URL) albo na serwerze (/game-assets/...) */

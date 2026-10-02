@@ -3,6 +3,7 @@ import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
 import { Sim2D } from "../../../shared/sim/sim2d.ts";
 import { browserStorage } from "../../../shared/sim/playerData.ts";
+import { placeData } from "../../../shared/places.ts";
 import type { Avatar, WorldData } from "../../../shared/types.ts";
 
 export interface GameConnection {
@@ -25,9 +26,9 @@ export class LocalRoom implements GameConnection {
   private timer: number;
   private readonly sid = "local";
 
-  constructor(data: WorldData, name: string, user: { username: string; avatar?: Avatar }) {
-    // kopia, żeby skrypty w teście nie zmieniały edytowanego świata
-    const copy = structuredClone(data);
+  constructor(data: WorldData, name: string, user: { username: string; avatar?: Avatar }, placeId?: string) {
+    // kopia, żeby skrypty w teście nie zmieniały edytowanego świata; gra z miejscami - tylko jedno miejsce
+    const copy = placeData(structuredClone(data), placeId);
     const Sim = copy.mode === "2d" ? Sim2D : GameSim;
     this.sim = new Sim(
       copy,

@@ -131,6 +131,13 @@ export function buildToolModel(scene: Scene, tool: Pick<ToolDef, "model" | "colo
       tip.position.set(0, 1, -0.2);
       break;
     }
+    case "phone": {
+      // telefon w dłoni: ciemna obudowa i świecący ekran
+      add(box(0.42, 0.8, 0.08), mat(scene, c), 0, 0.35, -0.25);
+      add(box(0.34, 0.66, 0.02), mat(scene, "#4fc3f7", { glow: true }), 0, 0.37, -0.3);
+      tip.position.set(0, 0.8, -0.25);
+      break;
+    }
     case "coffee": {
       add(cyl(0.55, 0.7, 0.62), mat(scene, "#fafafa"), 0, 0.25, -0.25);
       add(cyl(0.5, 0.05), mat(scene, c), 0, 0.58, -0.25);

@@ -12,6 +12,8 @@ import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, World
 import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
 
 import { MAX_LABEL } from "../world.ts";
+import { GuiRuntime, guiLuaFunctions } from "../gui.ts";
+import { findPlace, MAIN_PLACE } from "../places.ts";
 
 /** zmiana klocka wysyłana graczom; tw = płynne przejście do nowej pozycji (sekundy) */
 export type PartChange = Partial<Part> & { tw?: number };
@@ -102,6 +104,8 @@ export class GameSim {
   readonly shop: GameShop;
   /** gotowe niebo (skybox) - pusty = zwykły kolor */
   private skybox: string;
+  /** GUI graczy (które okienka są otwarte) */
+  readonly gui: GuiRuntime;
 
   constructor(
     private data: WorldData,
@@ -116,6 +120,7 @@ export class GameSim {
     this.shop = new GameShop(data.products ?? [], (sid, type, msg) => this.t.send(sid, type, msg));
     this.sky = data.skyColor;
     this.skybox = data.skybox ?? "";
+    this.gui = new GuiRuntime(data.guis ?? [], (sid, msg) => this.t.send(sid, "gui", msg));
     this.startScripts();
   }
 
@@ -159,6 +164,7 @@ export class GameSim {
       spawn,
       inventory: p.tools,
     });
+    this.gui.enter(sid, this.data.currentPlace?.id ?? MAIN_PLACE);
     this.t.broadcast("join", this.netPlayer(p), sid);
     this.chat({ from: "", text: `${user.username} dołączył do gry`, system: true });
     if (user.isOwner) for (const l of this.logs) this.t.send(sid, "log", l);
@@ -175,6 +181,7 @@ export class GameSim {
     this.lua?.playerLeft(sid);
     this.dataStore.detach(sid);
     this.shop.detach(sid);
+    this.gui.leave(sid);
     this.players.delete(sid);
     this.t.broadcast("leave", sid);
     this.chat({ from: "", text: `${p.username} wyszedł z gry`, system: true });
@@ -244,6 +251,8 @@ export class GameSim {
       }
       case "respawned":
         return this.onRespawned(sid);
+      case "gui":
+        return this.onGui(sid, msg);
       case "sit":
         return this.onSit(sid, msg);
       case "unsit": {
@@ -258,6 +267,31 @@ export class GameSim {
         return this.lua?.answered(sid, v.id.slice(0, 40), v.text.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 80));
       }
     }
+  }
+
+  /** przycisk w GUI: wbudowana akcja (zamknij, otwórz inne, idź do miejsca), potem onGuiClick w skryptach */
+  private onGui(sid: string, msg: unknown) {
+    const c = this.gui.click(sid, msg);
+    if (!c) return;
+    const a = c.el.action;
+    if (a && a.type !== "none") {
+      this.gui.setOpen(sid, c.gui.id, false);
+      if (a.type === "open" && a.target) this.gui.setOpen(sid, a.target, true);
+      if (a.type === "place" && a.target) this.teleportToPlace(sid, a.target);
+    }
+    this.lua?.fire("gui", sid, c.gui.name, c.el.name);
+  }
+
+  /** przejście gracza do innego miejsca gry - klient łączy się z serwerem tamtego miejsca */
+  teleportToPlace(sid: string, idOrName: string) {
+    if (!this.players.has(sid)) return false;
+    const place = findPlace(this.data, idOrName);
+    if (!place) {
+      this.log(`nie ma miejsca „${idOrName}” (Studio → Miejsca)`, true);
+      return false;
+    }
+    this.t.send(sid, "place", { id: place.id, name: place.name });
+    return true;
   }
 
   private onMove(sid: string, m: unknown) {
@@ -822,7 +856,11 @@ export class GameSim {
       if (name && !this.data.sounds?.some((x) => x.name === name)) this.log(`nie ma dźwięku „${name}” (Ustawienia gry → Dźwięki)`, true);
       return name;
     };
+    this.lua.defineFunctions(guiLuaFunctions(this.gui, () => [...this.players.keys()], (text) => this.log(text, true)));
     this.lua.defineFunctions({
+      // miejsca gry: teleportToPlace(player, "Arena"), getPlace() = nazwa tego miejsca
+      teleportToPlace: (sid, name) => this.teleportToPlace(String(sid ?? ""), String(name ?? "")),
+      getPlace: () => this.data.currentPlace?.name ?? "",
       awardBadge: (sid, name) => this.t.badge?.(String(sid ?? ""), String(name ?? "")),
       playSound: (target, name) => to(target, "sound", { name: soundName(name) }),
       setMusic: (name, target) => to(target, "music", { name: name ? soundName(name) : "" }),

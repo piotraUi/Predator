@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { parseGameFile } from "../gamefile.ts";
-import { run } from "./minigames.test.ts";
+import { run } from "./simHarness.ts";
 
 const dir = [path.resolve("games"), path.resolve("..", "games")].find((d) => fs.existsSync(path.join(d, "Tunnel Escape.pgame")));
 const load = (name: string) => parseGameFile(fs.readFileSync(path.join(dir!, name + ".pgame"), "utf8")).data;

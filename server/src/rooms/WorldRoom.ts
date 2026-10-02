@@ -1,5 +1,6 @@
 // Pokój gry na serwerze - cienka nakładka na wspólną logikę GameSim (shared/sim).
 // Tu zostaje tylko to, co wymaga serwera: logowanie, monety, wizyty i status znajomych.
+import { placeData } from "../../../shared/places.ts";
 import { Room, type Client } from "colyseus";
 import { GameSim } from "../../../shared/sim/gameSim.ts";
 import { Sim2D } from "../../../shared/sim/sim2d.ts";
@@ -22,7 +23,7 @@ const VOICE_MAX = 12;
 const VISIT_MILESTONES: [number, number][] = [
   [1, 10], [10, 25], [50, 50], [100, 100], [500, 250], [1000, 500], [5000, 1000], [10000, 2500],
 ];
-const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto", "answer", "sit", "unsit"];
+const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto", "answer", "sit", "unsit", "gui"];
 
 export class WorldRoom extends Room {
   private world!: WorldRow;
@@ -43,7 +44,7 @@ export class WorldRoom extends Room {
   /** ostatnie wiadomości z czatu gry (do zgłoszeń) */
   private chatLog: { from: string; text: string; at: number }[] = [];
 
-  onCreate(options: { worldId?: number; privateCode?: string }) {
+  onCreate(options: { worldId?: number; privateCode?: string; placeId?: string }) {
     const world = worlds.byId(Number(options.worldId));
     if (!world) throw new Error("Nie ma takiej gry");
     this.world = world;
@@ -54,10 +55,10 @@ export class WorldRoom extends Room {
     }
     this.maxClients = world.max_players;
     this.autoDispose = true;
-    this.setMetadata({ worldId: world.id, name: world.name, private: !!this.priv });
-
-    // sanitizeWorld uzupełnia też brakujące pola w starszych zapisach
-    const data = sanitizeWorld(JSON.parse(world.data));
+    // sanitizeWorld uzupełnia też brakujące pola w starszych zapisach;
+    // gra 3D z kilkoma miejscami: ten serwer ma tylko klocki i skrypty jednego miejsca
+    const data = placeData(sanitizeWorld(JSON.parse(world.data)), typeof options.placeId === "string" ? options.placeId : undefined);
+    this.setMetadata({ worldId: world.id, name: world.name, private: !!this.priv, ...(data.currentPlace ? { place: data.currentPlace.name } : {}) });
     this.badgeDefs = data.badges ?? [];
     this.products = data.products ?? [];
     const Sim = data.mode === "2d" ? Sim2D : GameSim;

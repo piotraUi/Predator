@@ -1,4 +1,6 @@
 // Szablony światów i walidacja danych świata.
+import { sanitizeGuis } from "./gui.ts";
+import { sanitizePlaces } from "./places.ts";
 import { sanitizeWorld2D } from "./world2d.ts";
 import { sanitizeTerrain } from "./terrain.ts";
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
@@ -219,6 +221,8 @@ const str = (v: unknown, max: number, def: string) => (typeof v === "string" ? v
 /** Czyści dane świata przesłane przez klienta - nie ufamy niczemu z zewnątrz. */
 export function sanitizeWorld(input: unknown): WorldData {
   const w = (input ?? {}) as Record<string, unknown>;
+  const places = w.mode === "2d" ? undefined : sanitizePlaces(w.places);
+  const placeIds = new Set((places ?? []).map((p) => p.id));
   const rawParts = Array.isArray(w.parts) ? w.parts.slice(0, MAX_PARTS) : [];
   const parts: Part[] = rawParts.map((raw) => {
     const p = (raw ?? {}) as Record<string, unknown>;
@@ -251,6 +255,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       ...(p.kind === "seat" && VEHICLE_TYPES.includes(p.vehicle as VehicleType) ? { vehicle: p.vehicle as VehicleType } : {}),
       ...(typeof p.label === "string" && p.label.trim() ? { label: filterChat(p.label.trim().slice(0, MAX_LABEL)) } : {}),
       ...(p.locked === true ? { locked: true } : {}),
+      ...(typeof p.place === "string" && placeIds.has(p.place) ? { place: p.place } : {}),
     };
   });
   const rawScripts = Array.isArray(w.scripts) ? w.scripts.slice(0, MAX_SCRIPTS) : [];
@@ -263,6 +268,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       source: str(s.source, MAX_SCRIPT_LEN, ""),
       blocks: s.type === "blocks" ? s.blocks : undefined,
       enabled: s.enabled !== false,
+      ...(typeof s.place === "string" && (s.place === "*" || placeIds.has(s.place)) ? { place: s.place } : {}),
     };
   });
   const rawTools = Array.isArray(w.tools) ? w.tools.slice(0, MAX_TOOLS) : [];
@@ -313,6 +319,19 @@ export function sanitizeWorld(input: unknown): WorldData {
     ...(Array.isArray(w.products) && w.products.length ? { products: sanitizeProducts(w.products) } : {}),
     ...sanitizeAudioLight(w),
     ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),
+    ...(places ? { places } : {}),
+    ...(typeof w.startPlace === "string" && placeIds.has(w.startPlace) ? { startPlace: w.startPlace } : {}),
+    ...(() => {
+      const guis = sanitizeGuis(w.guis);
+      if (!guis) return {};
+      // napisy w GUI przechodzą przez filtr przekleństw (jak napisy nad klockami)
+      for (const g of guis) for (const e of g.elements) if (e.text) e.text = filterChat(e.text) || "";
+      // GUI przypisane do usuniętego poziomu / miejsca - widoczne wszędzie (inaczej nigdy by się nie pokazało)
+      const wheres = new Set(w.mode === "2d" ? [] : ["main", ...placeIds]);
+      if (w.mode === "2d") for (const l of (w.world2d as { levels?: { id?: unknown }[] } | undefined)?.levels ?? []) if (typeof l?.id === "string") wheres.add(l.id);
+      for (const g of guis) if (g.where && !wheres.has(g.where)) delete g.where;
+      return { guis };
+    })(),
   };
 }
 

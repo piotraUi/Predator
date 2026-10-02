@@ -242,6 +242,41 @@ g.forBlock["p_open_shop"] = () => `if player then openShop(player) end\n`;
 
 g.forBlock["p_delete_data"] = (b) => `if player then deleteData(player, ${q(String(b.getFieldValue("KEY") ?? ""))}) end\n`;
 
+// ---------- GUI (2D i 3D) i miejsca gier 3D ----------
+const GUI = 210;
+const PLACE = 250;
+Blockly.common.defineBlocksWithJsonArray([
+  { type: "p_on_gui_click", message0: "gdy gracz kliknie przycisk %1 w GUI %2 %3 %4", args0: [{ type: "field_input", name: "BTN", text: "Graj" }, { type: "field_input", name: "GUI", text: "Menu" }, { type: "input_dummy" }, { type: "input_statement", name: "DO" }], colour: EVENT, tooltip: "Nazwy GUI i przycisku z edytora GUI (Studio → 🪟 GUI)" },
+  { type: "p_gui_show", message0: "%1 GUI %2 %3", args0: [{ type: "field_dropdown", name: "MODE", options: [["pokaż", "showGui"], ["schowaj", "hideGui"], ["przełącz", "toggleGui"]] }, { type: "field_input", name: "GUI", text: "Menu" }, { type: "field_dropdown", name: "WHO", options: [["graczowi", "p"], ["wszystkim", "all"]] }], previousStatement: null, nextStatement: null, colour: GUI },
+  { type: "p_gui_text", message0: "zmień w GUI %1 napis %2 na %3 %4", args0: [{ type: "field_input", name: "GUI", text: "Licznik" }, { type: "field_input", name: "EL", text: "Napis" }, { type: "input_value", name: "TEXT" }, { type: "field_dropdown", name: "WHO", options: [["graczowi", "p"], ["wszystkim", "all"]] }], inputsInline: true, previousStatement: null, nextStatement: null, colour: GUI, tooltip: "Np. licznik punktów: połącz tekst z bloczkiem 'punkty gracza'" },
+  { type: "p_gui_open", message0: "GUI %1 jest otwarte", args0: [{ type: "field_input", name: "GUI", text: "Menu" }], output: "Boolean", colour: GUI },
+  { type: "p_to_place", message0: "przenieś gracza do miejsca %1", args0: [{ type: "field_input", name: "PLACE", text: "Arena" }], previousStatement: null, nextStatement: null, colour: PLACE, tooltip: "Nazwa miejsca z listy Miejsca w Studio 3D (gracz łączy się z serwerem tamtego miejsca)" },
+  { type: "p_place_name", message0: "nazwa tego miejsca", output: "String", colour: PLACE },
+]);
+g.forBlock["p_on_gui_click"] = (b) =>
+  `onGuiClick(function(player, gui, button)
+  if gui == ${q(String(b.getFieldValue("GUI") ?? ""))} and button == ${q(String(b.getFieldValue("BTN") ?? ""))} then
+${g.prefixLines(stmts(b), "  ")}  end
+end)
+`;
+g.forBlock["p_gui_show"] = (b) => {
+  const fn = String(b.getFieldValue("MODE"));
+  const gui = q(String(b.getFieldValue("GUI") ?? ""));
+  return b.getFieldValue("WHO") === "all" ? `${fn}(nil, ${gui})
+` : `if player then ${fn}(player, ${gui}) end
+`;
+};
+g.forBlock["p_gui_text"] = (b) => {
+  const args = `${q(String(b.getFieldValue("GUI") ?? ""))}, ${q(String(b.getFieldValue("EL") ?? ""))}, tostring(${val(b, "TEXT", '""')})`;
+  return b.getFieldValue("WHO") === "all" ? `setGuiText(nil, ${args})
+` : `if player then setGuiText(player, ${args}) end
+`;
+};
+g.forBlock["p_gui_open"] = (b) => [`(player and isGuiOpen(player, ${q(String(b.getFieldValue("GUI") ?? ""))}) or false)`, Order.ATOMIC];
+g.forBlock["p_to_place"] = (b) => `if player then teleportToPlace(player, ${q(String(b.getFieldValue("PLACE") ?? ""))}) end
+`;
+g.forBlock["p_place_name"] = () => [`getPlace()`, Order.HIGH];
+
 const block = (type: string, extra: Record<string, unknown> = {}) => ({ kind: "block", type, ...extra });
 const numShadow = (n: number) => ({ shadow: { type: "math_number", fields: { NUM: n } } });
 const textShadow = (t: string) => ({ shadow: { type: "text", fields: { TEXT: t } } });
@@ -336,11 +371,23 @@ const SAVE_CATEGORY = {
     block("p_delete_data"),
   ],
 };
+const GUI_CATEGORY = {
+  kind: "category", name: "GUI", colour: GUI,
+  contents: [
+    block("p_on_gui_click"), block("p_gui_show"),
+    block("p_gui_text", { inputs: { TEXT: { block: { type: "text_join", inputs: { ADD0: textShadow("⭐ "), ADD1: { block: { type: "p_score" } } } } } } }),
+    block("p_gui_open"),
+  ],
+};
+const PLACE_CATEGORY = {
+  kind: "category", name: "Miejsca", colour: PLACE,
+  contents: [block("p_to_place"), block("p_place_name")],
+};
 const SHOP_CATEGORY = {
   kind: "category", name: "Sklep", colour: SHOP,
   contents: [block("p_on_purchase"), block("p_prompt_purchase"), block("p_owns_product"), block("p_open_shop")],
 };
-TOOLBOX.contents.splice(TOOLBOX.contents.length - 5, 0, SAVE_CATEGORY, SHOP_CATEGORY);
+TOOLBOX.contents.splice(TOOLBOX.contents.length - 5, 0, GUI_CATEGORY, PLACE_CATEGORY, SAVE_CATEGORY, SHOP_CATEGORY);
 const TOOLBOX_2D = {
   kind: "categoryToolbox",
   contents: [
@@ -393,6 +440,7 @@ const TOOLBOX_2D = {
       kind: "category", name: "Postać i kamera", colour: 290,
       contents: [block("d2_character"), block("d2_player_anim"), block("d2_reset_anims"), block("d2_camera", { inputs: { X: numShadow(0), Y: numShadow(0) } }), block("d2_camera_free")],
     },
+    GUI_CATEGORY,
     SAVE_CATEGORY,
     SHOP_CATEGORY,
     ...COMMON,

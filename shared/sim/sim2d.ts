@@ -10,6 +10,7 @@ import { instBox, levelByName, newId2d, overlaps, SPRING_PUSH, type Box } from "
 import type { SimInfo, SimTransport, SimUser } from "./gameSim.ts";
 import { GameShop } from "./shop.ts";
 import { PlayerDataStore } from "./playerData.ts";
+import { GuiRuntime, guiLuaFunctions, type GuiDef } from "../gui.ts";
 
 const LIMIT = 1_000_000;
 /** dalej niż tyle na jedną wiadomość = teleport (nie sprawdzamy dotknięć po drodze) */
@@ -30,6 +31,8 @@ export interface LevelSync {
 }
 
 export interface Init2D {
+  /** GUI gry (okienka, przyciski, napisy) */
+  guis?: GuiDef[];
   you: string;
   world: World2D;
   info: { name: string; ownerName: string };
@@ -123,6 +126,8 @@ export class Sim2D {
   private dataStore: PlayerDataStore;
   /** sklep gry (promptPurchase / ownsProduct / onPurchase) */
   readonly shop: GameShop;
+  /** GUI graczy (które okienka są otwarte) */
+  readonly gui: GuiRuntime;
   private logs: { text: string; error: boolean }[] = [];
   private lastTick = Date.now();
   private scoresDirty = false;
@@ -135,6 +140,7 @@ export class Sim2D {
     this.w = data.world2d!;
     this.dataStore = new PlayerDataStore(t.storage, (text, error) => this.log(text, error));
     this.shop = new GameShop(data.products ?? [], (sid, type, msg) => this.t.send(sid, type, msg));
+    this.gui = new GuiRuntime(data.guis ?? [], (sid, msg) => this.t.send(sid, "gui", msg));
     for (const o of this.w.objects) this.objs.set(o.id, o);
     for (const c of this.w.characters) this.chars.set(c.id, c);
     this.startScripts();
@@ -234,6 +240,7 @@ export class Sim2D {
   }
 
   private setPlayerLevel(p: PlayerState, levelId: string, silent = false) {
+    const changedLevel = p.level !== levelId;
     const old = this.levels.get(p.level);
     if (old) old.playersDirty = true;
     p.level = levelId;
@@ -250,6 +257,7 @@ export class Sim2D {
     this.moveGrace(p, 2000);
     p.character = this.charFor(p)?.id ?? "";
     this.t.send(p.sid, "level", { ...sync, character: p.character });
+    if (changedLevel) this.gui.enter(p.sid, levelId);
     if (!silent) this.lua?.fire("level", p.sid, s.level.name);
   }
 
@@ -298,8 +306,10 @@ export class Sim2D {
       sync,
       players: this.levelPlayers(s.level.id),
       isOwner: user.isOwner,
+      ...(this.data.guis?.length ? { guis: this.data.guis } : {}),
     };
     this.t.send(sid, "init2d", init);
+    this.gui.enter(sid, start.id);
     for (const l of this.logs) this.t.send(sid, "log", l);
     this.systemChat(`${user.username} dołącza do gry`);
     this.dataStore.attach(sid, user.userId);
@@ -317,6 +327,7 @@ export class Sim2D {
     if (s) s.playersDirty = true;
     this.systemChat(`${p.username} wychodzi z gry`);
     this.lua?.playerLeft(sid);
+    this.gui.leave(sid);
     this.dataStore.detach(sid);
     this.shop.detach(sid);
     this.scoresDirty = true;
@@ -356,12 +367,31 @@ export class Sim2D {
         return this.onDied(p, msg);
       case "char":
         return this.onChooseCharacter(p, msg);
+      case "gui":
+        return this.onGui(p, msg);
       case "goto": {
         const l = this.w.levels.find((x) => x.id === msg);
         if (l && (l.selectable || l.id === this.w.startLevel) && l.id !== p.level) this.setPlayerLevel(p, l.id);
         return;
       }
     }
+  }
+
+  /** przycisk w GUI: wbudowana akcja (zamknij, otwórz inne, idź na poziom), potem onGuiClick w skryptach */
+  private onGui(p: PlayerState, msg: unknown) {
+    const c = this.gui.click(p.sid, msg);
+    if (!c) return;
+    const a = c.el.action;
+    if (a && a.type !== "none") {
+      this.gui.setOpen(p.sid, c.gui.id, false);
+      if (a.type === "open" && a.target) this.gui.setOpen(p.sid, a.target, true);
+      if (a.type === "level" && a.target) {
+        const l = levelByName(this.w, a.target);
+        if (l) this.setPlayerLevel(p, l.id);
+        else this.log(`GUI „${c.gui.name}”: nie ma poziomu „${a.target}”`, true);
+      }
+    }
+    this.lua?.fire("gui", p.sid, c.gui.name, c.el.name);
   }
 
   private onMove(p: PlayerState, msg: unknown) {
@@ -835,6 +865,7 @@ export class Sim2D {
     this.shop.register(this.lua);
     const S = (v: LuaValue) => (typeof v === "string" ? v : v === null || v === undefined ? "" : String(v));
     const N = (v: LuaValue, def = 0) => (typeof v === "number" && Number.isFinite(v) ? v : def);
+    this.lua.defineFunctions(guiLuaFunctions(this.gui, () => [...this.players.keys()], (text) => this.log(text, true)));
     this.lua.defineFunctions({
       setLevel: (sid, name) => {
         const p = P(S(sid));

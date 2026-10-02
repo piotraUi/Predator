@@ -144,6 +144,8 @@ export interface Level2D {
   background: string;
   /** obrazek tła (pod wszystkimi obiektami) */
   bg?: LevelBg2D;
+  /** poziom menu / GUI: bez postaci gracza i sterowania, kamera stoi (np. menu główne gry) */
+  menu?: boolean;
   /** ile razy przybliżony widok (2 = piksele 2x większe) */
   zoom: number;
   instances: Inst2D[];

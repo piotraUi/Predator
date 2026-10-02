@@ -55,7 +55,7 @@ const HOOK_EVERY = 1000;
 const MAX_HOOKS = 300;
 
 const PRELUDE = `
-local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {}, answer = {}, purchase = {}, sit = {}, unsit = {} }
+local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {}, answer = {}, purchase = {}, sit = {}, unsit = {}, gui = {} }
 local tasks = {}
 local now = 0
 
@@ -95,6 +95,8 @@ function onSit(fn) table.insert(handlers.sit, fn) end
 function onUnsit(fn) table.insert(handlers.unsit, fn) end
 -- sklep: onPurchase(function(player, productName) ... end) - gracz właśnie coś kupił
 function onPurchase(fn) table.insert(handlers.purchase, fn) end
+-- GUI: onGuiClick(function(player, guiName, buttonName) ... end) - gracz kliknął przycisk w GUI
+function onGuiClick(fn) table.insert(handlers.gui, fn) end
 -- gry 2D: onLevelEnter(function(player, levelName) ... end)
 function onLevelEnter(fn) table.insert(handlers.level, fn) end
 function onTouch(partName, fn)
@@ -439,8 +441,8 @@ export class LuaEngine {
   }
 
   /** Wywołuje zdarzenie ze skryptów (np. "level" dla onLevelEnter) */
-  fire(kind: string, a: string | number, b: string | number = "") {
-    this.call("__fire", kind, a, b);
+  fire(kind: string, a: string | number, b: string | number = "", c: string | number = "") {
+    this.call("__fire", kind, a, b, c);
   }
 
   /** Wywołuje globalną funkcję Lua z argumentami (tekst lub liczba) z limitem instrukcji. */

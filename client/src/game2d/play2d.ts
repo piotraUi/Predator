@@ -14,6 +14,7 @@ import { openGameReport, playersPanel } from "../game/playersPanel.ts";
 import { safety } from "../safety.ts";
 import { openInviteFriends } from "../game/inviteFriends.ts";
 import { AssetStore, unlockAudio } from "./assets.ts";
+import { GuiOverlay } from "../ui/guiOverlay.ts";
 import { fitScale, LevelView, type Camera2D, type Entity2D } from "./render.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
@@ -170,6 +171,9 @@ export function play2dScreen(
     const l = w.levels.find((x) => x.id === sync.level) ?? w.levels[0];
     level = l;
     view.setLevel(l);
+    // poziom menu / GUI: bez postaci i sterowania
+    wrap.classList.toggle("gui-place", !!l.menu);
+    guiLayer?.setWhere(l.id);
     for (const [id, s] of Object.entries(sync.inst)) view.state.set(id, s);
     view.created = [...sync.created];
     for (const id of sync.removed) view.removed.add(id);
@@ -329,6 +333,9 @@ export function play2dScreen(
     h("button", { class: "hud-btn", title: "Menu", onClick: () => (renderMenu(), menu.classList.toggle("hidden")) }, "☰"),
   );
   wrap.append(topbar, chat, board, menu);
+  // GUI gry: okienka i przyciski (serwer mówi, które są otwarte)
+  const guiLayer = new GuiOverlay(wrap, init.guis ?? [], (g, e) => conn.send("gui", { g, e }));
+  conn.onMessage("gui", (m: { open: string[]; text: Record<string, string> }) => guiLayer.setState(m));
   // czat głosowy ze znajomymi (tylko w grze na serwerze)
   const voice = params.offline ? null : new VoiceChat(conn, init.you);
   if (voice) (topbar.insertBefore(voice.button, topbar.lastChild), wrap.append(voice.panel));
@@ -451,6 +458,20 @@ export function play2dScreen(
   }
 
   const onKey = (e: KeyboardEvent) => {
+    if (e.key === "F2") {
+      // zrzut ekranu gry do pliku PNG
+      e.preventDefault();
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${init.info.name || "predator"}-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        toast("📸 Zapisano zrzut ekranu", "good");
+      });
+      return;
+    }
     if (chat.classList.contains("open")) return;
     if (e.key === "Enter" || e.key === "/") {
       e.preventDefault();
@@ -484,7 +505,7 @@ export function play2dScreen(
       down ||= ay > 0.5 || !!p.buttons[13]?.pressed;
       jump ||= !!p.buttons[0]?.pressed;
     }
-    if (!controls || dead > 0) return { ...NO_INPUT, right: autoWalk > 0, left: autoWalk < 0 };
+    if (!controls || dead > 0 || guiLayer.modal) return { ...NO_INPUT, right: autoWalk > 0, left: autoWalk < 0 };
     if (autoWalk) return { ...NO_INPUT, right: autoWalk > 0, left: autoWalk < 0 };
     return { left, right, up, down, jump };
   }
@@ -641,6 +662,7 @@ export function play2dScreen(
   }
 
   function update(dt: number) {
+    if (level.menu) return updateMenuLevel();
     const inp = readInput();
     if (forcedJump) {
       inp.jump = true;
@@ -742,6 +764,17 @@ export function play2dScreen(
     view.vars = { coins, left: view.coinsLeft(), time: time - levelStart, player: myName };
   }
 
+  /** poziom menu: kamera stoi (ustawiona w poziomie albo na starcie), gracz niewidoczny i nic nie wysyła */
+  function updateMenuLevel() {
+    const W = canvas.width, H = canvas.height;
+    cam.scale = fitScale(W, H, level.zoom);
+    const sp = allInst().find((i) => objs.get(i.obj)?.role === "spawn");
+    cam.x = level.cameraX ?? (sp ? sp.x + sp.w / 2 : 0);
+    cam.y = level.cameraY ?? (sp ? sp.y + sp.h / 2 : 0);
+    camInit = true;
+    view.vars = { coins, left: view.coinsLeft(), time: time - levelStart, player: myName };
+  }
+
   function updatePet(dt: number, inp: Input2D) {
     if (!pet) return;
     petInputs.push({ t: time, input: { ...inp } });
@@ -791,6 +824,7 @@ export function play2dScreen(
       canvas.height = H;
     }
     const ents: Entity2D[] = [];
+    if (level.menu) return view.draw(ctx, W, H, cam, time, ents);
     for (const v of enemies.values()) {
       if (v.e.dead) continue;
       ents.push({ obj: v.obj, x: v.x, y: v.y, w: v.inst.w, h: v.inst.h, flip: v.e.flip, anim: view.animOf(v.inst, v.obj)?.name ?? "", animStart: 0 });
@@ -862,6 +896,7 @@ export function play2dScreen(
     window.removeEventListener("pointerdown", unlock);
     window.removeEventListener("keydown", unlock);
     input.dispose();
+    guiLayer.dispose();
     voice?.dispose();
     shop.dispose();
     if (!leaving) {

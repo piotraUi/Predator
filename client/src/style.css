@@ -1392,3 +1392,61 @@ table.shortcuts kbd { background: var(--bg3); border: 1px solid var(--line); bor
 .align-row .btn { flex: 1; }
 .align-ax { width: 16px; font-weight: 700; color: var(--muted); }
 .array-dlg { display: flex; flex-direction: column; gap: 6px; min-width: 280px; }
+
+/* ---------- GUI gier (2D i 3D) - też podgląd w edytorze GUI ---------- */
+.gui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; overflow: hidden; }
+.play-screen .hud-top { z-index: 9; }
+.gui-root { position: absolute; inset: 0; pointer-events: none; }
+.gui-root.gui-modal { background: rgba(0, 0, 0, 0.45); pointer-events: auto; }
+.gui-el { position: absolute; display: flex; align-items: center; box-sizing: border-box; overflow: hidden; line-height: 1.15;
+  padding: 0 calc(var(--gs, 1px) * 10); text-shadow: 0 1px 3px rgba(0,0,0,.6); white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+.gui-el span { width: 100%; }
+.gui-frame, .gui-image { padding: 0; }
+.gui-image img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+button.gui-el { border: none; cursor: pointer; pointer-events: auto; font-family: inherit; box-shadow: 0 calc(var(--gs,1px)*4) 0 rgba(0,0,0,.25); transition: transform .08s, filter .1s; }
+button.gui-el:hover { filter: brightness(1.12); }
+button.gui-el:active { transform: translateY(calc(var(--gs,1px)*3)); box-shadow: none; }
+/* miejsce tylko na GUI (menu gry 3D) i poziom menu 2D: bez sterowania i pasków gracza */
+.play-screen.gui-place .touch-ui, .play-screen.gui-place .hotbar, .play-screen.gui-place .hp-bar, .play-screen.gui-place .leaderboard,
+.play-screen.gui-place .crosshair, .play-screen.gui-place .enter-btn { display: none !important; }
+
+/* ---------- edytor GUI (Studio 2D i 3D) ---------- */
+.gui-editor { position: fixed; inset: 0; background: var(--bg); z-index: 300; display: flex; flex-direction: column; }
+.gui-editor .ge-tip { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ge-body { flex: 1; display: flex; min-height: 0; }
+.ge-left, .ge-right { width: 280px; flex: none; overflow-y: auto; background: var(--bg2); padding: 8px 12px 16px; }
+.ge-left { border-right: 1px solid var(--line); }
+.ge-right { border-left: 1px solid var(--line); }
+.ge-center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ge-addbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.ge-sep { flex: 1; }
+.ge-stage-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; }
+.ge-stage { position: relative; overflow: hidden; border-radius: 10px; box-shadow: 0 0 0 1px var(--line), 0 10px 30px #0008;
+  background: linear-gradient(160deg, #6fb1ff 0%, #b9e0ff 55%, #78c25a 56%, #4f9c3c 100%); touch-action: none; user-select: none; }
+.ge-stage.ge-dark { background: linear-gradient(160deg, #10131c, #262b3a); }
+.ge-stage .gui-root.gui-modal { pointer-events: none; }
+.ge-el { cursor: move; pointer-events: auto !important; }
+.ge-el:hover { outline: 1px dashed rgba(255,255,255,.7); }
+.ge-sel { outline: 2px solid #ffd24a !important; z-index: 2; }
+.ge-handle { position: absolute; right: -2px; bottom: -2px; width: 14px; height: 14px; background: #ffd24a; border: 2px solid #1f2127; border-radius: 4px; cursor: nwse-resize; }
+.ge-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 18px; text-shadow: 0 1px 3px #000; }
+.ge-templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.ge-template { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--bg3); color: var(--text); text-align: left; cursor: pointer; }
+.ge-template:hover { border-color: var(--blue); }
+.ge-template span:last-child { font-size: 12px; color: var(--muted); }
+.ge-tic { font-size: 28px; }
+@media (max-width: 900px) {
+  .ge-body { flex-direction: column; overflow-y: auto; }
+  .ge-left, .ge-right { width: auto; border: none; max-height: none; }
+  .ge-center { min-height: 60vw; }
+  .gui-editor .ge-tip { display: none; }
+}
+/* okno "Miejsca" w Studio 3D */
+.places-dlg { display: flex; flex-direction: column; gap: 10px; min-width: min(560px, 86vw); }
+.place-row { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--bg3); }
+.place-row.active { border-color: var(--blue); }
+.place-main { display: flex; gap: 10px; align-items: center; }
+.place-main input { flex: 1; }
+.place-row input[type="color"] { width: 40px; height: 30px; padding: 0; border: none; background: none; }
+.script-place { max-width: 120px; font-size: 12px; padding: 2px 4px; }

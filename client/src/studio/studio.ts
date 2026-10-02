@@ -18,7 +18,9 @@ import {
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
 import type { AnimDef, CharacterDef, Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
 import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
-import { makePart, MAX_PARTS, newId } from "../../../shared/world.ts";
+import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
+import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
+import { openGuiEditor } from "./guiEditor.ts";
 import { api } from "../api.ts";
 import { desktop, pickDataUrl, pickFile, saveTextFile } from "../files.ts";
 import { session } from "../state.ts";
@@ -175,6 +177,16 @@ export function studioScreen(
     /** telefon: stuknięcie dodaje do zaznaczenia */
     let addMode = false;
     let tool: Tool = "move";
+    /** miejsce (place) gry, które teraz edytujemy - na planszy są tylko jego klocki */
+    let curPlace = MAIN_PLACE;
+    const inPlace = (p: Part) => placeOf(p) === curPlace;
+    /** nowy klocek stoi w edytowanym miejscu */
+    const tagPlace = (p: Part) => {
+      if (curPlace === MAIN_PLACE) delete p.place;
+      else p.place = curPlace;
+      return p;
+    };
+    const placeParts = () => data.parts.filter(inPlace);
     let gridStep = 1;
     const undo: string[] = [];
     const redo: string[] = [];
@@ -182,7 +194,7 @@ export function studioScreen(
     const view = new WorldView(scene, { shadows: false, skyColor: data.skyColor, skybox: data.skybox });
     view.setTools(data.tools);
     view.setCharacters(data.characters, data.animations);
-    view.load(data.parts);
+    view.load(data.parts.filter((p) => placeOf(p) === MAIN_PLACE));
     view.setTerrain(TerrainGrid.decode(data.terrain));
 
     // ---------- kamera ----------
@@ -454,7 +466,7 @@ export function studioScreen(
       const tm = scene.getTransformMatrix();
       // zaznaczają się klocki, które w całości mieszczą się w ramce (wielka podłoga się nie łapie)
       const inside = data.parts.filter((p) => {
-        if (p.locked || hiddenIds.has(p.id)) return false;
+        if (p.locked || hiddenIds.has(p.id) || !inPlace(p)) return false;
         const b = bounds([p]);
         for (const cx of [b.x0, b.x1])
           for (const cy of [b.y0, b.y1])
@@ -654,7 +666,7 @@ export function studioScreen(
       else delete data.terrain;
       if (terrainChanged) terrainPanel.reload();
       view.clear();
-      view.load(data.parts);
+      view.load(placeParts());
       select(data.parts.find((p) => p.id === selId) ?? null);
       const again = multiIds.map((id) => data.parts.find((p) => p.id === id)).filter((p): p is Part => !!p);
       if (again.length > 1) selectMany(again);
@@ -687,7 +699,7 @@ export function studioScreen(
       pushUndo();
       const t = camera.target;
       const sy = preset.sy ?? 1;
-      const p = makePart({ ...preset, x: snap(t.x, 1), y: sy / 2, z: snap(t.z, 1) });
+      const p = tagPlace(makePart({ ...preset, x: snap(t.x, 1), y: sy / 2, z: snap(t.z, 1) }));
       // postaw na klocku pod spodem, jeśli jest
       const hit = scene.pickWithRay(
         new Ray(new Vector3(p.x, 1000, p.z), new Vector3(0, -1, 0), 2000),
@@ -719,7 +731,7 @@ export function studioScreen(
       };
       const box = defs.map(ext).reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), z0: Math.min(a.z0, b.z0), z1: Math.max(a.z1, b.z1) }));
       // podłogi i duże płaskie klocki nie przeszkadzają - na nich się stawia
-      const blockers = data.parts.filter((p) => p.kind === "spawn" || !(p.sy <= 1.2 && p.sx * p.sz > 150));
+      const blockers = placeParts().filter((p) => p.kind === "spawn" || !(p.sy <= 1.2 && p.sx * p.sz > 150));
       const hits = (x: number, z: number) =>
         blockers.some((p) => {
           const e = ext(p);
@@ -749,7 +761,7 @@ export function studioScreen(
       const group = defs.length > 1 ? newId() : undefined;
       const made = defs.map((d) => {
         const sy = d.sy ?? 1;
-        const p = makePart({ ...d, name, ...(group ? { group } : {}), x: round(ox + (d.x ?? 0)), y: round(base + (d.y ?? sy / 2)), z: round(oz + (d.z ?? 0)) });
+        const p = tagPlace(makePart({ ...d, name, ...(group ? { group } : {}), x: round(ox + (d.x ?? 0)), y: round(base + (d.y ?? sy / 2)), z: round(oz + (d.z ?? 0)) }));
         data.parts.push(p);
         view.add(p);
         return p;
@@ -809,7 +821,7 @@ export function studioScreen(
         // cel teleportu - nowy klocek obok
         target = p.name + " cel";
         if (!data.parts.some((x) => x.name === target)) {
-          const tp = makePart({ name: target, shape: p.shape, x: round(p.x + 20), y: p.y, z: p.z, sx: p.sx, sy: p.sy, sz: p.sz, color: "#b388ff", material: "neon" });
+          const tp = tagPlace(makePart({ name: target, shape: p.shape, x: round(p.x + 20), y: p.y, z: p.z, sx: p.sx, sy: p.sy, sz: p.sz, color: "#b388ff", material: "neon" }));
           data.parts.push(tp);
           view.add(tp);
         }
@@ -974,7 +986,7 @@ export function studioScreen(
       for (const c of clip.characters) if (!data.characters.some((x) => x.id === c.id)) data.characters.push(c);
       for (const a of clip.animations) if (!data.animations.some((x) => x.id === a.id)) data.animations.push(a);
       const made = defs.map((d) => {
-        const p: Part = { ...d, id: newId(), name, x: round(ox + d.x), y: round(base + (d.y - minY)), z: round(oz + d.z) };
+        const p: Part = tagPlace({ ...d, id: newId(), name, x: round(ox + d.x), y: round(base + (d.y - minY)), z: round(oz + d.z) });
         if (clip.names) {
           if (!newNames.has(d.name)) newNames.set(d.name, uniqueName(d.name));
           p.name = newNames.get(d.name)!;
@@ -1210,6 +1222,134 @@ export function studioScreen(
       renderProps();
     }
 
+    // ---------- miejsca (places) ----------
+    /** niebo edytowanego miejsca (albo całej gry) */
+    function applyPlaceSky() {
+      const pl = findPlace(data, curPlace);
+      const sky = pl?.skyColor ?? data.skyColor;
+      const box = pl?.skybox !== undefined ? pl.skybox : data.skybox;
+      if (box) view.setSkybox(box);
+      else view.setSky(sky);
+    }
+    function switchPlace(id: string) {
+      if (!allPlaces(data).some((x) => x.id === id)) id = MAIN_PLACE;
+      curPlace = id;
+      select(null);
+      hiddenIds.clear();
+      view.clear();
+      view.load(placeParts());
+      // teren jest tylko w głównym miejscu
+      view.setTerrain(id === MAIN_PLACE ? TerrainGrid.decode(data.terrain) : null);
+      applyPlaceSky();
+      renderPlaces();
+      renderExplorer();
+      updateStatus();
+      if (id !== MAIN_PLACE) terrainPanel.deactivate();
+      const sp = placeParts().find((p) => p.kind === "spawn");
+      if (sp) camera.setTarget(new Vector3(sp.x, sp.y, sp.z));
+      else frameParts(placeParts());
+    }
+    const placeSel = h("select", { class: "tb-select", title: "Miejsce gry, które edytujesz" });
+    placeSel.addEventListener("change", () => {
+      if (placeSel.value === "+") {
+        placeSel.value = curPlace;
+        return openPlaces(true);
+      }
+      switchPlace(placeSel.value);
+    });
+    function renderPlaces() {
+      placeSel.replaceChildren(
+        ...allPlaces(data).map((pl) =>
+          h("option", { value: pl.id, selected: pl.id === curPlace }, (pl.gui ? "🪟 " : "🗺 ") + pl.name + ((data.startPlace ?? MAIN_PLACE) === pl.id ? " ⭐" : "")),
+        ),
+        h("option", { value: "+" }, "➕ Nowe miejsce…"),
+      );
+    }
+    /** okno "Miejsca": dodawanie, nazwy, niebo, miejsce startowe, miejsce tylko na GUI */
+    function openPlaces(addNew = false) {
+      const body = h("div", { class: "places-dlg" });
+      const render = () => {
+        const list = allPlaces(data);
+        body.replaceChildren(
+          h("p", { class: "hint" }, "Miejsca to osobne mapy tej samej gry (np. Menu, Lobby, Arena). Gracz przechodzi skryptem teleportToPlace(player, \"Arena\"), bloczkiem albo przyciskiem GUI. Każde miejsce ma własny serwer."),
+          ...list.map((pl) => {
+            const main = pl.id === MAIN_PLACE;
+            const name = h("input", { value: pl.name, maxLength: 40, disabled: main });
+            name.addEventListener("change", () => {
+              const v = name.value.trim();
+              if (!v || list.some((x) => x !== pl && x.name.toLowerCase() === v.toLowerCase())) return toast("Nazwy miejsc muszą być różne", "error"), (name.value = pl.name);
+              pl.name = v;
+              changed();
+              renderPlaces();
+            });
+            const count = data.parts.filter((p) => placeOf(p) === pl.id).length;
+            const isStart = (data.startPlace ?? MAIN_PLACE) === pl.id;
+            return h(
+              "div",
+              { class: "place-row" + (pl.id === curPlace ? " active" : "") },
+              h("div", { class: "place-main" }, name, h("span", { class: "muted" }, `${count} klocków`)),
+              h(
+                "div",
+                { class: "row wrap" },
+                h("button", { class: "btn small", onClick: () => (close(), switchPlace(pl.id)) }, "✎ Edytuj"),
+                h("button", { class: "btn small" + (isStart ? " primary" : ""), title: "Tu zaczynają nowi gracze", onClick: () => ((main ? delete data.startPlace : (data.startPlace = pl.id)), changed(), renderPlaces(), render()) }, isStart ? "⭐ Startowe" : "Ustaw jako startowe"),
+                main
+                  ? h("span", { class: "muted" }, "teren i niebo z ustawień gry")
+                  : h(
+                      "label",
+                      { class: "prop check" },
+                      h("input", { type: "checkbox", checked: !!pl.gui, onChange: (e: Event) => (((e.target as HTMLInputElement).checked ? (pl.gui = true) : delete pl.gui), changed(), renderPlaces()) }),
+                      "🪟 Tylko GUI (menu: bez postaci gracza)",
+                    ),
+                main ? "" : h("input", { type: "color", title: "Kolor nieba", value: pl.skyColor ?? data.skyColor, onChange: (e: Event) => ((pl.skyColor = (e.target as HTMLInputElement).value), changed(), pl.id === curPlace && applyPlaceSky()) }),
+                main
+                  ? ""
+                  : h(
+                      "button",
+                      {
+                        class: "btn small danger",
+                        onClick: async () => {
+                          if (!(await ask(`Usunąć miejsce „${pl.name}” razem z jego ${count} klockami?`, "Usuń", "Anuluj", true))) return;
+                          pushUndo();
+                          data.parts = data.parts.filter((p) => placeOf(p) !== pl.id);
+                          data.places = (data.places ?? []).filter((x) => x !== pl);
+                          if (!data.places.length) delete data.places;
+                          if (data.startPlace === pl.id) delete data.startPlace;
+                          for (const sc of data.scripts) if (sc.place === pl.id) delete sc.place;
+                          changed();
+                          if (curPlace === pl.id) switchPlace(MAIN_PLACE);
+                          renderPlaces();
+                          renderScripts();
+                          render();
+                        },
+                      },
+                      "🗑",
+                    ),
+              ),
+            );
+          }),
+          h("button", { class: "btn primary", onClick: () => addPlace() }, "➕ Nowe miejsce"),
+        );
+      };
+      const addPlace = () => {
+        if ((data.places?.length ?? 0) >= MAX_PLACES) return toast(`Maksymalnie ${MAX_PLACES} miejsc`, "error");
+        let n = (data.places?.length ?? 0) + 1;
+        let name = `Miejsce ${n}`;
+        while (allPlaces(data).some((x) => x.name === name)) name = `Miejsce ${++n}`;
+        const pl = { id: newId(), name };
+        (data.places ??= []).push(pl);
+        // nowe miejsce od razu ma podłogę i spawn
+        data.parts.push({ ...baseplate(), id: newId(), place: pl.id }, { ...spawnPart(), id: newId(), place: pl.id });
+        changed();
+        renderPlaces();
+        render();
+        toast(`Dodano: ${name}. Kliknij „✎ Edytuj”, żeby je budować.`, "good");
+      };
+      const close = modal("🗺 Miejsca gry", body);
+      render();
+      if (addNew) addPlace();
+    }
+
     /** łączy zaznaczone klocki w jeden model (przesuwają się, obracają i kopiują razem) */
     function groupSel() {
       const parts = selParts();
@@ -1395,13 +1535,15 @@ export function studioScreen(
     function testOffline() {
       go("play", {
         offline: { name: meta.name, data },
+        ...(curPlace !== MAIN_PLACE || data.startPlace ? { place: curPlace } : {}),
         back: { screen: "studio", params: file ? { file: fileState() } : { worldId: params.worldId } },
       });
     }
 
     async function test() {
       if (!src.online) return testOffline();
-      if (await save(true)) go("play", { worldId: params.worldId, back: { screen: "studio", params: { worldId: params.worldId } } });
+      // test zaczyna się w miejscu, które edytujesz
+      if (await save(true)) go("play", { worldId: params.worldId, ...(curPlace !== (data.startPlace ?? MAIN_PLACE) ? { place: curPlace } : {}), back: { screen: "studio", params: { worldId: params.worldId } } });
     }
 
     async function confirmLeave() {
@@ -1518,6 +1660,7 @@ export function studioScreen(
         fileMenu,
       ),
       h("span", { class: "tb-mode " + (src.online ? "on" : "") , title: src.online ? "Gra na serwerze" : "Gra z pliku - bez serwera" }, src.online ? "☁ serwer" : "📄 plik"),
+      placeSel,
       h("div", { class: "tb-sep" }),
       h("button", { class: "tb-btn", "data-tool": "select", onClick: () => setTool("select"), title: "Wybierz (1)" }, "👆", h("span", null, "Wybierz")),
       h("button", { class: "tb-btn", "data-tool": "move", onClick: () => setTool("move"), title: "Przesuń (2)" }, "✥", h("span", null, "Przesuń")),
@@ -1545,6 +1688,8 @@ export function studioScreen(
       h("button", { class: "tb-btn", onClick: doUndo, title: "Cofnij (Ctrl+Z)" }, "↶"),
       h("button", { class: "tb-btn", onClick: doRedo, title: "Ponów (Ctrl+Y)" }, "↷"),
       h("div", { class: "tb-sep" }),
+      h("button", { class: "tb-btn", onClick: () => openPlaces(), title: "Miejsca gry: osobne mapy (menu, lobby, arena...)" }, "🗺", h("span", null, "Miejsca")),
+      h("button", { class: "tb-btn", onClick: () => openGuis(), title: "GUI: menu, okienka, przyciski i napisy na ekranie gracza" }, "🪟", h("span", null, "GUI")),
       h("button", { class: "tb-btn", onClick: () => openGameSettings(), title: "Nazwa, opis, niebo, odznaki, publikacja" }, "⚙", h("span", null, "Gra")),
       h("button", { class: "tb-btn", onClick: () => openGuide("3d"), title: "Jak zrobić grę - przewodnik i skróty" }, "❓", h("span", null, "Pomoc")),
     );
@@ -1623,6 +1768,7 @@ export function studioScreen(
     const leftPanel = h("aside", { class: "studio-panel left" }, leftTabs, leftPages);
     function showLeftTab(id: string) {
       const t = LEFT_TABS.find((x) => x.id === id) ?? LEFT_TABS[0];
+      if (t.id === "terrain" && curPlace !== MAIN_PLACE) return toast("Teren jest tylko w głównym miejscu - przełącz miejsce na pasku", "info");
       if (t.id !== "terrain") terrainPanel.deactivate();
       leftPages.replaceChildren(t.page);
       for (const b of leftTabs.querySelectorAll<HTMLElement>(".ltab")) b.classList.toggle("active", b.dataset.ltab === t.id);
@@ -1717,7 +1863,7 @@ export function studioScreen(
       { class: "studio-status s3d" },
       stInfo,
       h("span", { class: "st-sep" }),
-      stBtn("⛶", "Pokaż całą mapę (Home)", () => frameParts(data.parts)),
+      stBtn("⛶", "Pokaż całą mapę (Home)", () => frameParts(placeParts())),
       stBtn("⬇", "Widok z góry (T)", () => topView()),
       gridFloorBtn,
       unhideBtn,
@@ -1725,7 +1871,7 @@ export function studioScreen(
     );
     function updateStatus() {
       const n = selRoots().length;
-      stInfo.textContent = `${data.parts.length} klocków` + (n > 1 ? ` · zaznaczono ${n}` : "") + (hiddenIds.size ? ` · schowane ${hiddenIds.size}` : "");
+      stInfo.textContent = `${placeParts().length} klocków` + (n > 1 ? ` · zaznaczono ${n}` : "") + (hiddenIds.size ? ` · schowane ${hiddenIds.size}` : "");
       gridFloorBtn.classList.toggle("on", showGridFloor);
       unhideBtn.classList.toggle("hidden", !hiddenIds.size);
     }
@@ -1753,6 +1899,7 @@ export function studioScreen(
         ["Prawy przycisk", "rozglądanie się"],
         ["WASD / Q E", "lot kamerą, Shift = szybciej; prawy + kółko = prędkość"],
         ["Ctrl + Z / Y", "cofnij / ponów"],
+        ["Ctrl + F", "szukaj obiektu"],
         ["Ctrl + S", "zapisz"],
       ];
       modal("Skróty w Studio 3D", h("table", { class: "shortcuts" }, rows.map(([k, v]) => h("tr", null, h("td", null, h("kbd", null, k)), h("td", null, v)))));
@@ -1763,9 +1910,10 @@ export function studioScreen(
 
     function renderExplorer() {
       const q = explorerSearch.value.trim().toLowerCase();
-      const list = q ? data.parts.filter((p) => p.name.toLowerCase().includes(q)) : data.parts;
+      const here = placeParts();
+      const list = q ? here.filter((p) => p.name.toLowerCase().includes(q)) : here;
       explorer.replaceChildren(
-        h("div", { class: "explorer-count" }, `${list.length} z ${data.parts.length} obiektów`),
+        h("div", { class: "explorer-count" }, `${list.length} z ${here.length} obiektów` + (data.places?.length ? ` · ${allPlaces(data).find((x) => x.id === curPlace)?.name ?? ""}` : "")),
         ...list.filter((p) => !p.group || list.find((x) => x.group === p.group) === p).map((p) => {
           const members = groupOf(p);
           const isSel = selParts().includes(p);
@@ -2154,6 +2302,25 @@ export function studioScreen(
                 "div",
                 { class: "script-item" },
                 h("button", { class: "script-open", onClick: () => editScript(s) }, s.type === "lua" ? "📜 " : "🧩 ", s.name),
+                // gra z kilkoma miejscami: gdzie działa skrypt
+                data.places?.length
+                  ? h(
+                      "select",
+                      {
+                        class: "script-place",
+                        title: "Gdzie działa ten skrypt",
+                        onChange: (e: Event) => {
+                          const v = (e.target as HTMLSelectElement).value;
+                          if (v === MAIN_PLACE) delete s.place;
+                          else s.place = v;
+                          changed();
+                        },
+                      },
+                      [["*", "🌍 Wszędzie"], ...allPlaces(data).map((pl): [string, string] => [pl.id, pl.name])].map(([v, l]) =>
+                        h("option", { value: v, selected: (s.place ?? MAIN_PLACE) === v }, l),
+                      ),
+                    )
+                  : "",
                 h("input", {
                   type: "checkbox",
                   title: "Włączony",
@@ -2378,6 +2545,13 @@ export function studioScreen(
       );
     }
 
+    // ---------- GUI ----------
+    function openGuis() {
+      data.guis ??= [];
+      const places = allPlaces(data).map((pl): [string, string] => [pl.id, (pl.gui ? "🪟 " : "🗺 ") + pl.name]);
+      openGuiEditor({ guis: data.guis, mode: "3d", wheres: places, places, onChange: () => changed() });
+    }
+
     // ---------- ustawienia gry ----------
     function openGameSettings() {
       const name = h("input", { value: meta.name, maxLength: 40 });
@@ -2485,7 +2659,7 @@ export function studioScreen(
     const keys = new Set<string>();
     const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || document.querySelector(".gui-editor")) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === "s") (e.preventDefault(), save());
       else if (ctrl && e.key === "z") (e.preventDefault(), doUndo());
@@ -2493,13 +2667,14 @@ export function studioScreen(
       else if (ctrl && e.key === "d") (e.preventDefault(), duplicate());
       else if (ctrl && e.key === "c") (e.preventDefault(), copySelection());
       else if (ctrl && e.key === "v") (e.preventDefault(), paste());
-      else if (ctrl && e.key === "a") (e.preventDefault(), selectMany(data.parts.filter((p) => !p.locked && !hiddenIds.has(p.id))));
+      else if (ctrl && e.key === "a") (e.preventDefault(), selectMany(placeParts().filter((p) => !p.locked && !hiddenIds.has(p.id))));
       else if (ctrl && e.key === "g") (e.preventDefault(), groupSel());
+      else if (ctrl && e.key === "f") (e.preventDefault(), showLeftTab("objects"), leftPanel.classList.add("open"), explorerSearch.focus(), explorerSearch.select());
       else if (ctrl) return;
       else if (e.key === "Delete" || e.key === "Backspace") remove();
       else if (e.key.startsWith("Arrow") || e.key === "PageUp" || e.key === "PageDown") (e.preventDefault(), nudge(e.key, e.shiftKey));
       else if (e.key === "End") dropSel();
-      else if (e.key === "Home") frameParts(data.parts);
+      else if (e.key === "Home") frameParts(placeParts());
       else if (e.key === "Escape") select(null);
       else if (e.key === "?") openShortcuts();
       else if (e.key === "l" || e.key === "L") lockSel();
@@ -2557,6 +2732,7 @@ export function studioScreen(
     renderCharacters();
     renderAnimations();
     setTool("move");
+    renderPlaces();
     updateStatus();
     if (startDirty) changed();
     if (shouldShowGuide("3d")) setTimeout(() => !disposed && openGuide("3d"), 600);
@@ -2564,16 +2740,20 @@ export function studioScreen(
     // ---------- współpraca: inni twórcy tej gry na żywo ----------
     /** zmiany od innych twórców - widok i panele */
     function applyRemote(c: RemoteChange) {
+      const f = new Set(c.fields);
       for (const p of c.parts) {
-        if (view.meshes.has(p.id)) view.apply(p);
+        // klocek z innego miejsca (albo przeniesiony do innego) - nie na tej planszy
+        if (!inPlace(p)) view.remove(p.id);
+        else if (view.meshes.has(p.id)) view.apply(p);
         else view.add(p);
       }
+      if (f.has("places") && !allPlaces(data).some((x) => x.id === curPlace)) switchPlace(MAIN_PLACE);
+      else if (f.has("places")) renderPlaces();
       for (const id of c.del) view.remove(id);
-      const f = new Set(c.fields);
       if (f.has("tools")) view.setTools(data.tools), renderTools();
       if (f.has("characters") || f.has("animations")) view.setCharacters(data.characters, data.animations), renderCharacters(), renderAnimations();
       if (f.has("scripts")) renderScripts();
-      if (f.has("skybox") || f.has("skyColor")) data.skybox ? view.setSkybox(data.skybox) : view.setSky(data.skyColor);
+      if (f.has("skybox") || f.has("skyColor") || f.has("places")) applyPlaceSky();
       if (f.has("terrain")) terrainPanel.reload();
       if (selected && c.del.includes(selected.id)) select(null);
       else if (selected && c.parts.includes(selected)) {
@@ -2597,7 +2777,7 @@ export function studioScreen(
           // ktoś edytował wcześniej - stan z serwera jest aktualny
           const keep = new Set(srv.parts.map((p) => p.id));
           const del = data.parts.filter((p) => !keep.has(p.id)).map((p) => p.id);
-          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "genre", "terrain"] as const).filter(
+          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace"] as const).filter(
             (k) => JSON.stringify(srv[k] ?? null) !== JSON.stringify(data[k] ?? null),
           );
           for (const k of fields) {

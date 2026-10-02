@@ -22,6 +22,7 @@ import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
 import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
 import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
 import { Collab2D, type Change2D } from "./collab2d.ts";
+import { openGuiEditor } from "../studio/guiEditor.ts";
 import type { Editor } from "../studio/collab.ts";
 import { openEditorsDialog } from "../studio/editorsDialog.ts";
 
@@ -379,6 +380,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       h("button", { class: "tb-btn", onClick: doUndo, title: "Cofnij (Ctrl+Z)" }, "↶"),
       h("button", { class: "tb-btn", onClick: doRedo, title: "Ponów (Ctrl+Y)" }, "↷"),
       h("div", { class: "tb-sep" }),
+      h("button", { class: "tb-btn", onClick: () => openGuis(), title: "GUI: menu, okienka, przyciski i napisy na ekranie gracza" }, "🪟", h("span", null, "GUI")),
       h("button", { class: "tb-btn", onClick: () => openGameSettings(), title: "Nazwa, fizyka, dźwięki, odznaki, publikacja" }, "⚙", h("span", null, "Gra")),
       h("button", { class: "tb-btn", onClick: () => openSettings() }, "🎚", h("span", null, "Ustawienia")),
       h("button", { class: "tb-btn", onClick: () => openGuide("2d"), title: "Jak zrobić grę - przewodnik" }, "❓", h("span", null, "Pomoc")),
@@ -548,6 +550,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         ["0 / Home", "cały poziom / do startu"],
         ["Prawy przycisk", "przesuwanie widoku"],
         ["Ctrl + Z / Y", "cofnij / ponów"],
+        ["Ctrl + F", "szukaj obiektu"],
         ["Ctrl + S", "zapisz"],
       ];
       modal("Skróty w Studio 2D", h("table", { class: "shortcuts" }, rows.map(([k, v]) => h("tr", null, h("td", null, h("kbd", null, k)), h("td", null, v)))));
@@ -567,7 +570,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           h(
             "button",
             { class: "tree-item " + (l.id === level.id ? "active" : ""), onClick: () => switchLevel(l) },
-            h("span", { class: "tree-icon" }, l.id === w.startLevel ? "⭐" : "🗺"),
+            h("span", { class: "tree-icon" }, l.id === w.startLevel ? "⭐" : l.menu ? "🪟" : "🗺"),
             l.name,
             h("span", { class: "tree-kind" }, String(l.instances.length)),
           ),
@@ -916,6 +919,20 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         field("Przybliżenie widoku", numIn(l.zoom, (v) => (l.zoom = Math.min(10, Math.max(0.2, v))), 0.1), "2 = piksele 2x większe (jak w GDevelop: zoom kamery)"),
         field("Śmierć poniżej Y", h("div", { class: "xy" }, numIn(l.killY ?? 0, (v) => (l.killY = v)), h("button", { class: "btn small", onClick: () => (remember(), (l.killY = null), renderProps()) }, "brak")), l.killY === null ? "Brak - spadanie nie zabija" : "Czerwona linia na planszy"),
         field("Kamera nie niżej niż Y", h("div", { class: "xy" }, numIn(l.cameraBottom ?? 0, (v) => (l.cameraBottom = v)), h("button", { class: "btn small", onClick: () => (remember(), (l.cameraBottom = null), renderProps()) }, "brak")), l.cameraBottom === null ? "Brak ograniczenia" : "Niebieska linia na planszy"),
+        checkIn("🪟 Poziom menu / GUI (bez postaci i sterowania - np. menu główne)", !!l.menu, (v) => (l.menu = v || undefined)),
+        field(
+          "Kamera stoi w X / Y",
+          h(
+            "div",
+            { class: "xy" },
+            numIn(l.cameraX ?? 0, (v) => (l.cameraX = v)),
+            numIn(l.cameraY ?? 0, (v) => (l.cameraY = v)),
+            h("button", { class: "btn small", title: "Ustaw na środek widoku", onClick: () => (remember(), (l.cameraX = Math.round(cam.x)), (l.cameraY = Math.round(cam.y)), renderProps()) }, "📍 tu"),
+            h("button", { class: "btn small", onClick: () => (remember(), delete l.cameraX, delete l.cameraY, renderProps()) }, "brak"),
+          ),
+          l.cameraX === undefined && l.cameraY === undefined ? "Brak - kamera idzie za graczem" : "Kamera nie rusza się (np. menu, arena)",
+        ),
+        l.menu ? h("p", { class: "hint" }, "Gracz nie ma tu postaci, kamera stoi (na starcie albo w „kamera X / Y”). Dodaj GUI (🪟 GUI na pasku) z przyciskiem „Idź na poziom”.") : "",
         checkIn("Noc / ciemność (światła rozjaśniają)", !!l.ambient, (v) => (l.ambient = v ? "#606080" : undefined)),
         l.ambient ? field("Kolor ciemności", colorIn(l.ambient, (v) => (l.ambient = v))) : "",
         checkIn("Śmierć bez checkpointu = poziom od nowa", !!l.restartOnDeath, (v) => (l.restartOnDeath = v || undefined)),
@@ -1503,6 +1520,18 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         LUA_HELP_2D,
         "2d",
       );
+    }
+
+    // ---------- GUI ----------
+    function openGuis() {
+      data.guis ??= [];
+      openGuiEditor({
+        guis: data.guis,
+        mode: "2d",
+        wheres: w.levels.map((l): [string, string] => [l.id, (l.menu ? "🪟 " : "🗺 ") + l.name]),
+        levels: w.levels.map((l) => l.name),
+        onChange: () => changed(),
+      });
     }
 
     // ---------- ustawienia gry ----------
@@ -2156,7 +2185,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     // ---------- klawiatura ----------
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || document.querySelector(".modal-bg, .script-editor")) return;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || document.querySelector(".modal-bg, .script-editor, .gui-editor")) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -2175,6 +2204,12 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       else if (ctrl && e.key.toLowerCase() === "v") {
         e.preventDefault();
         paste();
+      } else if (ctrl && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        showLeftTab("objects");
+        leftPanel.classList.add("open");
+        objSearch.focus();
+        objSearch.select();
       } else if (ctrl && e.key.toLowerCase() === "a") {
         e.preventDefault();
         selectAll();
