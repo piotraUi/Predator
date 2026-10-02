@@ -43,6 +43,8 @@ export interface Part {
   vehicle?: VehicleType;
   /** napis unoszący się nad klockiem (np. cena przycisku w tycoonie) */
   label?: string;
+  /** zablokowany w Studio (nie da się go kliknąć na planszy - np. podłoga, tło) */
+  locked?: boolean;
 }
 
 // ---------- Postacie ----------

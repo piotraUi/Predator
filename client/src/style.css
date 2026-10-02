@@ -1378,3 +1378,17 @@ table.shortcuts kbd { background: var(--bg3); border: 1px solid var(--line); bor
   .studio-status { bottom: auto; top: 10px; }
   .studio-status .st-pos, .studio-status .st-info, .studio-status .st-sep { display: none; }
 }
+
+/* ---------- Studio 3D: ramka zaznaczania, pasek stanu, Eksplorator, wyrównywanie ---------- */
+.studio-marquee { position: absolute; z-index: 4; pointer-events: none; border: 1px dashed var(--blue); background: rgba(58, 134, 255, 0.15); }
+.studio-status.s3d { top: 10px; bottom: auto; }
+.exp-row { display: flex; align-items: center; gap: 2px; }
+.exp-row .tree-item { flex: 1; min-width: 0; }
+.exp-row.dim .tree-item { opacity: .5; }
+.exp-ic { flex: none; border: none; background: none; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 13px; opacity: .25; }
+.exp-row:hover .exp-ic, .exp-ic.on { opacity: 1; }
+.exp-ic:hover { background: var(--bg3); }
+.align-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.align-row .btn { flex: 1; }
+.align-ax { width: 16px; font-weight: 700; color: var(--muted); }
+.array-dlg { display: flex; flex-direction: column; gap: 6px; min-width: 280px; }

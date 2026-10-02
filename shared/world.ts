@@ -250,6 +250,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       ...(p.spin === true ? { spin: true } : {}),
       ...(p.kind === "seat" && VEHICLE_TYPES.includes(p.vehicle as VehicleType) ? { vehicle: p.vehicle as VehicleType } : {}),
       ...(typeof p.label === "string" && p.label.trim() ? { label: filterChat(p.label.trim().slice(0, MAX_LABEL)) } : {}),
+      ...(p.locked === true ? { locked: true } : {}),
     };
   });
   const rawScripts = Array.isArray(w.scripts) ? w.scripts.slice(0, MAX_SCRIPTS) : [];

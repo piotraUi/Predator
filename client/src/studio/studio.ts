@@ -1,8 +1,13 @@
 // Studio - edytor świata: stawianie, przesuwanie i skalowanie klocków, skrypty i ustawienia gry.
 import {
   ArcRotateCamera,
+  Color3,
   CreateScreenshotUsingRenderTargetAsync,
   GizmoManager,
+  Matrix,
+  MeshBuilder,
+  type LinesMesh,
+  type Mesh,
   PointerEventTypes,
   Quaternion,
   Ray,
@@ -162,6 +167,13 @@ export function studioScreen(
     loading.remove();
     let dirty = false;
     let selected: Part | null = null;
+    /** kilka zaznaczonych naraz (Shift + klik, ramka) - "selected" to główny z nich */
+    let multi: Part[] = [];
+    /** klocki schowane tylko w Studio (żeby dostać się do środka budynku) - nie zapisują się */
+    const hiddenIds = new Set<string>();
+    let showGridFloor = false;
+    /** telefon: stuknięcie dodaje do zaznaczenia */
+    let addMode = false;
     let tool: Tool = "move";
     let gridStep = 1;
     const undo: string[] = [];
@@ -289,7 +301,7 @@ export function studioScreen(
       rotStart = {
         q0: partQuat(selected),
         pivot: new Vector3(selected.x, selected.y, selected.z),
-        members: groupOf(selected).map((p) => ({ p, pos: new Vector3(p.x, p.y, p.z), q: partQuat(p) })),
+        members: selParts().map((p) => ({ p, pos: new Vector3(p.x, p.y, p.z), q: partQuat(p) })),
       };
     });
     const rotDelta = () => {
@@ -332,13 +344,13 @@ export function studioScreen(
       dragStart = selected ? { x: selected.x, y: selected.y, z: selected.z } : null;
     });
     pg.onDragObservable.add(() => {
-      if (!selected || !dragStart || !selected.group) return;
+      if (!selected || !dragStart || selParts().length < 2) return;
       const mesh = view.meshes.get(selected.id);
       if (!mesh) return;
       const dx = mesh.position.x - dragStart.x;
       const dy = mesh.position.y - dragStart.y;
       const dz = mesh.position.z - dragStart.z;
-      for (const o of groupOf(selected)) {
+      for (const o of selParts()) {
         if (o === selected) continue;
         const m = view.meshes.get(o.id);
         if (m) m.position.set(o.x + dx, o.y + dy, o.z + dz);
@@ -349,11 +361,11 @@ export function studioScreen(
       const mesh = view.meshes.get(selected.id);
       if (!mesh) return;
       pushUndo();
-      if (dragStart && selected.group) {
+      if (dragStart && selParts().length > 1) {
         const dx = round(mesh.position.x - dragStart.x);
         const dy = round(mesh.position.y - dragStart.y);
         const dz = round(mesh.position.z - dragStart.z);
-        for (const o of groupOf(selected)) {
+        for (const o of selParts()) {
           if (o === selected) continue;
           o.x = round(o.x + dx);
           o.y = round(o.y + dy);
@@ -380,16 +392,151 @@ export function studioScreen(
       (window as unknown as { __studio: unknown }).__studio = { scene, camera, sg, view, data, select: (name: string) => select(data.parts.find((p) => p.name === name) ?? null) };
 
     // ---------- wybieranie ----------
+    /** klocek pod kursorem (bez zablokowanych i schowanych) */
+    const pickable = (m: AbstractMesh) => {
+      const id = m.metadata?.partId as string | undefined;
+      if (!id || hiddenIds.has(id)) return false;
+      return !data.parts.find((p) => p.id === id)?.locked;
+    };
+    const partAt = (x: number, y: number) => {
+      const id = scene.pick(x, y, pickable)?.pickedMesh?.metadata?.partId as string | undefined;
+      return id ? (data.parts.find((p) => p.id === id) ?? null) : null;
+    };
     scene.onPointerObservable.add((pi) => {
       if (pi.type !== PointerEventTypes.POINTERTAP || pi.event.button !== 0) return;
-      const pick = scene.pick(scene.pointerX, scene.pointerY, (m: AbstractMesh) => !!m.metadata?.partId);
-      const id = pick?.pickedMesh?.metadata?.partId as string | undefined;
-      select(id ? (data.parts.find((p) => p.id === id) ?? null) : null);
+      const ev = pi.event as PointerEvent;
+      const p = partAt(scene.pointerX, scene.pointerY);
+      const add = ev.shiftKey || ev.ctrlKey || ev.metaKey || addMode;
+      if (add) {
+        if (p) select(p, true);
+      } else select(p);
+    });
+
+    // ramka zaznaczania: lewy przycisk przeciągnięty po pustym miejscu (jak w Roblox Studio)
+    const marquee = h("div", { class: "studio-marquee hidden" });
+    let box: { x0: number; y0: number; x1: number; y1: number; add: boolean; active: boolean; id: number } | null = null;
+    const local = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const onBoxDown = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      if ([pg, sg, rg].some((g) => g.isHovered)) return;
+      const p = local(e);
+      if (partAt(p.x, p.y)) return;
+      box = { x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey || e.ctrlKey || e.metaKey, active: false, id: e.pointerId };
+    };
+    const onBoxMove = (e: PointerEvent) => {
+      if (!box || box.id !== e.pointerId) return;
+      const p = local(e);
+      box.x1 = p.x;
+      box.y1 = p.y;
+      if (!box.active && Math.hypot(box.x1 - box.x0, box.y1 - box.y0) > 10) box.active = true;
+      if (!box.active) return;
+      marquee.classList.remove("hidden");
+      Object.assign(marquee.style, {
+        left: Math.min(box.x0, box.x1) + "px",
+        top: Math.min(box.y0, box.y1) + "px",
+        width: Math.abs(box.x1 - box.x0) + "px",
+        height: Math.abs(box.y1 - box.y0) + "px",
+      });
+    };
+    const onBoxUp = (e: PointerEvent) => {
+      if (!box || box.id !== e.pointerId) return;
+      const b = box;
+      box = null;
+      marquee.classList.add("hidden");
+      if (!b.active) return;
+      const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
+      const rw = engine.getRenderWidth(), rh = engine.getRenderHeight();
+      const k = rw / Math.max(1, canvas.clientWidth);
+      const vp = camera.viewport.toGlobal(rw, rh);
+      const tm = scene.getTransformMatrix();
+      // zaznaczają się klocki, które w całości mieszczą się w ramce (wielka podłoga się nie łapie)
+      const inside = data.parts.filter((p) => {
+        if (p.locked || hiddenIds.has(p.id)) return false;
+        const b = bounds([p]);
+        for (const cx of [b.x0, b.x1])
+          for (const cy of [b.y0, b.y1])
+            for (const cz of [b.z0, b.z1]) {
+              const s2 = Vector3.Project(new Vector3(cx, cy, cz), Matrix.IdentityReadOnly, tm, vp);
+              if (s2.z < 0 || s2.z > 1) return false;
+              const sx = s2.x / k, sy = s2.y / k;
+              if (sx < x0 || sx > x1 || sy < y0 || sy > y1) return false;
+            }
+        return true;
+      });
+      selectMany(b.add ? [...selRoots(), ...inside] : inside);
+    };
+    canvas.addEventListener("pointerdown", onBoxDown);
+    window.addEventListener("pointermove", onBoxMove);
+    window.addEventListener("pointerup", onBoxUp);
+    cleanups.push(() => {
+      canvas.removeEventListener("pointerdown", onBoxDown);
+      window.removeEventListener("pointermove", onBoxMove);
+      window.removeEventListener("pointerup", onBoxUp);
+    });
+
+    // obrys klocka pod kursorem
+    let hovered: Mesh | null = null;
+    scene.onPointerObservable.add((pi) => {
+      if (pi.type !== PointerEventTypes.POINTERMOVE) return;
+      const ev = pi.event as PointerEvent;
+      let next: Mesh | null = null;
+      if (ev.pointerType === "mouse" && ev.buttons === 0 && !box) {
+        const p = partAt(scene.pointerX, scene.pointerY);
+        if (p && !selParts().includes(p)) next = (view.meshes.get(p.id) as Mesh | undefined) ?? null;
+      }
+      if (next === hovered) return;
+      if (hovered) hovered.renderOutline = false;
+      hovered = next;
+      if (hovered) {
+        hovered.renderOutline = true;
+        hovered.outlineColor = new Color3(1, 1, 1);
+        hovered.outlineWidth = 0.04;
+      }
+    });
+
+    // siatka na ziemi (y = 0) wokół miejsca, na które patrzy kamera
+    let gridMesh: LinesMesh | null = null;
+    let gridKey = "";
+    scene.onBeforeRenderObservable.add(() => {
+      if (!showGridFloor) {
+        if (gridMesh) (gridMesh.dispose(), (gridMesh = null), (gridKey = ""));
+        return;
+      }
+      const step = gridStep < 1 ? 1 : gridStep;
+      const R = 60 * step;
+      const cx = Math.round(camera.target.x / (step * 10)) * step * 10;
+      const cz = Math.round(camera.target.z / (step * 10)) * step * 10;
+      const key = `${cx},${cz},${step}`;
+      if (key === gridKey) return;
+      gridKey = key;
+      gridMesh?.dispose();
+      const lines: Vector3[][] = [];
+      for (let d = -R; d <= R; d += step) {
+        lines.push([new Vector3(cx + d, 0.03, cz - R), new Vector3(cx + d, 0.03, cz + R)]);
+        lines.push([new Vector3(cx - R, 0.03, cz + d), new Vector3(cx + R, 0.03, cz + d)]);
+      }
+      gridMesh = MeshBuilder.CreateLineSystem("studio-grid", { lines }, scene);
+      gridMesh.color = new Color3(1, 1, 1);
+      gridMesh.alpha = 0.18;
+      gridMesh.isPickable = false;
     });
 
     /** części modelu (albo sam klocek) */
     function groupOf(p: Part) {
       return p.group ? data.parts.filter((x) => x.group === p.group) : [p];
+    }
+    /** zaznaczone "korzenie" (klocek albo jedna część modelu) */
+    function selRoots(): Part[] {
+      return multi.length ? multi : selected ? [selected] : [];
+    }
+    /** wszystkie zaznaczone klocki (z całymi modelami) */
+    function selParts(): Part[] {
+      const out = new Set<Part>();
+      for (const r of selRoots()) for (const p of groupOf(r)) out.add(p);
+      return [...out];
     }
 
     // przebudowana siatka zaznaczonego klocka: gizmo i ramka na nową siatkę
@@ -399,19 +546,53 @@ export function studioScreen(
       if (m) m.showBoundingBox = true;
       gizmos.attachToMesh(m ?? null);
     };
+    // klocki zaznaczone razem z głównym też mają ramkę po przebudowie
+    const prevRebuilt = view.onMeshRebuilt;
+    view.onMeshRebuilt = (id) => {
+      prevRebuilt?.(id);
+      const m = view.meshes.get(id);
+      if (m && selParts().some((p) => p.id === id)) m.showBoundingBox = true;
+      if (m && hiddenIds.has(id)) m.isVisible = false;
+    };
 
-    function select(p: Part | null) {
-      selected = p;
-      const mesh = p ? view.meshes.get(p.id) : null;
-      for (const m of view.meshes.values()) m.showBoundingBox = false;
-      if (p) for (const o of groupOf(p)) {
-        const m = view.meshes.get(o.id);
-        if (m) m.showBoundingBox = true;
+    /** add = Shift / Ctrl + klik: dodaj albo usuń z zaznaczenia */
+    function select(p: Part | null, add = false) {
+      if (add && p) {
+        const roots = selRoots();
+        const inSel = roots.find((r) => r === p || (p.group && r.group === p.group));
+        const next = inSel ? roots.filter((r) => r !== inSel) : [...roots, p];
+        multi = next.length > 1 ? next : [];
+        selected = next.at(-1) ?? null;
+      } else {
+        multi = [];
+        selected = p;
       }
-      gizmos.attachToMesh(mesh ?? null);
+      showSelection();
       setTool(tool);
       renderProps();
       renderExplorer();
+      updateStatus();
+    }
+    /** ramki zaznaczonych klocków i gizmo na głównym */
+    function showSelection() {
+      for (const m of view.meshes.values()) m.showBoundingBox = false;
+      for (const o of selParts()) {
+        const m = view.meshes.get(o.id);
+        if (m) m.showBoundingBox = true;
+      }
+      gizmos.attachToMesh(selected ? (view.meshes.get(selected.id) ?? null) : null);
+    }
+    /** zaznacza listę klocków (np. po ramce albo wklejeniu) */
+    function selectMany(list: Part[]) {
+      const roots: Part[] = [];
+      for (const p of list) if (!roots.some((r) => r === p || (p.group && r.group === p.group))) roots.push(p);
+      multi = roots.length > 1 ? roots : [];
+      selected = roots.at(-1) ?? null;
+      showSelection();
+      setTool(tool);
+      renderProps();
+      renderExplorer();
+      updateStatus();
     }
 
     /** podpowiedź na dole widoku - co teraz można zrobić */
@@ -429,13 +610,14 @@ export function studioScreen(
         : !selected
         ? [
             ["👆 Kliknij klocek, żeby go wybrać, albo ", h("b", null, "＋ Dodaj"), " gotowy model"],
+            k("Przeciągnij", "ramka"),
             k("Prawy przycisk", "rozglądanie"),
             k("WASD", "lot"),
             k("Kółko", "zoom"),
             k("Prawy + kółko", "prędkość"),
           ]
         : tool === "move"
-          ? [[selected.group ? "📦 Model - ciągnij strzałki, przesuwa się cały" : "✥ Ciągnij kolorowe strzałki, żeby przesunąć"], k("R", "obróć"), k("Ctrl+D", "kopia"), k("F", "pokaż"), k("Del", "usuń")]
+          ? [[multi.length > 1 ? `✥ Zaznaczono ${multi.length} - ciągnij strzałki, przesuwają się wszystkie` : selected.group ? "📦 Model - ciągnij strzałki, przesuwa się cały" : "✥ Ciągnij kolorowe strzałki, żeby przesunąć"], k("R", "obróć"), k("Ctrl+D", "kopia"), k("Shift+klik", "więcej"), k("?", "skróty")]
           : tool === "scale"
             ? [["⤡ Ciągnij kwadraciki, żeby zmienić rozmiar"], k("2", "przesuwanie"), k("Ctrl+Z", "cofnij")]
             : [["👆 Wybrano: ", h("b", null, selected.name)], k("2", "przesuń"), k("3", "skaluj"), k("R", "obróć")];
@@ -464,6 +646,7 @@ export function studioScreen(
     }
     function restore(json: string) {
       const selId = selected?.id;
+      const multiIds = multi.map((p) => p.id);
       const snap = JSON.parse(json) as { parts: Part[]; terrain: WorldData["terrain"] | null };
       data.parts = snap.parts;
       const terrainChanged = JSON.stringify(snap.terrain ?? null) !== JSON.stringify(data.terrain ?? null);
@@ -473,6 +656,8 @@ export function studioScreen(
       view.clear();
       view.load(data.parts);
       select(data.parts.find((p) => p.id === selId) ?? null);
+      const again = multiIds.map((id) => data.parts.find((p) => p.id === id)).filter((p): p is Part => !!p);
+      if (again.length > 1) selectMany(again);
       changed();
     }
     const doUndo = () => {
@@ -490,6 +675,7 @@ export function studioScreen(
     let collab: Collab | null = null;
     function changed() {
       collab?.changed();
+      updateStatus();
       dirty = true;
       desktop?.setDirty(true);
       saveBtn.classList.add("unsaved");
@@ -636,8 +822,52 @@ export function studioScreen(
       if (announce) toast(`${b.icon} ${b.label} - gotowe! Sprawdź przyciskiem Testuj`, "good");
     }
 
+    /**
+     * Kopie zaznaczonych klocków / modeli przesunięte o (dx, dy, dz). Każda kopia dostaje własną nazwę
+     * i własne zachowania (jak przy zwykłym duplikowaniu).
+     */
+    function cloneRoots(roots: Part[], dx: number, dy: number, dz: number): Part[] {
+      const made: Part[] = [];
+      for (const root of roots) {
+        const members = groupOf(root);
+        const name = uniqueName(root.name);
+        const group = root.group ? newId() : undefined;
+        for (const m of members) {
+          const c: Part = { ...m, id: newId(), name, x: round(m.x + dx), y: round(m.y + dy), z: round(m.z + dz) };
+          if (group) c.group = group;
+          data.parts.push(c);
+          view.add(c);
+          if (m === root) made.push(c);
+        }
+        for (const sc of behaviorsOf(data.scripts, root.name)) {
+          const b = BEHAVIORS.find((x) => x.id === behaviorIdOf(sc));
+          if (b?.lua) data.scripts.push(behaviorScript(b, name, b.id === "teleport" ? root.name + " cel" : undefined));
+        }
+      }
+      return made;
+    }
+    /** zasięg zaznaczonych klocków (min / max w każdej osi) */
+    function bounds(parts: Part[]) {
+      const ext = (p: Part) => {
+        const [hx, hz] = (p.ry ?? 0) % 180 ? [p.sz / 2, p.sx / 2] : [p.sx / 2, p.sz / 2];
+        return { x0: p.x - hx, x1: p.x + hx, y0: p.y - p.sy / 2, y1: p.y + p.sy / 2, z0: p.z - hz, z1: p.z + hz };
+      };
+      return parts.map(ext).reduce((a, b) => ({
+        x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1), z0: Math.min(a.z0, b.z0), z1: Math.max(a.z1, b.z1),
+      }));
+    }
+
     function duplicate() {
       if (!selected) return;
+      if (multi.length > 1) {
+        if (data.parts.length + selParts().length > MAX_PARTS) return toast(`Maksymalnie ${MAX_PARTS} klocków`, "error");
+        pushUndo();
+        const b = bounds(selParts());
+        const made = cloneRoots(multi, round(b.x1 - b.x0 + 2), 0, 0);
+        renderScripts();
+        changed();
+        return selectMany(made);
+      }
       pushUndo();
       const old = selected;
       const members = groupOf(old);
@@ -676,6 +906,8 @@ export function studioScreen(
       tools: ToolDef[];
       characters: CharacterDef[];
       animations: AnimDef[];
+      /** kilka różnych klocków / modeli: każdy zachowuje swoją nazwę (i swoje zachowania) */
+      names?: Record<string, string[]>;
     }
     const readClip = (): Clip | null => {
       try {
@@ -688,16 +920,24 @@ export function studioScreen(
     /** kopiuje zaznaczony klocek / model razem z narzędziami, postaciami, animacjami i zachowaniami */
     function copySelection() {
       if (!selected) return toast("Najpierw zaznacz klocek albo model", "info");
-      const members = groupOf(selected);
+      const members = selParts();
+      const many = new Set(members.map((m) => m.name)).size > 1;
       const toolIds = new Set(members.map((m) => m.toolId).filter(Boolean));
       const charIds = new Set(members.map((m) => m.characterId).filter(Boolean));
       const animIds = new Set(members.map((m) => m.animId).filter(Boolean));
       const clip: Clip = {
         v: 1,
         from: meta.name,
-        name: selected.name,
+        name: many ? `${selRoots().length} obiektów` : selected.name,
         parts: structuredClone(members),
         behaviors: behaviorsOf(data.scripts, selected.name).map((sc) => behaviorIdOf(sc)).filter((x): x is string => !!x),
+        ...(many
+          ? {
+              names: Object.fromEntries(
+                [...new Set(members.map((m) => m.name))].map((n) => [n, behaviorsOf(data.scripts, n).map((sc) => behaviorIdOf(sc)).filter((x): x is string => !!x)]),
+              ),
+            }
+          : {}),
         tools: data.tools.filter((t) => toolIds.has(t.id)),
         characters: data.characters.filter((c) => charIds.has(c.id)),
         animations: data.animations.filter((a) => animIds.has(a.id)),
@@ -708,7 +948,7 @@ export function studioScreen(
         return toast("Za duży model, żeby go skopiować", "error");
       }
       renderToolbox();
-      toast(`📋 Skopiowano: ${selected.name}${members.length > 1 ? ` (${members.length} klocków)` : ""}. Wklej w dowolnej grze: Ctrl+V`, "good");
+      toast(`📋 Skopiowano: ${clip.name}${members.length > 1 ? ` (${members.length} klocków)` : ""}. Wklej w dowolnej grze: Ctrl+V`, "good");
     }
     /** wkleja ze schowka przed kamerą (także model skopiowany w innej grze albo z Biblioteki) */
     function paste(fromLibrary?: Clip) {
@@ -726,22 +966,34 @@ export function studioScreen(
       const base = hit?.pickedPoint ? hit.pickedPoint.y : 0;
       const name = uniqueName(clip.name);
       const group = clip.parts.length > 1 ? newId() : undefined;
+      // kilka obiektów: każdy z własną (wolną) nazwą, modele dostają nowe id grup
+      const newNames = new Map<string, string>();
+      const newGroups = new Map<string, string>();
       // narzędzia, postacie i animacje, których ta gra jeszcze nie ma
       for (const t of clip.tools) if (!data.tools.some((x) => x.id === t.id)) data.tools.push(t);
       for (const c of clip.characters) if (!data.characters.some((x) => x.id === c.id)) data.characters.push(c);
       for (const a of clip.animations) if (!data.animations.some((x) => x.id === a.id)) data.animations.push(a);
       const made = defs.map((d) => {
         const p: Part = { ...d, id: newId(), name, x: round(ox + d.x), y: round(base + (d.y - minY)), z: round(oz + d.z) };
-        if (group) p.group = group;
+        if (clip.names) {
+          if (!newNames.has(d.name)) newNames.set(d.name, uniqueName(d.name));
+          p.name = newNames.get(d.name)!;
+          if (d.group) {
+            if (!newGroups.has(d.group)) newGroups.set(d.group, newId());
+            p.group = newGroups.get(d.group)!;
+          } else delete p.group;
+        } else if (group) p.group = group;
         else delete p.group;
         data.parts.push(p);
         view.add(p);
         return p;
       });
-      for (const id of clip.behaviors) {
-        const b = BEHAVIORS.find((x) => x.id === id);
-        if (b?.lua) data.scripts.push(behaviorScript(b, name));
-      }
+      const behaviorsFor = clip.names ? [...newNames].map(([from, to]) => [to, clip.names![from] ?? []] as const) : [[name, clip.behaviors] as const];
+      for (const [n, ids] of behaviorsFor)
+        for (const id of ids) {
+          const b = BEHAVIORS.find((x) => x.id === id);
+          if (b?.lua) data.scripts.push(behaviorScript(b, n));
+        }
       view.setTools(data.tools);
       view.setCharacters(data.characters, data.animations);
       renderScripts();
@@ -749,8 +1001,9 @@ export function studioScreen(
       renderCharacters();
       renderAnimations();
       changed();
-      select(made[0]);
-      toast(`📥 Wklejono: ${name}${clip.from && clip.from !== meta.name ? ` (z gry „${clip.from}”)` : ""}`, "good");
+      if (clip.names) selectMany(made);
+      else select(made[0]);
+      toast(`📥 Wklejono: ${clip.names ? clip.name : name}${clip.from && clip.from !== meta.name ? ` (z gry „${clip.from}”)` : ""}`, "good");
     }
 
     // ---------- biblioteka modeli (wspólna dla wszystkich twórców) ----------
@@ -878,7 +1131,7 @@ export function studioScreen(
     function remove() {
       if (!selected) return;
       pushUndo();
-      const ids = new Set(groupOf(selected).map((p) => p.id));
+      const ids = new Set(selParts().map((p) => p.id));
       data.parts = data.parts.filter((p) => !ids.has(p.id));
       for (const id of ids) view.remove(id);
       changed();
@@ -888,7 +1141,7 @@ export function studioScreen(
     function rotate() {
       if (!selected) return;
       pushUndo();
-      const members = groupOf(selected);
+      const members = selParts();
       // model obraca się wokół swojego środka (tak jak obraca się klocek: x' = z, z' = -x)
       const cx = members.reduce((a, m) => a + m.x, 0) / members.length;
       const cz = members.reduce((a, m) => a + m.z, 0) / members.length;
@@ -902,7 +1155,7 @@ export function studioScreen(
         m.ry = (m.ry + 90) % 360;
         view.apply(m);
       }
-      select(selected);
+      showSelection();
       changed();
       renderProps();
     }
@@ -918,8 +1171,193 @@ export function studioScreen(
 
     function focus() {
       if (!selected) return;
+      if (multi.length > 1) return frameParts(selParts());
       camera.setTarget(new Vector3(selected.x, selected.y, selected.z));
       camera.radius = Math.max(12, Math.max(selected.sx, selected.sy, selected.sz) * 2.5);
+    }
+    /** kamera pokazuje wszystkie podane klocki */
+    function frameParts(parts: Part[]) {
+      if (!parts.length) return;
+      const b = bounds(parts);
+      camera.setTarget(new Vector3((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2));
+      const size = Math.max(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
+      camera.radius = Math.min(camera.upperRadiusLimit ?? 600, Math.max(12, size * 1.1));
+    }
+    /** widok z góry na to, na co patrzymy (do układania mapy) */
+    function topView() {
+      camera.alpha = -Math.PI / 2;
+      camera.beta = 0.05;
+    }
+
+    /** po zmianie kilku klocków naraz */
+    function editMany(fn: () => void) {
+      pushUndo();
+      fn();
+      for (const p of selParts()) view.apply(p);
+      showSelection();
+      changed();
+      renderProps();
+      renderExplorer();
+    }
+
+    /** zmiana podanych klocków (np. blokada z Eksploratora) */
+    function editManyParts(parts: Part[], fn: () => void) {
+      pushUndo();
+      fn();
+      for (const p of parts) view.apply(p);
+      changed();
+      renderExplorer();
+      renderProps();
+    }
+
+    /** łączy zaznaczone klocki w jeden model (przesuwają się, obracają i kopiują razem) */
+    function groupSel() {
+      const parts = selParts();
+      if (parts.length < 2) return toast("Zaznacz kilka klocków (Shift + klik albo ramka)", "info");
+      const g = newId();
+      editMany(() => parts.forEach((p) => (p.group = g)));
+      select(selected);
+      toast(`📦 Połączono w model: ${parts.length} klocków. Rozdzielisz we właściwościach.`, "good");
+    }
+
+    function lockSel() {
+      const parts = selParts();
+      if (!parts.length) return;
+      editMany(() => parts.forEach((p) => (p.locked = true)));
+      select(null);
+      toast(`🔒 Zablokowano: ${parts.length}. Nie da się ich kliknąć na planszy - odblokujesz w Eksploratorze.`, "good");
+    }
+
+    /** chowa / pokazuje klocek tylko w Studio (np. dach, żeby budować w środku) */
+    function setHidden(parts: Part[], hide: boolean) {
+      for (const p of parts) {
+        if (hide) hiddenIds.add(p.id);
+        else hiddenIds.delete(p.id);
+        const m = view.meshes.get(p.id);
+        if (m) m.isVisible = !hide;
+      }
+      if (hide && selected && parts.includes(selected)) select(null);
+      renderExplorer();
+      updateStatus();
+    }
+    function showAllHidden() {
+      setHidden(data.parts.filter((p) => hiddenIds.has(p.id)), false);
+    }
+
+    /** stawia zaznaczone na tym, co jest pod spodem (klocek, teren albo ziemia y = 0) */
+    function dropSel() {
+      const parts = selParts();
+      if (!parts.length) return;
+      const ids = new Set(parts.map((p) => p.id));
+      const b = bounds(parts);
+      let top = -Infinity;
+      const xs = [b.x0 + 0.05, (b.x0 + b.x1) / 2, b.x1 - 0.05], zs = [b.z0 + 0.05, (b.z0 + b.z1) / 2, b.z1 - 0.05];
+      for (const x of xs)
+        for (const z of zs) {
+          const hit = scene.pickWithRay(
+            new Ray(new Vector3(x, b.y0 - 0.01, z), new Vector3(0, -1, 0), 5000),
+            (m: AbstractMesh) => m.isPickable && m.isVisible && !ids.has(m.metadata?.partId) && (!!m.metadata?.partId || m.name === "terrain"),
+          );
+          if (hit?.pickedPoint) top = Math.max(top, hit.pickedPoint.y);
+        }
+      if (top === -Infinity) top = 0;
+      const dy = round(top - b.y0);
+      if (!dy) return toast("Już stoi na ziemi", "info");
+      editMany(() => parts.forEach((p) => (p.y = round(p.y + dy))));
+    }
+
+    /** powiel w rzędzie: kilka kopii, każda przesunięta o tyle samo (płot, schody, kolumny...) */
+    function arrayDialog() {
+      const roots = selRoots();
+      if (!roots.length) return toast("Najpierw zaznacz klocek albo model", "info");
+      const b = bounds(selParts());
+      const count = h("input", { type: "number", min: "2", max: "50", value: "5" });
+      const ox = h("input", { type: "number", step: "0.5", value: String(round(b.x1 - b.x0)) });
+      const oy = h("input", { type: "number", step: "0.5", value: "0" });
+      const oz = h("input", { type: "number", step: "0.5", value: "0" });
+      const close = modal(
+        "🔁 Powiel w rzędzie",
+        h(
+          "div",
+          { class: "array-dlg" },
+          h("label", { class: "prop" }, h("span", null, "Ile razy razem z oryginałem"), count),
+          h("span", { class: "prop-label" }, "Przesunięcie każdej kopii (X / Y / Z)"),
+          h("div", { class: "xyz" }, ox, oy, oz),
+          h("p", { class: "hint" }, "Np. schody: X = szerokość stopnia, Y = jego wysokość. Płot: X = szerokość deski."),
+        ),
+        [
+          { label: "Anuluj", onClick: () => close() },
+          {
+            label: "Powiel",
+            kind: "primary",
+            onClick: () => {
+              const n = Math.min(50, Math.max(2, Math.round(Number(count.value) || 2)));
+              const d = [Number(ox.value) || 0, Number(oy.value) || 0, Number(oz.value) || 0];
+              if (data.parts.length + selParts().length * (n - 1) > MAX_PARTS) return toast(`Maksymalnie ${MAX_PARTS} klocków`, "error");
+              close();
+              pushUndo();
+              const made: Part[] = [...roots];
+              for (let k = 1; k < n; k++) made.push(...cloneRoots(roots, d[0] * k, d[1] * k, d[2] * k));
+              renderScripts();
+              changed();
+              selectMany(made);
+              toast(`🔁 Gotowe: ${n} × ${roots.length > 1 ? "zaznaczone" : roots[0].name}`, "good");
+            },
+          },
+        ],
+      );
+    }
+
+    /** wyrównanie zaznaczonych w osi (do min / środka / max całego zaznaczenia) */
+    function alignSel(axis: "x" | "y" | "z", where: "min" | "mid" | "max") {
+      const roots = selRoots();
+      if (roots.length < 2) return;
+      const all = bounds(selParts());
+      const lo = all[`${axis}0`], hi = all[`${axis}1`];
+      editMany(() => {
+        for (const r of roots) {
+          const members = groupOf(r);
+          const rb = bounds(members);
+          const a = rb[`${axis}0`], c = rb[`${axis}1`];
+          const target = where === "min" ? lo : where === "max" ? hi - (c - a) : (lo + hi) / 2 - (c - a) / 2;
+          const d = round(target - a);
+          for (const m of members) m[axis] = round(m[axis] + d);
+        }
+      });
+    }
+    /** równe odstępy między zaznaczonymi w osi */
+    function distributeSel(axis: "x" | "z") {
+      const roots = selRoots();
+      if (roots.length < 3) return toast("Zaznacz przynajmniej 3 obiekty", "info");
+      const items = roots.map((r) => ({ r, b: bounds(groupOf(r)) })).sort((p, q) => p.b[`${axis}0`] - q.b[`${axis}0`]);
+      const lo = items[0].b[`${axis}0`], hi = items.at(-1)!.b[`${axis}1`];
+      const total = items.reduce((n, it) => n + (it.b[`${axis}1`] - it.b[`${axis}0`]), 0);
+      const gap = (hi - lo - total) / (items.length - 1);
+      editMany(() => {
+        let pos = lo;
+        for (const it of items) {
+          const d = round(pos - it.b[`${axis}0`]);
+          for (const m of groupOf(it.r)) m[axis] = round(m[axis] + d);
+          pos += it.b[`${axis}1`] - it.b[`${axis}0`] + gap;
+        }
+      });
+    }
+
+    /** strzałki: przesuwanie o krok siatki w kierunku, w którym patrzy kamera */
+    function nudge(key: string, fine: boolean) {
+      const parts = selParts();
+      if (!parts.length) return;
+      const step = fine ? Math.min(0.25, gridStep) : gridStep;
+      if (key === "PageUp" || key === "PageDown") {
+        editMany(() => parts.forEach((p) => (p.y = round(p.y + (key === "PageUp" ? step : -step)))));
+        return;
+      }
+      const f = camera.target.subtract(camera.position);
+      // przód kamery przyciągnięty do najbliższej osi świata
+      const fwd = Math.abs(f.x) > Math.abs(f.z) ? new Vector3(Math.sign(f.x), 0, 0) : new Vector3(0, 0, Math.sign(f.z));
+      const right = new Vector3(fwd.z, 0, -fwd.x);
+      const dir = key === "ArrowUp" ? fwd : key === "ArrowDown" ? fwd.scale(-1) : key === "ArrowRight" ? right : right.scale(-1);
+      editMany(() => parts.forEach((p) => ((p.x = round(p.x + dir.x * step)), (p.z = round(p.z + dir.z * step)))));
     }
 
     // ---------- zapisywanie ----------
@@ -1238,6 +1676,11 @@ export function studioScreen(
       del: fabBtn("🗑", "Usuń", () => remove()),
       props: fabBtn("🔧", "Cechy", () => togglePanel(rightPanel)),
       focus: fabBtn("🎯", "Pokaż", () => focus()),
+      many: fabBtn("➕", "Wiele", () => {
+        addMode = !addMode;
+        updateFab();
+        if (addMode) toast("Stukaj klocki, żeby zaznaczyć kilka naraz. Jeszcze raz „Wiele” = koniec", "info");
+      }),
       undo: fabBtn("↶", "Cofnij", () => doUndo()),
     };
     const fabBar = h(
@@ -1252,17 +1695,69 @@ export function studioScreen(
       fab.del,
       fab.props,
       fab.focus,
+      fab.many,
       h("div", { class: "fab-sep" }),
       fab.undo,
     );
     function updateFab() {
       for (const b of [fab.move, fab.scale, fab.rotate, fab.dup, fab.del, fab.focus]) (b as HTMLButtonElement).disabled = !selected;
       fab.move.classList.toggle("on", !!selected && tool === "move");
+      fab.many.classList.toggle("on", addMode);
       fab.scale.classList.toggle("on", !!selected && tool === "scale");
     }
 
     const hintBar = h("div", { class: "studio-hint" });
-    viewport.append(hintBar, fabBar, speedTip);
+    // pasek stanu: liczba klocków, zaznaczenie i szybkie przyciski widoku
+    const stInfo = h("span", { class: "st-info" });
+    const stBtn = (label: string, title: string, fn: () => void) => h("button", { class: "st-btn", title, onClick: (e: Event) => (e.stopPropagation(), fn()) }, label);
+    const gridFloorBtn = stBtn("▦", "Siatka na ziemi (G)", () => ((showGridFloor = !showGridFloor), updateStatus()));
+    const unhideBtn = stBtn("👁", "Pokaż schowane klocki", () => showAllHidden());
+    const statusBar = h(
+      "div",
+      { class: "studio-status s3d" },
+      stInfo,
+      h("span", { class: "st-sep" }),
+      stBtn("⛶", "Pokaż całą mapę (Home)", () => frameParts(data.parts)),
+      stBtn("⬇", "Widok z góry (T)", () => topView()),
+      gridFloorBtn,
+      unhideBtn,
+      stBtn("⌨", "Skróty klawiszowe (?)", () => openShortcuts()),
+    );
+    function updateStatus() {
+      const n = selRoots().length;
+      stInfo.textContent = `${data.parts.length} klocków` + (n > 1 ? ` · zaznaczono ${n}` : "") + (hiddenIds.size ? ` · schowane ${hiddenIds.size}` : "");
+      gridFloorBtn.classList.toggle("on", showGridFloor);
+      unhideBtn.classList.toggle("hidden", !hiddenIds.size);
+    }
+    function openShortcuts() {
+      const rows: [string, string][] = [
+        ["Klik", "zaznacz klocek"],
+        ["Shift / Ctrl + klik", "dodaj / usuń z zaznaczenia"],
+        ["Przeciągnij po pustym", "zaznacz ramką kilka klocków (z Shift - dodaj)"],
+        ["Ctrl + A", "zaznacz wszystko (bez zablokowanych)"],
+        ["Ctrl + G", "połącz zaznaczone w model"],
+        ["Ctrl + C / V", "kopiuj / wklej (także w innej grze)"],
+        ["Ctrl + D", "duplikuj"],
+        ["Delete", "usuń zaznaczone"],
+        ["1 / 2 / 3 / 4", "wybierz / przesuń / skaluj / obracaj"],
+        ["R", "obróć o 90°"],
+        ["Strzałki", "przesuń o krok siatki (tam, gdzie patrzy kamera); z Shift o 0.25"],
+        ["PageUp / PageDown", "w górę / w dół o krok siatki"],
+        ["End", "postaw na ziemi (na tym, co pod spodem)"],
+        ["L", "zablokuj (nie da się kliknąć - np. podłoga)"],
+        ["H", "schowaj w Studio (np. dach); Shift + H - pokaż wszystkie"],
+        ["F", "pokaż zaznaczone"],
+        ["Home", "pokaż całą mapę"],
+        ["T", "widok z góry"],
+        ["G", "siatka na ziemi"],
+        ["Prawy przycisk", "rozglądanie się"],
+        ["WASD / Q E", "lot kamerą, Shift = szybciej; prawy + kółko = prędkość"],
+        ["Ctrl + Z / Y", "cofnij / ponów"],
+        ["Ctrl + S", "zapisz"],
+      ];
+      modal("Skróty w Studio 3D", h("table", { class: "shortcuts" }, rows.map(([k, v]) => h("tr", null, h("td", null, h("kbd", null, k)), h("td", null, v)))));
+    }
+    viewport.append(hintBar, fabBar, speedTip, marquee, statusBar);
     el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
     engine.resize();
 
@@ -1271,22 +1766,38 @@ export function studioScreen(
       const list = q ? data.parts.filter((p) => p.name.toLowerCase().includes(q)) : data.parts;
       explorer.replaceChildren(
         h("div", { class: "explorer-count" }, `${list.length} z ${data.parts.length} obiektów`),
-        ...list.filter((p) => !p.group || list.find((x) => x.group === p.group) === p).map((p) =>
-          h(
-            "button",
-            {
-              class: "tree-item " + (selected && (selected.id === p.id || (p.group && selected.group === p.group)) ? "active" : ""),
-              onClick: () => {
-                select(p);
-                focus();
+        ...list.filter((p) => !p.group || list.find((x) => x.group === p.group) === p).map((p) => {
+          const members = groupOf(p);
+          const isSel = selParts().includes(p);
+          const hidden = members.every((m) => hiddenIds.has(m.id));
+          const locked = members.every((m) => m.locked);
+          return h(
+            "div",
+            { class: "exp-row" + (hidden ? " dim" : "") },
+            h(
+              "button",
+              {
+                class: "tree-item " + (isSel ? "active" : ""),
+                title: "Klik = zaznacz i pokaż, Shift / Ctrl + klik = dodaj do zaznaczenia",
+                onClick: (e: MouseEvent) => {
+                  if (e.shiftKey || e.ctrlKey || e.metaKey) return select(p, true);
+                  select(p);
+                  focus();
+                },
               },
-            },
-            h("span", { class: "tree-icon", style: `color:${p.color}` }, p.group ? "📦" : SHAPE_ICONS[p.shape]),
-            p.name,
-            p.group ? h("span", { class: "tree-count" }, `(${groupOf(p).length})`) : "",
-            p.kind !== "normal" ? h("span", { class: "tree-kind" }, KIND_LABELS[p.kind]) : null,
-          ),
-        ),
+              h("span", { class: "tree-icon", style: `color:${p.color}` }, p.group ? "📦" : SHAPE_ICONS[p.shape]),
+              p.name,
+              p.group ? h("span", { class: "tree-count" }, `(${members.length})`) : "",
+              p.kind !== "normal" ? h("span", { class: "tree-kind" }, KIND_LABELS[p.kind]) : null,
+            ),
+            h(
+              "button",
+              { class: "exp-ic" + (locked ? " on" : ""), title: locked ? "Odblokuj" : "Zablokuj (nie da się kliknąć na planszy)", onClick: () => editManyParts(members, () => members.forEach((m) => (locked ? delete m.locked : (m.locked = true)))) },
+              locked ? "🔒" : "🔓",
+            ),
+            h("button", { class: "exp-ic" + (hidden ? " on" : ""), title: hidden ? "Pokaż w Studio" : "Schowaj w Studio (w grze dalej widać)", onClick: () => setHidden(members, !hidden) }, hidden ? "🙈" : "👁"),
+          );
+        }),
       );
       explorer.querySelector(".active")?.scrollIntoView({ block: "nearest" });
     }
@@ -1295,7 +1806,78 @@ export function studioScreen(
       return h("label", { class: "prop" }, h("span", null, label), input);
     }
 
+    /** kilka zaznaczonych: wspólne cechy, wyrównanie i równe odstępy */
+    function renderMultiProps() {
+      const roots = selRoots();
+      const parts = selParts();
+      const same = <K extends keyof Part>(k: K) => parts.every((x) => x[k] === parts[0][k]);
+      const al = (axis: "x" | "y" | "z") =>
+        h(
+          "div",
+          { class: "align-row" },
+          h("span", { class: "align-ax" }, axis.toUpperCase()),
+          h("button", { class: "btn small", title: `Do najmniejszego ${axis.toUpperCase()}`, onClick: () => alignSel(axis, "min") }, "⇤ min"),
+          h("button", { class: "btn small", title: "Środki w jednej linii", onClick: () => alignSel(axis, "mid") }, "↔ środek"),
+          h("button", { class: "btn small", title: `Do największego ${axis.toUpperCase()}`, onClick: () => alignSel(axis, "max") }, "max ⇥"),
+        );
+      props.replaceChildren(
+        h("div", { class: "model-banner" }, h("b", null, `Zaznaczono ${roots.length} obiektów`), h("span", null, `${parts.length} klocków - przesuwasz gizmem wszystkie naraz, R obraca całość`)),
+        h(
+          "div",
+          { class: "prop-actions" },
+          h("button", { class: "btn small primary", title: "Ctrl+G", onClick: () => groupSel() }, "📦 Połącz w model"),
+          h("button", { class: "btn small", title: "Ctrl+D", onClick: () => duplicate() }, "⧉ Duplikuj"),
+          h("button", { class: "btn small", onClick: () => arrayDialog() }, "🔁 Powiel"),
+          h("button", { class: "btn small", title: "Ctrl+C", onClick: () => copySelection() }, "📋 Kopiuj"),
+          h("button", { class: "btn small", title: "End", onClick: () => dropSel() }, "⬇ Na ziemię"),
+          h("button", { class: "btn small", title: "L", onClick: () => lockSel() }, "🔒 Zablokuj"),
+          h("button", { class: "btn small", title: "H", onClick: () => setHidden(parts, true) }, "🙈 Schowaj"),
+          h("button", { class: "btn small danger", title: "Delete", onClick: () => remove() }, "🗑 Usuń"),
+        ),
+        h("div", { class: "prop-group" }, "Wyrównaj"),
+        al("x"),
+        al("y"),
+        al("z"),
+        h("div", { class: "prop-group" }, "Równe odstępy"),
+        h(
+          "div",
+          { class: "prop-actions" },
+          h("button", { class: "btn small", onClick: () => distributeSel("x") }, "↔ w osi X"),
+          h("button", { class: "btn small", onClick: () => distributeSel("z") }, "↕ w osi Z"),
+        ),
+        h("div", { class: "prop-group" }, "Wszystkim zaznaczonym"),
+        field("Kolor", h("input", { type: "color", value: parts[0].color, onChange: (e: Event) => editMany(() => parts.forEach((x) => (x.color = (e.target as HTMLInputElement).value))) })),
+        h(
+          "div",
+          { class: "quick-colors" },
+          QUICK_COLORS.map((c) => h("button", { class: "qc", style: `background:${c}`, title: c, onClick: () => editMany(() => parts.forEach((x) => (x.color = c))) })),
+        ),
+        field(
+          "Materiał",
+          h(
+            "select",
+            { onChange: (e: Event) => editMany(() => parts.forEach((x) => (x.material = (e.target as HTMLSelectElement).value as Part["material"]))) },
+            [...(same("material") ? [] : [["", "(różne)"]]), ["plastic", "Plastik"], ["neon", "Neon (świeci)"], ["glass", "Szkło"], ["metal", "Metal"]].map(([v, l]) =>
+              h("option", { value: v, selected: same("material") ? (parts[0].material ?? "plastic") === v : v === "" , disabled: v === "" }, l),
+            ),
+          ),
+        ),
+        field(
+          "Przezroczystość",
+          h("input", { type: "range", min: "0", max: "1", step: "0.05", value: String(parts[0].transparency), onChange: (e: Event) => editMany(() => parts.forEach((x) => (x.transparency = Number((e.target as HTMLInputElement).value)))) }),
+        ),
+        h(
+          "label",
+          { class: "prop check" },
+          h("input", { type: "checkbox", checked: parts.every((x) => x.collide), onChange: (e: Event) => editMany(() => parts.forEach((x) => (x.collide = (e.target as HTMLInputElement).checked && x.kind !== "water"))) }),
+          h("span", null, "Kolizja (nie można przez nie przejść)"),
+        ),
+      );
+    }
+
     function renderProps() {
+      updateFab();
+      if (multi.length > 1) return renderMultiProps();
       const p = selected;
       if (!p) {
         props.replaceChildren(h("p", { class: "muted" }, "Kliknij klocek, żeby go wybrać, albo dodaj nowy przyciskiem „Dodaj”."));
@@ -1358,6 +1940,8 @@ export function studioScreen(
           h("button", { class: "btn small", title: "Ctrl+C - potem wklej w tej albo innej grze (Ctrl+V)", onClick: () => copySelection() }, "📋 Kopiuj"),
           readClip() ? h("button", { class: "btn small", title: "Ctrl+V", onClick: () => paste() }, "📥 Wklej") : "",
           h("button", { class: "btn small", title: "Inni twórcy będą mogli wstawić ten model", onClick: () => shareModel() }, "📤 Udostępnij"),
+          h("button", { class: "btn small", title: "Kilka kopii w rzędzie (płot, schody...)", onClick: () => arrayDialog() }, "🔁 Powiel"),
+          h("button", { class: "btn small", title: "Postaw na tym, co jest pod spodem (End)", onClick: () => dropSel() }, "⬇ Na ziemię"),
         ),
         field(
           members.length > 1 ? "Nazwa modelu" : "Nazwa",
@@ -1488,6 +2072,19 @@ export function studioScreen(
           { class: "prop check" },
           h("input", { type: "checkbox", checked: !!p.spin, onChange: (e: Event) => upd(() => ((e.target as HTMLInputElement).checked ? (p.spin = true) : delete p.spin)) }),
           h("span", null, "🔄 Kręci się (np. moneta)"),
+        ),
+        h(
+          "label",
+          { class: "prop check" },
+          h("input", {
+            type: "checkbox",
+            checked: !!p.locked,
+            onChange: (e: Event) => {
+              const on = (e.target as HTMLInputElement).checked;
+              editManyParts(members, () => members.forEach((m) => (on ? (m.locked = true) : delete m.locked)));
+            },
+          }),
+          h("span", null, "🔒 Zablokowany w Studio (nie da się kliknąć na planszy)"),
         ),
         field(
           "Napis nad klockiem",
@@ -1896,7 +2493,19 @@ export function studioScreen(
       else if (ctrl && e.key === "d") (e.preventDefault(), duplicate());
       else if (ctrl && e.key === "c") (e.preventDefault(), copySelection());
       else if (ctrl && e.key === "v") (e.preventDefault(), paste());
+      else if (ctrl && e.key === "a") (e.preventDefault(), selectMany(data.parts.filter((p) => !p.locked && !hiddenIds.has(p.id))));
+      else if (ctrl && e.key === "g") (e.preventDefault(), groupSel());
+      else if (ctrl) return;
       else if (e.key === "Delete" || e.key === "Backspace") remove();
+      else if (e.key.startsWith("Arrow") || e.key === "PageUp" || e.key === "PageDown") (e.preventDefault(), nudge(e.key, e.shiftKey));
+      else if (e.key === "End") dropSel();
+      else if (e.key === "Home") frameParts(data.parts);
+      else if (e.key === "Escape") select(null);
+      else if (e.key === "?") openShortcuts();
+      else if (e.key === "l" || e.key === "L") lockSel();
+      else if (e.key === "h" || e.key === "H") e.shiftKey ? showAllHidden() : setHidden(selParts(), true);
+      else if (e.key === "t" || e.key === "T") topView();
+      else if (e.key === "g" || e.key === "G") ((showGridFloor = !showGridFloor), updateStatus());
       else if (e.key === "1") setTool("select");
       else if (e.key === "2") setTool("move");
       else if (e.key === "3") setTool("scale");
@@ -1948,6 +2557,7 @@ export function studioScreen(
     renderCharacters();
     renderAnimations();
     setTool("move");
+    updateStatus();
     if (startDirty) changed();
     if (shouldShowGuide("3d")) setTimeout(() => !disposed && openGuide("3d"), 600);
 
