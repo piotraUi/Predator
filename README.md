@@ -101,6 +101,17 @@ Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` 
 
 Ilość monet za granie, dzienny limit i bonus zmienisz w `server/src/config.ts`.
 
+### Serwer w chmurze (Google Cloud, Linux)
+
+Na świeżej maszynie z Ubuntu 24.04 (np. Google Cloud e2-standard-2 w regionie Warszawa, zapora: HTTP i HTTPS):
+
+```bash
+git clone https://TWÓJ_TOKEN@github.com/piotraUi/Predator.git
+sudo bash Predator/scripts/setup-linux-server.sh
+```
+
+Skrypt pyta o nazwę i token **DuckDNS** (darmowy adres `nazwa.duckdns.org`) oraz opcjonalnie o klucz Groq. Instaluje Node.js 22 i Caddy (darmowy certyfikat HTTPS), ustawia serwer jako usługę, która startuje sama po restarcie maszyny, i odświeża adres DuckDNS co 5 minut. Gra jest potem pod `https://nazwa.duckdns.org` (to samo wpisujesz w aplikacjach). Logi: `sudo journalctl -u predator -f`.
+
 ### Aktualizacje i kopie zapasowe
 
 - **Aktualizacja serwera:** Panel admina → **Serwer** → „Sprawdź aktualizacje” → „Aktualizuj i uruchom ponownie”. Serwer robi kopię bazy, pobiera nową wersję (`git pull`) i sam się uruchamia ponownie. Działa, gdy serwer był pobrany przez `git clone` i uruchomiony przez `start-server.bat` / `start-server.sh`. Bez panelu: `update-server.bat` / `update-server.sh`, a potem ponowne uruchomienie serwera.
