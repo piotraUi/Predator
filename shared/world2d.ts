@@ -338,11 +338,32 @@ export interface Box {
   h: number;
 }
 
-/** Prostokąt kolizji instancji w świecie (z uwzględnieniem odbicia w poziomie) */
-export function instBox(i: Pick<Inst2D, "x" | "y" | "w" | "h" | "flip">, o: Pick<Obj2D, "hitbox">): Box {
+/**
+ * Prostokąt kolizji instancji w świecie (z uwzględnieniem odbicia w poziomie i obrotu).
+ * Obrót jest wokół środka instancji, jak przy rysowaniu. Kolizje są prostokątami bez skosu, więc kąt bliski
+ * wielokrotności 90° (np. lekko pochylona deska 339°) liczy się jak równe 0/90/180/270°,
+ * a inne kąty dają prostokąt obejmujący obrócony hitbox.
+ */
+export function instBox(i: Pick<Inst2D, "x" | "y" | "w" | "h" | "flip" | "angle">, o: Pick<Obj2D, "hitbox">): Box {
   const [hx, hy, hw, hh] = o.hitbox;
   const fx = i.flip ? 1 - hx - hw : hx;
-  return { x: i.x + fx * i.w, y: i.y + hy * i.h, w: hw * i.w, h: hh * i.h };
+  const box = { x: i.x + fx * i.w, y: i.y + hy * i.h, w: hw * i.w, h: hh * i.h };
+  if (!i.angle) return box;
+  let a = ((i.angle % 360) + 360) % 360;
+  const snap = Math.round(a / 90) * 90;
+  if (Math.abs(a - snap) <= 30) a = snap % 360;
+  if (a === 0) return box;
+  const cx = i.x + i.w / 2, cy = i.y + i.h / 2;
+  const r = (a * Math.PI) / 180;
+  const cos = Math.cos(r), sin = Math.sin(r);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [px, py] of [[box.x, box.y], [box.x + box.w, box.y], [box.x, box.y + box.h], [box.x + box.w, box.y + box.h]]) {
+    const dx = px - cx, dy = py - cy;
+    const rx = cx + dx * cos - dy * sin, ry = cy + dx * sin + dy * cos;
+    x0 = Math.min(x0, rx); y0 = Math.min(y0, ry); x1 = Math.max(x1, rx); y1 = Math.max(y1, ry);
+  }
+  const k = (v: number) => Math.round(v * 1000) / 1000 || 0;
+  return { x: k(x0), y: k(y0), w: k(x1 - x0), h: k(y1 - y0) };
 }
 
 export const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;

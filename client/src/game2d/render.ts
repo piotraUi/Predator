@@ -172,7 +172,9 @@ export class LevelView {
     for (const i of list) {
       if (i.layer !== "main") continue;
       const p = this.pos(i);
-      if (p.x > vx + vw || p.y > vy + vh || p.x + i.w < vx || p.y + i.h < vy) continue;
+      // obrócony obiekt może sięgać dalej niż przed obrotem (np. deska obrócona o 90° to wysoka ściana)
+      const m = i.angle ? Math.max(i.w, i.h) / 2 : 0;
+      if (p.x - m > vx + vw || p.y - m > vy + vh || p.x + i.w + m < vx || p.y + i.h + m < vy) continue;
       this.drawInst(ctx, W, H, cam, i, t, opts.editor, true);
     }
     for (const e of entities) this.drawEntity(ctx, W, H, cam, e, t);

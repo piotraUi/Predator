@@ -1528,7 +1528,15 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         const r = screenRect(i);
         const o = objById(i.obj);
         const rr = o?.kind === "light" ? { x: r.x - 12, y: r.y - 12, w: 24, h: 24 } : r;
-        const px = sx * dpr, py = sy * dpr;
+        let px = sx * dpr, py = sy * dpr;
+        // obrócony obiekt: punkt kliknięcia obracamy z powrotem wokół środka (jak przy rysowaniu)
+        if (i.angle) {
+          const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+          const a = (-i.angle * Math.PI) / 180;
+          const dx = px - cx, dy = py - cy;
+          px = cx + dx * Math.cos(a) - dy * Math.sin(a);
+          py = cy + dx * Math.sin(a) + dy * Math.cos(a);
+        }
         if (px >= rr.x && px <= rr.x + rr.w && py >= rr.y && py <= rr.y + rr.h) return i;
       }
       return null;

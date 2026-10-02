@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { newBody, NO_INPUT, SolidWorld, stepBody, stepTopDown, type Input2D, type Solid } from "./physics2d.ts";
-import { DEFAULT_PHYSICS_2D } from "./world2d.ts";
+import { DEFAULT_PHYSICS_2D, instBox } from "./world2d.ts";
 
 const P = DEFAULT_PHYSICS_2D;
 const solid = (x: number, y: number, w: number, h: number, type: Solid["type"] = "solid", id = "s" + x + y): Solid => ({ box: { x, y, w, h }, type, obj: "o", id });
@@ -92,4 +92,22 @@ test("widok z góry: ruch w 4 strony bez grawitacji, ściany blokują", () => {
   for (let i = 0; i < 30; i++) stepTopDown(world, b, NO_INPUT, 1 / 60, p);
   assert.equal(b.vx, 0);
   assert.equal(b.vy, 0);
+});
+
+test("obrócona platforma ma obróconą kolizję (obrót wokół środka, jak na ekranie)", () => {
+  const o = { hitbox: [0, 0, 1, 1] as [number, number, number, number] };
+  // deska 200x20 obrócona o 90° staje się pionową ścianą 20x200 w tym samym środku
+  assert.deepEqual(instBox({ x: 0, y: 0, w: 200, h: 20, angle: 90 }, o), { x: 90, y: -90, w: 20, h: 200 });
+  assert.deepEqual(instBox({ x: 0, y: 0, w: 200, h: 20, angle: 270 }, o), { x: 90, y: -90, w: 20, h: 200 });
+  // 180° i lekkie pochylenie (339°) - dalej pozioma deska
+  assert.deepEqual(instBox({ x: 0, y: 0, w: 200, h: 20, angle: 180 }, o), { x: 0, y: 0, w: 200, h: 20 });
+  assert.deepEqual(instBox({ x: 0, y: 0, w: 200, h: 20, angle: 339 }, o), { x: 0, y: 0, w: 200, h: 20 });
+  // kolce prawie pionowo (89°) - jak 90°
+  assert.deepEqual(instBox({ x: 0, y: 0, w: 40, h: 20, angle: 89 }, o), { x: 10, y: -10, w: 20, h: 40 });
+  // gracz nie stoi na miejscu, gdzie deska leżała przed obrotem
+  const wall = instBox({ x: 0, y: 0, w: 200, h: 20, angle: 90 }, o);
+  const world = new SolidWorld([{ box: wall, type: "solid", obj: "o", id: "w" }]);
+  const b = newBody({ x: 160, y: -60, w: 20, h: 40 });
+  run(world, b, 60);
+  assert.ok(b.box.y > 0, "spada obok ściany, a nie stoi w powietrzu");
 });
