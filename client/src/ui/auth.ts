@@ -11,7 +11,7 @@ export function authScreen(root: HTMLElement, p: { unreachable?: boolean } | und
   let disposed = false;
   let showServer = needsServerAddress && !!p?.unreachable;
   const server = h("input", {
-    placeholder: "Adres serwera, np. 192.168.1.10:2567",
+    placeholder: "Adres serwera, np. playpredator.duckdns.org",
     value: getServerUrl().replace(/^http:\/\//, ""),
     autocomplete: "url",
   });

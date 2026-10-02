@@ -129,7 +129,7 @@ Skrypt pyta o nazwę i token **DuckDNS** (darmowy adres `nazwa.duckdns.org`) ora
 
 ## Aplikacje: EXE, APK i iOS
 
-Aplikacje łączą się z Twoim serwerem. Przy pierwszym uruchomieniu wpisujesz jego adres, np. `192.168.1.10:2567`.
+Aplikacje same łączą się z serwerem **https://playpredator.duckdns.org** (adres w `client/src/api.ts`, `DEFAULT_SERVER`). Inny serwer wpisujesz na ekranie logowania, np. `192.168.1.10:2567` albo `mojserwer.duckdns.org` (nazwa domeny = https).
 
 ### Najprościej: GitHub Actions (nie potrzebujesz Maca)
 

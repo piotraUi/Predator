@@ -42,17 +42,31 @@ const write = (k: string, v: string | null) => {
 /** W aplikacji (exe/APK/iOS) gracz wpisuje adres serwera. W przeglądarce to adres strony. */
 export const needsServerAddress = __APP_MODE__;
 /** serwer, z którym aplikacja łączy się sama przy starcie */
-export const DEFAULT_SERVER = "http://93.105.244.219:2567";
+export const DEFAULT_SERVER = "https://playpredator.duckdns.org";
+/** stare domyślne adresy - aplikacja, która je zapamiętała, przechodzi na nowy serwer */
+const OLD_DEFAULT_SERVERS = ["http://93.105.244.219:2567"];
 
 export function getServerUrl(): string {
-  if (__APP_MODE__) return read(LS_SERVER) || DEFAULT_SERVER;
+  if (__APP_MODE__) {
+    const saved = read(LS_SERVER);
+    if (saved && OLD_DEFAULT_SERVERS.includes(saved)) {
+      write(LS_SERVER, DEFAULT_SERVER);
+      return DEFAULT_SERVER;
+    }
+    return saved || DEFAULT_SERVER;
+  }
   if (import.meta.env.DEV) return `${location.protocol}//${location.hostname}:2567`;
   return location.origin;
 }
 
 export function setServerUrl(url: string) {
   let u = url.trim().replace(/\/+$/, "");
-  if (u && !/^https?:\/\//.test(u)) u = "http://" + u;
+  if (u && !/^https?:\/\//.test(u)) {
+    // nazwa domeny (np. playpredator.duckdns.org) = https; adres IP / localhost / z portem = http na porcie gry
+    const host = u.split("/")[0];
+    const plain = /^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(host) || /^localhost(:\d+)?$/i.test(host) || /:\d+$/.test(host) || !host.includes(".");
+    u = (plain ? "http://" : "https://") + u;
+  }
   if (u && !/:\d+$/.test(u) && !/^https:/.test(u)) u += ":2567";
   write(LS_SERVER, u);
   return u;
