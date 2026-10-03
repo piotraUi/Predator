@@ -385,13 +385,22 @@ async function aiTab(el: HTMLElement) {
   const s = await run(adminApi.ai());
   if (!s) return;
   const redraw = () => (el.replaceChildren(), aiTab(el));
-  const fileIn = h("input", { type: "file", accept: ".json,application/json", class: "hidden" });
+  // bez filtra typu: Android nie zna typu .json i wyszarza takie pliki w wyborze plików
+  const fileIn = h("input", { type: "file", class: "hidden" });
   fileIn.addEventListener("change", async () => {
     const f = fileIn.files?.[0];
     if (!f) return;
+    fileIn.value = "";
     if (f.size > 32_000) return toast("To za duży plik - klucz konta usługi ma ok. 2-3 KB", "error");
     if ((await run(adminApi.uploadAiKey(await f.text()), "Klucz Gemini zapisany ✔")) !== null) redraw();
   });
+  // telefon: zawartość pliku można też wkleić (otwórz plik w notatkach / przeglądarce, Zaznacz wszystko, Kopiuj)
+  const pasteIn = h("textarea", { rows: 3, placeholder: '…albo wklej tu całą zawartość pliku JSON (zaczyna się od { "type": "service_account" …)', autocomplete: "off", spellcheck: false });
+  const pasteBtn = h("button", { class: "btn small", onClick: async () => {
+    const t = pasteIn.value.trim();
+    if (!t) return toast("Wklej zawartość pliku JSON", "error");
+    if ((await run(adminApi.uploadAiKey(t), "Klucz Gemini zapisany ✔")) !== null) redraw();
+  } }, "📋 Zapisz wklejony klucz");
   const model = h("input", { value: s.model, placeholder: "gemini-3.8-flash" });
   const loc = h("input", { value: s.location, placeholder: "global" });
   const limit = h("input", { type: "number", min: "0", value: String(s.dailyLimit) });
@@ -412,6 +421,7 @@ async function aiTab(el: HTMLElement) {
             { class: "row wrap" },
             fileIn,
             h("button", { class: "btn primary small", onClick: () => fileIn.click() }, s.ready ? "📄 Wgraj nowy plik JSON" : "📄 Wgraj plik klucza JSON"),
+            h("div", { class: "field", style: "width:100%" }, pasteIn, pasteBtn),
             s.ready
               ? h(
                   "button",

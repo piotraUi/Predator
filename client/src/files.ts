@@ -39,12 +39,22 @@ export async function pickDataUrl(ext: string[]): Promise<{ name: string; dataUr
   return { name: f.name, dataUrl, size: f.size };
 }
 
+/**
+ * Filtr typów dla okna wyboru pliku. Android nie zna własnych rozszerzeń (.pgame, .json...) i wyszarza
+ * takie pliki, więc tam pokazujemy wszystkie pliki (obrazki i dźwięki filtrujemy dalej normalnie).
+ */
+const MEDIA_EXT = /^(\.(png|jpe?g|gif|webp|svg|bmp|mp3|wav|ogg|m4a|aac|flac|webm|mp4)|image\/.*|audio\/.*|video\/.*)$/i;
+function acceptFor(ext: string[]) {
+  const android = /android/i.test(navigator.userAgent);
+  return android && ext.some((e) => !MEDIA_EXT.test(e)) ? "" : ext.join(",");
+}
+
 /** Wybór jednego albo wielu plików z dysku (obrazki, dźwięki, zip) */
 export function pickFiles(ext: string[], multiple = false): Promise<File[]> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ext.join(",");
+    input.accept = acceptFor(ext);
     input.multiple = multiple;
     input.style.display = "none";
     input.addEventListener("change", () => {
@@ -64,7 +74,7 @@ function pickBrowserFile(ext: string[]): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ext.join(",");
+    input.accept = acceptFor(ext);
     input.style.display = "none";
     input.addEventListener("change", () => {
       resolve(input.files?.[0] ?? null);
