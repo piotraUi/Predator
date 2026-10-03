@@ -82,6 +82,15 @@ export class GuiOverlay {
     return this.visible().some((g) => g.modal);
   }
 
+  /**
+   * Gdzie pad chodzi po przyciskach: okno przyciemniające (menu, sklep), a gdy all = true
+   * (miejsce / poziom tylko na GUI) - każde otwarte GUI z przyciskami.
+   */
+  padRoot(all = false): HTMLElement | null {
+    const roots = [...this.el.querySelectorAll<HTMLElement>(".gui-root")].filter((r) => r.querySelector("button"));
+    return roots.reverse().find((r) => r.classList.contains("gui-modal")) ?? (all ? (roots.length > 1 ? this.el : (roots[0] ?? null)) : null);
+  }
+
   private visible() {
     return this.guis.filter((g) => this.open.has(g.id) && (!g.where || g.where === this.where));
   }

@@ -332,6 +332,24 @@ W Studio, w panelu **„Narzędzia i bronie”**, kliknij **+ Nowe** i wybierz g
 | Czułość kamery | ⚙ w menu albo ☰ → Ustawienia (suwak) | to samo |
 | Konsola skryptów (twórca) | F9 | 🖥 |
 
+### Pad (Xbox, PlayStation 4, PlayStation 5)
+
+Pady działają w przeglądarce, w exe i w aplikacjach na Androida i iOS (Bluetooth albo kabel). Obsługiwane są pady Xbox (One / Series), **PlayStation 5 (DualSense i DualSense Edge)**, PlayStation 4 (DualShock 4) i inne. Gdy przeglądarka nie zna układu przycisków DualSense / DualShock (np. Firefox), gra przestawia je sama. Po podłączeniu pada w grze pojawia się podpowiedź, a przy obrażeniach pad wibruje (gdy przeglądarka na to pozwala).
+
+| | Xbox | PlayStation |
+|---|---|---|
+| Ruch | lewa gałka (w 2D też krzyżak) | lewa gałka (w 2D też krzyżak) |
+| Skok | A | ✕ |
+| Kamera (3D) | prawa gałka | prawa gałka |
+| Użyj narzędzia (3D) | RT (trzymaj = seria) | R2 |
+| Zmiana narzędzia (3D) | LB / RB, krzyżak ← → | L1 / R1, krzyżak ← → |
+| Przybliżenie (3D) | krzyżak ↑ ↓, prawa gałka (klik) = pierwsza osoba | krzyżak ↑ ↓, R3 = pierwsza osoba |
+| Wsiądź / wysiądź (3D) | X | □ |
+| W dół w wodzie (3D) | B | ○ |
+| Emotki (3D) | Y | △ |
+| Menu | Menu (☰) | Options |
+| W menu i oknach GUI | krzyżak / gałka wybiera, A klika, B zamyka | krzyżak / gałka wybiera, ✕ klika, ○ zamyka |
+
 **Studio:** 1/2/3 to narzędzia wybierz/przesuń/skaluj, R obraca, F pokazuje zaznaczony klocek, Delete usuwa, Ctrl+D duplikuje, Ctrl+Z/Y cofa i ponawia, Ctrl+S zapisuje. Kamera jak w Roblox Studio: przytrzymany **prawy przycisk** rozgląda się w miejscu, WASD i Q/E latają, **środkowy przycisk** przesuwa widok, kółko przybliża.
 
 ## Dla programistów

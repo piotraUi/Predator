@@ -1,5 +1,6 @@
 // Ekran gry 2D: własna postać (fizyka u gracza), inni gracze z serwera, potwory, monety,
 // checkpointy, śmierć i odradzanie, kamera, dźwięki, czat, sterowanie dotykowe i pad.
+import { PadMenuNav } from "../engine/gamepad.ts";
 import { newBody, NO_INPUT, SolidWorld, stepBody, stepTopDown, type Body2D, type Input2D, type Solid } from "../../../shared/physics2d.ts";
 import type { Cmd2D, Init2D, LevelSync } from "../../../shared/sim/sim2d.ts";
 import type { ChatMsg } from "../../../shared/types.ts";
@@ -67,9 +68,10 @@ export function play2dScreen(
   const view = new LevelView(w, assets);
   const objs = new Map(w.objects.map((o) => [o.id, o]));
   const chars = new Map(w.characters.map((c) => [c.id, c]));
-  const input = new Input(wrap);
+  const input = new Input(wrap, (k) => (k === "ps" ? "✕ skok, krzyżak / gałka ruch, Options menu" : "A skok, krzyżak / gałka ruch, Menu = menu"));
   // joystick jak krzyżak: pchnięcie w dół/górę nie rusza postaci w bok (patrzenie na beczce, drabiny)
   input.joyFourWay = true;
+  const padNav = new PadMenuNav();
   let disposed = false;
   let leaving = false;
   const back = () => go(params.back?.screen ?? "home", params.back?.params);
@@ -494,17 +496,8 @@ export function play2dScreen(
     let up = input.moveY > 0.45;
     let down = input.moveY < -0.45;
     let jump = input.jump;
-    // pad (Xbox / PlayStation)
-    const pads = navigator.getGamepads?.() ?? [];
-    for (const p of pads) {
-      if (!p) continue;
-      const ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;
-      left ||= ax < -0.4 || !!p.buttons[14]?.pressed;
-      right ||= ax > 0.4 || !!p.buttons[15]?.pressed;
-      up ||= ay < -0.5 || !!p.buttons[12]?.pressed;
-      down ||= ay > 0.5 || !!p.buttons[13]?.pressed;
-      jump ||= !!p.buttons[0]?.pressed;
-    }
+    // pad (Xbox / PlayStation) jest już w input; Options / Menu i chodzenie po menu padem
+    if (padMenu()) return { ...NO_INPUT };
     if (!controls || dead > 0 || guiLayer.modal) return { ...NO_INPUT, right: autoWalk > 0, left: autoWalk < 0 };
     if (autoWalk) return { ...NO_INPUT, right: autoWalk > 0, left: autoWalk < 0 };
     return { left, right, up, down, jump };
@@ -661,8 +654,26 @@ export function play2dScreen(
     draw();
   }
 
+  /** pad: Start / Options = menu; w menu i oknach GUI krzyżak wybiera, A / ✕ klika, B / ○ zamyka. true = pad steruje menu */
+  function padMenu() {
+    const pad = input.pad;
+    if (!pad.connected) return padNav.clear(), false;
+    if (pad.pressed.start) {
+      renderMenu();
+      menu.classList.toggle("hidden");
+    }
+    const menuOpen = !menu.classList.contains("hidden");
+    const root = menuOpen ? menu : guiLayer.padRoot(!!level.menu);
+    padNav.update(pad, root, menuOpen ? () => menu.classList.add("hidden") : undefined);
+    return !!root;
+  }
+
   function update(dt: number) {
-    if (level.menu) return updateMenuLevel();
+    if (level.menu) {
+      input.update();
+      padMenu();
+      return updateMenuLevel();
+    }
     const inp = readInput();
     if (forcedJump) {
       inp.jump = true;

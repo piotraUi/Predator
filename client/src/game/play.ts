@@ -1,4 +1,5 @@
 // Ekran gry - łączy się z serwerem, steruje postacią i pokazuje innych graczy.
+import { PadMenuNav, type PadState } from "../engine/gamepad.ts";
 import { GuiOverlay } from "../ui/guiOverlay.ts";
 import { MAIN_PLACE } from "../../../shared/places.ts";
 import {
@@ -121,7 +122,11 @@ export function playScreen(
   const { engine, dispose: disposeEngine } = createEngine(canvas);
   const scene = new Scene(engine);
   const gui = AdvancedDynamicTexture.CreateFullscreenUI("ui", true, scene);
-  const input = new Input(wrap);
+  const input = new Input(wrap, (k) =>
+    k === "ps" ? "✕ skok, R2 narzędzie, L1/R1 zmiana, prawa gałka kamera, □ wsiądź, △ emotki, Options menu" : "A skok, RT narzędzie, LB/RB zmiana, prawa gałka kamera, X wsiądź, Y emotki, Menu = menu",
+  );
+  input.padDpadMoves = false;
+  const padNav = new PadMenuNav();
   let room: GameConnection | null = null;
   let leaving = false;
   let disposed = false;
@@ -593,6 +598,7 @@ export function playScreen(
       hpFill.style.width = k * 100 + "%";
       hpFill.style.background = k > 0.5 ? "#2ecc71" : k > 0.25 ? "#f1c40f" : "#e74c3c";
       hpText.textContent = String(Math.round(hp));
+      if (hp < lastHp) input.pads.rumble(hp > 0 ? 0.5 : 1, hp > 0 ? 0.3 : 0.8, hp > 0 ? 160 : 450);
       if (hp < lastHp && hp > 0) {
         local.flash();
         hurt.classList.remove("on");
@@ -1043,15 +1049,54 @@ export function playScreen(
       if (l.error) consoleBox.classList.remove("hidden");
     });
 
+    // ---------- pad (Xbox / PlayStation) ----------
+    /** true = pad steruje teraz menu (postać stoi) */
+    let zoomRepeat = 0;
+    function handlePad(pad: PadState, dt: number): boolean {
+      if (pad.pressed.start) menu.classList.toggle("hidden");
+      if (pad.pressed.y && !guiPlace) emoteMenu.classList.toggle("hidden");
+      const menuOpen = !menu.classList.contains("hidden");
+      const emotesOpen = !emoteMenu.classList.contains("hidden");
+      const root = menuOpen ? menu : emotesOpen ? emoteMenu : guiLayer.padRoot(guiPlace);
+      padNav.update(pad, root, menuOpen ? () => menu.classList.add("hidden") : emotesOpen ? () => emoteMenu.classList.add("hidden") : undefined);
+      if (root || guiPlace) return !!root;
+      // prawa gałka: kamera (jak myszka)
+      const look = 2.8 * dt;
+      camera.alpha -= pad.rx * look;
+      const b = camera.beta - pad.ry * look * 0.8 * (settings.invertY ? -1 : 1);
+      camera.beta = Math.min(camera.upperBetaLimit ?? Math.PI, Math.max(camera.lowerBetaLimit ?? 0, b));
+      // RT / R2: narzędzie (trzymanie = co odnowienie), L1 / R1 i krzyżak w bok: zmiana narzędzia
+      if (pad.down.rt) useTool();
+      if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
+      if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
+      // X / □: wsiądź / wysiądź
+      if (pad.pressed.x) myRide ? leaveSeat(true) : trySit();
+      // krzyżak góra / dół: przybliżenie kamery (do pierwszej osoby), R3: pierwsza osoba i z powrotem
+      const zoom = pad.down.up ? -1 : pad.down.down ? 1 : 0;
+      const now = performance.now();
+      if (zoom && (pad.pressed.up || pad.pressed.down || now > zoomRepeat)) {
+        zoomRepeat = now + (pad.pressed.up || pad.pressed.down ? 350 : 90);
+        camera.radius = Math.min(camera.upperRadiusLimit ?? 60, Math.max(camera.lowerRadiusLimit ?? 0.5, camera.radius * (zoom < 0 ? 0.85 : 1.18)));
+      }
+      if (pad.pressed.rs) camera.radius = fp ? 12 : 1;
+      return false;
+    }
+
     // ---------- pętla gry ----------
     scene.onBeforeRenderObservable.add(() => {
       const dt = Math.min(engine.getDeltaTime() / 1000, 0.1);
       if (guiPlace) {
+        input.update();
+        if (input.pad.connected) handlePad(input.pad, dt);
         camera.alpha += dt * 0.05;
         for (const rm of remotes.values()) rm.model.root.setEnabled(false);
         return;
       }
       input.update();
+      if (input.pad.connected && handlePad(input.pad, dt)) {
+        input.moveX = input.moveY = 0;
+        input.jump = false;
+      }
       // otwarte menu / okienko GUI: postać stoi
       if (guiLayer.modal) {
         input.moveX = input.moveY = 0;

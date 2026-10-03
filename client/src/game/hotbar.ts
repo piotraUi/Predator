@@ -72,6 +72,15 @@ export class Hotbar {
     cd.style.transform = "scaleY(0)";
   }
 
+  /** pad (L1 / R1): następne / poprzednie narzędzie, po ostatnim - puste ręce */
+  cycle(dir: 1 | -1) {
+    if (!this.tools.length) return;
+    const i = this.tools.findIndex((t) => t.id === this.selected);
+    const n = this.tools.length + 1; // ostatnia pozycja = bez narzędzia
+    const next = ((i < 0 ? this.tools.length : i) + dir + n) % n;
+    this.select(next === this.tools.length ? null : this.tools[next].id);
+  }
+
   indexOf(toolId: string) {
     return this.tools.findIndex((t) => t.id === toolId);
   }

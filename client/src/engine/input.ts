@@ -1,5 +1,7 @@
-// Sterowanie: klawiatura (WASD / strzałki / spacja) + joystick i przycisk skoku na ekranie dotykowym.
+// Sterowanie: klawiatura (WASD / strzałki / spacja), joystick i przycisk skoku na ekranie dotykowym
+// oraz pady Xbox / PlayStation (lewa gałka i krzyżak = ruch, A / ✕ = skok, B / ○ = w dół).
 import { h, isTouch } from "../ui/dom.ts";
+import { Gamepads, type PadKind } from "./gamepad.ts";
 
 export class Input {
   /** kierunek ruchu: x = prawo, y = przód (od -1 do 1) */
@@ -13,10 +15,15 @@ export class Input {
   private joy = { x: 0, y: 0 };
   /** joystick na ekranie działa jak krzyżak: liczy się tylko mocniejszy kierunek (gry 2D, jak w GDevelopie) */
   joyFourWay = false;
+  /** krzyżak pada rusza postacią (2D); w 3D krzyżak ma inne zadania (przybliżenie, narzędzia) */
+  padDpadMoves = true;
   private cleanup: (() => void)[] = [];
   readonly touchUi: HTMLElement | null = null;
+  /** pad - stan z tej klatki (update) */
+  readonly pads: Gamepads;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, padHint?: (kind: PadKind) => string) {
+    this.pads = new Gamepads(padHint);
     const down = (e: KeyboardEvent) => {
       if (!this.enabled || (e.target as HTMLElement)?.tagName === "INPUT") return;
       this.keys.add(e.code);
@@ -90,7 +97,13 @@ export class Input {
     }
   }
 
+  /** stan pada odczytany w update() */
+  get pad() {
+    return this.pads.state;
+  }
+
   update() {
+    const pad = this.pads.poll();
     if (!this.enabled) {
       this.moveX = this.moveY = 0;
       this.jump = false;
@@ -105,8 +118,16 @@ export class Input {
       if (Math.abs(jy) > Math.abs(jx)) jx = 0;
       else jy = 0;
     }
-    x += jx;
-    y += jy;
+    // pad: lewa gałka i krzyżak (gałka w górę = do przodu)
+    const dp = this.padDpadMoves;
+    let px = pad.lx + (dp && pad.down.right ? 1 : 0) - (dp && pad.down.left ? 1 : 0);
+    let py = -pad.ly + (dp && pad.down.up ? 1 : 0) - (dp && pad.down.down ? 1 : 0);
+    if (this.joyFourWay && (px || py)) {
+      if (Math.abs(py) > Math.abs(px)) px = 0;
+      else py = 0;
+    }
+    x += jx + px;
+    y += jy + py;
     const len = Math.hypot(x, y);
     if (len > 1) {
       x /= len;
@@ -114,11 +135,12 @@ export class Input {
     }
     this.moveX = x;
     this.moveY = y;
-    this.jump = k.has("Space") || k.has("TouchJump");
-    this.down = k.has("KeyC") || k.has("ControlLeft");
+    this.jump = k.has("Space") || k.has("TouchJump") || pad.down.a;
+    this.down = k.has("KeyC") || k.has("ControlLeft") || pad.down.b;
   }
 
   dispose() {
+    this.pads.dispose();
     this.cleanup.forEach((f) => f());
     this.touchUi?.remove();
   }
