@@ -9,7 +9,7 @@ import { adminLog, groups, mutes, reports } from "./social.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings } from "./moderation.ts";
-import { deleteServiceAccount, gemini, geminiReady, geminiStatus, responseText, saveServiceAccount } from "./gemini.ts";
+import { deleteServiceAccount, gemini, geminiFastModel, geminiModel, geminiReady, geminiStatus, responseText, saveServiceAccount } from "./gemini.ts";
 import { assistantStats } from "./assistant.ts";
 import { BACKUP_DIR, BACKUP_NAME_RE, backupNow, checkUpdates, isGitRepo, listBackups, runUpdate, supervised, updateState } from "./maintenance.ts";
 
@@ -329,6 +329,11 @@ admin.put("/ai", (req, res) => {
     if (m && !/^[a-z0-9][a-z0-9.\-_@]{1,80}$/i.test(m)) return fail(res, 400, "Zła nazwa modelu");
     settings.set("gemini_model", m || null);
   }
+  if (typeof b.fastModel === "string") {
+    const m = b.fastModel.trim();
+    if (m && !/^[a-z0-9][a-z0-9.\-_@]{1,80}$/i.test(m)) return fail(res, 400, "Zła nazwa modelu");
+    settings.set("gemini_fast_model", m || null);
+  }
   if (typeof b.location === "string") {
     const l = b.location.trim();
     if (l && !/^[a-z0-9-]{2,40}$/.test(l)) return fail(res, 400, "Zły region");
@@ -336,16 +341,21 @@ admin.put("/ai", (req, res) => {
   }
   if (typeof b.assistant === "boolean") settings.set("ai_assistant", b.assistant ? "1" : "0");
   if (typeof b.dailyLimit === "number") settings.set("ai_daily_limit", String(Math.max(0, Math.min(100_000, Math.round(b.dailyLimit)))));
-  log(req, "Ustawienia AI zmienione", "", JSON.stringify({ model: b.model, location: b.location, assistant: b.assistant, dailyLimit: b.dailyLimit }));
+  log(req, "Ustawienia AI zmienione", "", JSON.stringify({ model: b.model, fastModel: b.fastModel, location: b.location, assistant: b.assistant, dailyLimit: b.dailyLimit }));
   res.json(aiStatus());
 });
 
 /** próba: krótkie pytanie do Gemini (czy klucz, model i region działają) */
-admin.post("/ai/test", async (_req, res) => {
+admin.post("/ai/test", async (req, res) => {
   if (!geminiReady()) return fail(res, 400, "Najpierw wgraj plik klucza JSON");
+  const fast = req.body?.fast === true;
   const t0 = Date.now();
   try {
-    const r = await gemini({ contents: [{ role: "user", parts: [{ text: "Odpowiedz jednym zdaniem po polsku: kim jesteś?" }] }], generationConfig: { maxOutputTokens: 200 } }, 30_000);
+    const r = await gemini(
+      { contents: [{ role: "user", parts: [{ text: "Odpowiedz jednym zdaniem po polsku: kim jesteś?" }] }], generationConfig: { maxOutputTokens: 200 } },
+      30_000,
+      fast ? geminiFastModel() : geminiModel(),
+    );
     res.json({ ok: true, text: responseText(r).slice(0, 300), ms: Date.now() - t0 });
   } catch (e) {
     fail(res, 502, (e as Error).message);

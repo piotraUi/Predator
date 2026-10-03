@@ -402,6 +402,7 @@ async function aiTab(el: HTMLElement) {
     if ((await run(adminApi.uploadAiKey(t), "Klucz Gemini zapisany ✔")) !== null) redraw();
   } }, "📋 Zapisz wklejony klucz");
   const model = h("input", { value: s.model, placeholder: "gemini-3.8-flash" });
+  const fastModel = h("input", { value: s.fastModel, placeholder: "gemini-3.5-flash-lite" });
   const loc = h("input", { value: s.location, placeholder: "global" });
   const limit = h("input", { type: "number", min: "0", value: String(s.dailyLimit) });
   const testOut = h("div", { class: "muted small" });
@@ -453,21 +454,24 @@ async function aiTab(el: HTMLElement) {
       "div",
       { class: "adm-box" },
       h("h3", null, "⚙️ Model"),
-      h("label", { class: "field" }, h("span", null, "Nazwa modelu (np. gemini-3.8-flash)"), model),
+      h("label", { class: "field" }, h("span", null, "Model główny: asystent, gry, obrazki, dźwięki (np. gemini-3.8-flash)"), model),
+      h("label", { class: "field" }, h("span", null, "Szybki model: czat i nicki (np. gemini-3.5-flash-lite)"), fastModel),
       h("label", { class: "field" }, h("span", null, "Region (global działa dla najnowszych modeli)"), loc),
       h(
         "div",
         { class: "row wrap" },
-        h("button", { class: "btn small primary", onClick: async () => (await run(adminApi.setAi({ model: model.value, location: loc.value }), "Zapisano")) && redraw() }, "Zapisz"),
+        h("button", { class: "btn small primary", onClick: async () => (await run(adminApi.setAi({ model: model.value, fastModel: fastModel.value, location: loc.value }), "Zapisano")) && redraw() }, "Zapisz"),
         h(
           "button",
           {
             class: "btn small",
             disabled: !s.ready,
             onClick: async () => {
-              testOut.textContent = "⏳ Pytam Gemini…";
-              const r = await run(adminApi.testAi());
-              testOut.textContent = r ? `✅ Działa (${(r.ms / 1000).toFixed(1)} s): „${r.text}”` : "❌ Nie działa - zobacz komunikat";
+              testOut.textContent = "⏳ Pytam oba modele…";
+              const main = await run(adminApi.testAi());
+              const fast = await run(adminApi.testAi(true));
+              const line = (name: string, r: typeof main) => (r ? `✅ ${name} działa (${(r.ms / 1000).toFixed(1)} s): „${r.text}”` : `❌ ${name} nie działa - zobacz komunikat`);
+              testOut.replaceChildren(line("Główny", main), h("br"), line("Szybki", fast));
             },
           },
           "🧪 Sprawdź połączenie",
@@ -512,7 +516,7 @@ async function moderationTab(el: HTMLElement) {
         "p",
         { class: "muted small" },
         s.provider === "gemini"
-          ? `Sprawdza Gemini (${s.textModel}): czat (w grach, prywatny i w grupach), nicki i nazwy, a w opublikowanych grach teksty, skrypty, obrazki i dźwięki / piosenki (Gemini słucha nagrań sam). Klucz Gemini ustawiasz w zakładce AI. Gdy AI nie działa, zostaje zwykły filtr słów.`
+          ? `Sprawdza Gemini: czat i nicki szybki model ${s.fastModel}, reszta ${s.textModel}. Sprawdzane są czat (w grach, prywatny i w grupach), nicki i nazwy, a w opublikowanych grach teksty, skrypty, obrazki i dźwięki / piosenki (Gemini słucha nagrań sam). Klucz Gemini ustawiasz w zakładce AI. Gdy AI nie działa, zostaje zwykły filtr słów.`
           : `Sprawdza Groq: czat (w grach, prywatny i w grupach), nicki i nazwy, a opublikowane gry: teksty, skrypty, obrazki i dźwięki / piosenki (Whisper zamienia je na tekst). Model tekstu i obrazków: ${s.textModel}, dźwięku: ${s.audioModel}. Gdy Groq nie działa, zostaje zwykły filtr słów.`,
       ),
       h(

@@ -96,6 +96,12 @@ test("moderacja przez Gemini: teksty partiami, odrzucona partia sprawdzana po je
   assert.equal(calls.at(-1)!.body!.generationConfig!.responseMimeType, "application/json");
   assert.ok(calls.at(-1)!.body!.systemInstruction!.parts[0].text.includes("moderatorem"));
 
+  // czat (pilne) idzie szybkim modelem bez myślenia
+  await mod.checkTexts(["wiadomość z czatu"], 3000, "high");
+  assert.match(calls.at(-1)!.url, /models\/gemini-3\.5-flash-lite:generateContent$/);
+  assert.equal((calls.at(-1)!.body!.generationConfig!.thinkingConfig as { thinkingLevel: string }).thinkingLevel, "minimal");
+  assert.match(calls.at(-2)!.url, /models\/gemini-3\.8-flash:generateContent$/);
+
   const v2 = await mod.checkTexts(["ok tekst A", "BLOKUJ to"]);
   assert.deepEqual(v2.map((x) => x.ok), [true, false]);
   assert.match(v2[1].reason, /filtr bezpieczeństwa/);

@@ -63,7 +63,7 @@ Gemini działa przez Google Cloud (Vertex AI). Admin wgrywa **plik klucza JSON**
 3. To konto → **Keys → Add key → Create new key → JSON** - pobierze się plik.
 4. Panel admina → AI → **Wgraj plik klucza JSON** → **Sprawdź połączenie**.
 
-Plik zostaje tylko na serwerze (`data/gemini-key.json`, prawa 600) i nie trafia do aplikacji ani do repozytorium. W tej samej zakładce: nazwa modelu (domyślnie `gemini-3.8-flash`), region, włączanie asystenta, dzienny limit kroków na twórcę (admini bez limitu) i dzisiejsze zużycie. Ten sam klucz przełącza moderację na Gemini.
+Plik zostaje tylko na serwerze (`data/gemini-key.json`, prawa 600) i nie trafia do aplikacji ani do repozytorium. W tej samej zakładce: model główny (domyślnie `gemini-3.8-flash`), szybki model do czatu i nicków (domyślnie `gemini-3.5-flash-lite`), region, włączanie asystenta, dzienny limit kroków na twórcę (admini bez limitu) i dzisiejsze zużycie. Ten sam klucz przełącza moderację na Gemini.
 
 ## Uruchomienie serwera
 
@@ -116,7 +116,8 @@ Te same gry są w folderze `games/` jako pliki `.pgame` (`npm run export-games` 
 | `DATA_DIR` | `./data` | gdzie zapisywać bazę danych (zrób kopię tego folderu!) |
 | `PREDATOR_PASSWORD` | (losowe) | hasło konta **Predator** |
 | `GOOGLE_APPLICATION_CREDENTIALS` | (brak) | ścieżka do pliku klucza Gemini (JSON konta usługi); zwykle wygodniej wgrać plik w panelu admina → AI |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | model Gemini (można też zmienić w panelu admina → AI) |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | główny model Gemini: asystent, gry, obrazki, dźwięki (można też zmienić w panelu admina → AI) |
+| `GEMINI_FAST_MODEL` | `gemini-3.5-flash-lite` | szybki model do czatu i nicków (bez „myślenia”) |
 | `GEMINI_LOCATION` | `global` | region Vertex AI |
 | `GROQ_API_KEY` | (brak) | klucz Groq do moderacji AI (można też wpisać w panelu admina → Moderacja) |
 | `GROQ_MODEL` | `qwen/qwen3.8-27b` | model do sprawdzania tekstu i obrazków |

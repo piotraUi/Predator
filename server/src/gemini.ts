@@ -9,6 +9,8 @@ import { settings } from "./settings.ts";
 
 const KEY_FILE = path.join(config.dataDir, "gemini-key.json");
 export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+/** szybki model do czatu i nicków (gracz nie może czekać) */
+export const DEFAULT_GEMINI_FAST_MODEL = "gemini-3.5-flash-lite";
 
 interface ServiceAccount {
   type: string;
@@ -75,6 +77,7 @@ export function deleteServiceAccount() {
 }
 
 export const geminiModel = () => process.env.GEMINI_MODEL || settings.get("gemini_model") || DEFAULT_GEMINI_MODEL;
+export const geminiFastModel = () => process.env.GEMINI_FAST_MODEL || settings.get("gemini_fast_model") || DEFAULT_GEMINI_FAST_MODEL;
 /** "global" działa dla najnowszych modeli; można zmienić np. na europe-central2 */
 export const geminiLocation = () => process.env.GEMINI_LOCATION || settings.get("gemini_location") || "global";
 /** jest klucz (Gemini może działać) */
@@ -88,6 +91,7 @@ export function geminiStatus() {
     email: sa?.client_email ?? "",
     project: sa?.project_id ?? "",
     model: geminiModel(),
+    fastModel: geminiFastModel(),
     location: geminiLocation(),
   };
 }
@@ -154,8 +158,8 @@ export class GeminiError extends Error {
 /** pola, których dany model nie zna (np. thinkingConfig) - pomijamy je przy kolejnych zapytaniach */
 const unsupported = new Set<string>();
 
-export async function gemini(req: GeminiRequest, timeoutMs = 60_000): Promise<GeminiResponse> {
-  const model = geminiModel();
+/** model: zwykły (gry, obrazki, asystent) albo inny, np. szybki do czatu */
+export async function gemini(req: GeminiRequest, timeoutMs = 60_000, model = geminiModel()): Promise<GeminiResponse> {
   const loc = geminiLocation();
   const host = loc === "global" ? "aiplatform.googleapis.com" : `${loc}-aiplatform.googleapis.com`;
   const project = account()?.project_id;

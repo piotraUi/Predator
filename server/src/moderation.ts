@@ -12,7 +12,7 @@ import { alerts, db, worlds } from "./db.ts";
 import { mutes } from "./social.ts";
 import { decodePng, makeSheet, type Rgba } from "./pngSheet.ts";
 import { settings } from "./settings.ts";
-import { dataUrlPart, gemini, GeminiError, geminiModel, geminiReady, responseText, type GeminiPart } from "./gemini.ts";
+import { dataUrlPart, gemini, GeminiError, geminiFastModel, geminiModel, geminiReady, responseText, type GeminiPart } from "./gemini.ts";
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS moderation_cache (
@@ -192,13 +192,16 @@ async function geminiJson(parts: GeminiPart[], system: string, timeoutMs: number
       const p = paused("chat");
       if (p) throw new LimitError(p.until, p.reason);
       try {
+        // czat i nicki: szybki model bez myślenia; gry, obrazki i dźwięki: dokładniejszy model
+        const fast = prio === "high";
         const r = await gemini(
           {
             systemInstruction: { parts: [{ text: system }] },
             contents: [{ role: "user", parts }],
-            generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "low" } },
+            generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: fast ? 1024 : 4096, thinkingConfig: { thinkingLevel: fast ? "minimal" : "low" } },
           },
           timeoutMs,
+          fast ? geminiFastModel() : geminiModel(),
         );
         // Gemini sam odrzucił treść (np. pornografia) - to też znaczy "niedozwolone"
         const blocked = r.promptFeedback?.blockReason || (r.candidates?.[0]?.finishReason === "SAFETY" ? "SAFETY" : "") || (r.candidates?.[0]?.finishReason === "PROHIBITED_CONTENT" ? "PROHIBITED_CONTENT" : "");
@@ -690,6 +693,7 @@ export function moderationStatus() {
     keyFromEnv: !!process.env.GROQ_API_KEY,
     keyHint: key ? key.slice(0, 4) + "…" + key.slice(-4) : "",
     textModel: usingGemini() ? geminiModel() : TEXT_MODEL,
+    fastModel: usingGemini() ? geminiFastModel() : TEXT_MODEL,
     audioModel: AUDIO_MODEL,
     limits: {
       tokensLeft: Number.isFinite(limits.tokensLeft) ? limits.tokensLeft : null,

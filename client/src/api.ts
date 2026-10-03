@@ -263,6 +263,7 @@ export interface AdminAi {
   email: string;
   project: string;
   model: string;
+  fastModel: string;
   location: string;
   assistant: boolean;
   dailyLimit: number;
@@ -300,6 +301,7 @@ export interface AdminModeration {
   limits: { tokensLeft: number | null; requestsLeft: number | null; paused: string | null };
   provider: "gemini" | "groq" | null;
   preferGroq: boolean;
+  fastModel: string;
   scanAll?: { running: boolean; checked: number; flagged: number };
   log?: { id: number; kind: string; user: string | null; world: string | null; worldId: number | null; content: string; reason: string; at: number }[];
 }
@@ -326,10 +328,10 @@ export const adminApi = {
     }>("GET", "/admin/update" + (check ? "?check=1" : "")),
   updateServer: () => req<{ ok: true }>("POST", "/admin/update"),
   ai: () => req<AdminAi>("GET", "/admin/ai"),
-  setAi: (b: { model?: string; location?: string; assistant?: boolean; dailyLimit?: number }) => req<AdminAi>("PUT", "/admin/ai", b),
+  setAi: (b: { model?: string; fastModel?: string; location?: string; assistant?: boolean; dailyLimit?: number }) => req<AdminAi>("PUT", "/admin/ai", b),
   uploadAiKey: (json: string) => req<AdminAi>("POST", "/admin/ai/key", { json }),
   deleteAiKey: () => req<AdminAi>("DELETE", "/admin/ai/key"),
-  testAi: () => req<{ ok: boolean; text: string; ms: number }>("POST", "/admin/ai/test"),
+  testAi: (fast = false) => req<{ ok: boolean; text: string; ms: number }>("POST", "/admin/ai/test", { fast }),
   moderation: () => req<AdminModeration>("GET", "/admin/moderation"),
   setModeration: (b: { key?: string; enabled?: boolean; provider?: "gemini" | "groq" }) => req<AdminModeration>("PUT", "/admin/moderation", b),
   testModeration: (text: string) => req<{ ok: boolean; reason: string }>("POST", "/admin/moderation/test", { text }),
