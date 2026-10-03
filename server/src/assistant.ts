@@ -8,6 +8,7 @@ import { requireAuth, type AuthedRequest } from "./auth.ts";
 import { isAdminName } from "./db.ts";
 import { gemini, GeminiError, geminiModel, geminiReady, type GeminiContent, type GeminiPart } from "./gemini.ts";
 import { settings } from "./settings.ts";
+import { normalizeContents } from "../../shared/ai/contents.ts";
 
 export const assistantRouter = express.Router();
 
@@ -99,8 +100,9 @@ function cleanContents(raw: unknown): GeminiContent[] | string {
     }
     if (parts.length) out.push({ role: c.role, parts });
   }
-  if (out[0]?.role !== "user") return "Zły format rozmowy";
-  return out;
+  const fixed = normalizeContents(out) as GeminiContent[];
+  if (!fixed.length) return "Pusta rozmowa";
+  return fixed;
 }
 
 // ---------- trasy ----------

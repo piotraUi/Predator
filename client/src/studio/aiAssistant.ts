@@ -3,6 +3,7 @@
 // na otwartej grze i odsyła wyniki - aż model skończy. Cała prośba to jeden krok cofania (Ctrl+Z).
 import { aiApi, ApiError, type AiContent, type AiPart } from "../api.ts";
 import { MAX_ASSISTANT_STEPS } from "../../../shared/ai/assistantTools.ts";
+import { normalizeContents } from "../../../shared/ai/contents.ts";
 import { ToolError, type AiAttachments, type Args } from "./aiCommon.ts";
 import { h, toast } from "../ui/dom.ts";
 
@@ -274,24 +275,37 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
       parts.push({ text: `[Attached image #${chat.att.images.length}]` }, { inlineData: { mimeType: m[1] === "image/gif" ? "image/png" : m[1], data: m[2] } });
     }
     parts.push({ text: (text || "Look at the attached image.") + "\n\n" + host.context() });
-    // ostatnia wiadomość jest od twórcy (np. po przerwaniu) - dopisujemy do niej
-    const last = chat.contents.at(-1);
-    if (last?.role === "user") last.parts.push(...parts);
-    else chat.contents.push({ role: "user", parts });
+    // po przerwaniu rozmowa może kończyć się wynikami narzędzi - normalizeContents ją uporządkuje
+    chat.contents.push({ role: "user", parts });
     await agent();
   }
+
+  /** telefon traci czasem połączenie (np. zmiana sieci) - krok ponawiamy 2 razy */
+  async function stepWithRetry(signal: AbortSignal) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await aiApi.step(host.mode, chat.contents, signal);
+      } catch (e) {
+        if (!(e instanceof ApiError) || e.status !== 0 || signal.aborted || attempt >= 2) throw e;
+        thinking.textContent = `⏳ Brak połączenia - ponawiam (${attempt + 1}/2)…`;
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      }
+    }
+  }
+  const thinking = h("div", { class: "ai-step thinking" }, "⏳ Myślę…");
 
   async function agent() {
     setBusy(true);
     ctrl = new AbortController();
     let began = false;
-    const thinking = h("div", { class: "ai-step thinking" }, "⏳ Myślę…");
     try {
       for (let step = 0; step < MAX_ASSISTANT_STEPS; step++) {
         trim();
+        thinking.textContent = "⏳ Myślę…";
         msgs.append(thinking);
         scroll();
-        const res = await aiApi.step(host.mode, chat.contents, ctrl.signal).finally(() => thinking.remove());
+        chat.contents = normalizeContents(chat.contents) as AiContent[];
+        const res = await stepWithRetry(ctrl.signal).finally(() => thinking.remove());
         showUsage(res.used, res.limit);
         const content = res.content;
         chat.contents.push(content);
