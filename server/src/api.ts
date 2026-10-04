@@ -1,6 +1,7 @@
 import { giveGamesToCreator } from "./creators.ts";
 import { emptyWorld2D, topDownWorld2D } from "../../shared/world2d.ts";
 import express, { type Response } from "express";
+import { matchMaker } from "colyseus";
 import { CATALOG, findItem } from "../../shared/catalog.ts";
 import { DEFAULT_AVATAR } from "../../shared/catalog.ts";
 import { filterChat, hasProfanity } from "../../shared/chatFilter.ts";
@@ -352,6 +353,26 @@ api.post("/worlds", requireAuth, (req, res) => {
   const data = { ...base, badges: [welcomeBadge()] };
   const w = worlds.create(user.id, name, data, DEFAULT_MAX_PLAYERS);
   res.json(infoById(w.id));
+});
+
+/**
+ * Pokoje gry (multiplayer) założone przez graczy: nazwa, ilu graczy, czy prywatny.
+ * ?code=ABCD - pokój o tym kodzie (prywatne pokoje nie zdradzają kodu na liście).
+ */
+api.get("/worlds/:id/rooms", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const rooms = (await matchMaker.query({ name: "lobby" })).filter((r) => r.metadata?.worldId === id);
+  const code = String(req.query.code ?? "").toUpperCase().trim();
+  if (code) {
+    const r = rooms.find((x) => x.metadata?.lobbyCode && x.metadata.lobbyCode === code);
+    if (!r) return fail(res, 404, "Nie ma pokoju z takim kodem");
+    return res.json({ roomId: r.roomId, name: r.metadata.lobby, players: r.clients, max: r.maxClients, private: true });
+  }
+  res.json(
+    rooms
+      .sort((a, b) => (a.metadata?.lobbyStarted ?? 0) - (b.metadata?.lobbyStarted ?? 0))
+      .map((r) => ({ roomId: r.roomId, name: r.metadata?.lobby ?? "Pokój", players: r.clients, max: r.maxClients, private: !!r.metadata?.lobbyCode, full: r.clients >= r.maxClients || r.locked })),
+  );
 });
 
 /** Pełne dane świata do edytora (właściciel i współtwórcy) */

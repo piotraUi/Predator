@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { parseGameFile } from "../gamefile.ts";
 import { sanitizeWorld } from "../world.ts";
-import { upgradeAngles, upgradeLudzikCharacters, upgradeLudzikPart2 } from "./upgrades.ts";
+import { upgradeAngles, upgradeOwnMenu, upgradeLudzikCharacters, upgradeLudzikPart2 } from "./upgrades.ts";
 
 const file = [path.resolve("games", "Ludzik 4.pgame"), path.resolve("..", "games", "Ludzik 4.pgame")].find((f) => fs.existsSync(f)) ?? "";
 
@@ -28,7 +28,7 @@ test("Ludzik 4: stara gra na serwerze dostaje wybór postaci na mapie multiplaye
   const uw = sanitizeWorld(up).world2d!;
   const umap = uw.levels.find((l) => l.name === mp.name)!;
   assert.equal(umap.character, undefined);
-  assert.deepEqual(umap.characters!.map((id) => uw.characters.find((c) => c.id === id)!.name), ["Ludzik", "Pies", "Nero"]);
+  assert.deepEqual(umap.characters!.map((id) => uw.characters.find((c) => c.id === id)!.name), ["Gracz 1 (Ludzik)", "Gracz 2 (Pies)", "Gracz 3 (Nero)"]);
   // obrazki nowych postaci są w grze
   for (const id of umap.characters!) {
     const o = uw.objects.find((x) => x.id === uw.characters.find((c) => c.id === id)!.obj)!;
@@ -83,4 +83,38 @@ test("Ludzik 4: stara część 2 dostaje sprężynę, kolce, beczkę i monety", 
   assert.ok(player.anims.some((a) => a.name === "Cylinder pionowy i sprężyna"));
   // drugi raz nic nie zmienia
   assert.equal(upgradeLudzikPart2(up, fresh), null);
+});
+
+test("Ludzik 4: stara gra dostaje oryginalne menu (GUI z grafikami), lobby z pokojami i nowe skrypty", () => {
+  const fresh = parseGameFile(fs.readFileSync(file, "utf8")).data;
+  // stara wersja: bez menu, start na poziomie 1, gracze multiplayer nazwani jak zwykłe postacie
+  const old = structuredClone(fresh);
+  const w = old.world2d!;
+  w.levels = w.levels.filter((l) => !l.menu);
+  w.startLevel = w.levels.find((l) => l.name === "Level 1")!.id;
+  delete w.ownMenu;
+  delete old.guis;
+  old.scripts = old.scripts.filter((s) => s.name !== "Menu").map((s) => ({ ...s, source: "-- stara wersja" }));
+  const mp = w.levels.find((l) => l.name === "Multiplayer")!;
+  mp.characters!.forEach((id, k) => (w.characters.find((c) => c.id === id)!.name = ["Ludzik", "Pies", "Nero"][k]));
+  // twórca coś zmienił w Studio - zostaje
+  w.levels.find((l) => l.name === "Level 1")!.background = "#123456";
+
+  const up = upgradeOwnMenu(old, fresh);
+  assert.ok(up);
+  const clean = sanitizeWorld(up);
+  const uw = clean.world2d!;
+  assert.equal(uw.ownMenu, true);
+  assert.equal(uw.levels.find((l) => l.id === uw.startLevel)?.name, "Menu");
+  assert.deepEqual(uw.levels.filter((l) => l.menu).map((l) => l.name), ["Menu", "Lobby"]);
+  assert.deepEqual(clean.guis!.map((g) => g.name), ["Menu", "Lobby"]);
+  // GUI na swoich poziomach menu, przyciski z grafikami
+  for (const g of clean.guis!) assert.ok(uw.levels.some((l) => l.id === g.where && l.menu));
+  assert.ok(clean.guis![0].elements.some((e) => e.type === "button" && e.image?.startsWith("data:image/png")));
+  assert.ok(clean.scripts.some((s) => s.name === "Menu"));
+  assert.ok(clean.scripts.find((s) => s.name === "Mapa multiplayer")!.source.includes("Gracz 1 (Ludzik)"));
+  assert.deepEqual(mp.characters!.map((id) => uw.characters.find((c) => c.id === id)!.name), ["Gracz 1 (Ludzik)", "Gracz 2 (Pies)", "Gracz 3 (Nero)"]);
+  assert.equal(uw.levels.find((l) => l.name === "Level 1")!.background, "#123456");
+  // drugi raz nic nie zmienia
+  assert.equal(upgradeOwnMenu(clean, fresh), null);
 });

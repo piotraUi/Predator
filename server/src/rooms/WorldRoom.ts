@@ -44,21 +44,38 @@ export class WorldRoom extends Room {
   /** ostatnie wiadomości z czatu gry (do zgłoszeń) */
   private chatLog: { from: string; text: string; at: number }[] = [];
 
-  onCreate(options: { worldId?: number; privateCode?: string; placeId?: string }) {
+  /** pokój gry (multiplayer) założony przez gracza: nazwa, kod (prywatny), na czym się gra */
+  private lobby: { name: string; code: string; max: number; target: string } | null = null;
+
+  onCreate(options: { worldId?: number; privateCode?: string; placeId?: string; lobby?: { name?: unknown; code?: unknown; max?: unknown; target?: unknown } }) {
     const world = worlds.byId(Number(options.worldId));
     if (!world) throw new Error("Nie ma takiej gry");
     this.world = world;
+    if (options.lobby) {
+      const l = options.lobby;
+      const code = typeof l.code === "string" && /^[A-Z0-9]{4,8}$/.test(l.code) ? l.code : "";
+      const name = filterChat(String(l.name ?? "").trim().slice(0, 30)) || "Pokój";
+      this.lobby = { name, code, max: Math.min(Math.max(2, Math.round(Number(l.max) || 4)), Math.max(2, world.max_players), 30), target: String(l.target ?? "").slice(0, 40) };
+      if (!options.placeId && this.lobby.target) options.placeId = this.lobby.target;
+    }
     if (options.privateCode !== undefined) {
       const s = privateServers.byCode(String(options.privateCode));
       if (!s || s.world_id !== world.id) throw new Error("Nie ma serwera z takim kodem");
       this.priv = s;
     }
-    this.maxClients = world.max_players;
+    this.maxClients = this.lobby?.max ?? world.max_players;
     this.autoDispose = true;
     // sanitizeWorld uzupełnia też brakujące pola w starszych zapisach;
     // gra 3D z kilkoma miejscami: ten serwer ma tylko klocki i skrypty jednego miejsca
     const data = placeData(sanitizeWorld(JSON.parse(world.data)), typeof options.placeId === "string" ? options.placeId : undefined);
-    this.setMetadata({ worldId: world.id, name: world.name, private: !!this.priv, ...(data.currentPlace ? { place: data.currentPlace.name } : {}) });
+    this.setMetadata({
+      worldId: world.id,
+      name: world.name,
+      private: !!this.priv,
+      ...(data.currentPlace ? { place: data.currentPlace.name } : {}),
+      // pokój: nazwa i kod (kod zna tylko serwer - lista pokoi go nie pokazuje)
+      ...(this.lobby ? { lobby: this.lobby.name, lobbyCode: this.lobby.code, lobbyStarted: Date.now() } : {}),
+    });
     this.badgeDefs = data.badges ?? [];
     this.products = data.products ?? [];
     const Sim = data.mode === "2d" ? Sim2D : GameSim;
@@ -90,7 +107,12 @@ export class WorldRoom extends Room {
           save: (userId, d) => userId > 0 && gameData.save(world.id, userId, d),
         },
       },
-      { id: world.id, name: world.name, ownerName: users.byId(world.owner_id)?.username ?? "?" },
+      {
+        id: world.id,
+        name: world.name,
+        ownerName: users.byId(world.owner_id)?.username ?? "?",
+        ...(this.lobby ? { room: { name: this.lobby.name, ...(this.lobby.code ? { code: this.lobby.code } : {}), maxPlayers: this.lobby.max }, startLevel: data.mode === "2d" ? this.lobby.target : undefined } : {}),
+      },
     );
     for (const type of MESSAGES)
       this.onMessage(type, (client, msg) => {
@@ -155,6 +177,8 @@ export class WorldRoom extends Room {
     if (this.sim instanceof Sim2D && (Number(options.v) || 1) < GAME_PROTOCOL)
       throw new Error("To gra 2D - zaktualizuj aplikację Predator (nowy .exe / APK), żeby w nią zagrać");
     if (!this.world.published && user.id !== this.world.owner_id) throw new Error("Ta gra nie jest opublikowana");
+    if (this.lobby?.code && String((options as { lobbyCode?: unknown }).lobbyCode ?? "").toUpperCase() !== this.lobby.code)
+      throw new Error("To prywatny pokój - wpisz jego kod");
     if (this.priv) {
       // serwer mógł zostać usunięty albo dostać nowy kod
       const s = privateServers.byId(this.priv.id);
@@ -177,6 +201,8 @@ export class WorldRoom extends Room {
     presence.setWorldCount(this.world.id, 1);
     if (this.priv) presence.setPrivateCount(this.priv.code, 1);
     this.joinedAt.set(client.sessionId, { userId: user.id, at: Date.now() });
+    // pokój: gracz widzi jego nazwę i kod (do zaproszenia innych)
+    if (this.lobby) client.send("room", { name: this.lobby.name, ...(this.lobby.code ? { code: this.lobby.code } : {}), max: this.lobby.max });
     this.sim.join(client.sessionId, {
       userId: user.id,
       username: user.username,

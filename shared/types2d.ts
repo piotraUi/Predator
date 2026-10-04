@@ -217,6 +217,8 @@ export interface World2D {
   physics: Physics2D;
   /** dźwięki wbudowanych zdarzeń (id assetów) */
   sounds: { jump?: string; coin?: string; hurt?: string; checkpoint?: string; gate?: string };
+  /** gra ma własne menu (GUI): menu ☰ Predatora nie pokazuje wyboru postaci ani poziomów */
+  ownMenu?: boolean;
 }
 
 /** Stan gracza 2D w sieci */

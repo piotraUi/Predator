@@ -250,6 +250,7 @@ export function sanitizeWorld2D(raw: unknown): World2D {
     const s = snd(k);
     if (s) out.sounds[k] = s;
   }
+  if (w.ownMenu === true) out.ownMenu = true;
   return out;
 }
 

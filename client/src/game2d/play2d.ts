@@ -1,5 +1,6 @@
 // Ekran gry 2D: własna postać (fizyka u gracza), inni gracze z serwera, potwory, monety,
 // checkpointy, śmierć i odradzanie, kamera, dźwięki, czat, sterowanie dotykowe i pad.
+import { openRoomsWindow } from "../game/rooms.ts";
 import { PadMenuNav } from "../engine/gamepad.ts";
 import { newBody, NO_INPUT, SolidWorld, stepBody, stepTopDown, type Body2D, type Input2D, type Solid } from "../../../shared/physics2d.ts";
 import type { Cmd2D, Init2D, LevelSync } from "../../../shared/sim/sim2d.ts";
@@ -54,7 +55,7 @@ interface Actor {
 
 export function play2dScreen(
   root: HTMLElement,
-  params: { conn: GameConnection; init: Init2D; back?: { screen: string; params?: Record<string, unknown> }; offline: boolean; privateCode?: string },
+  params: { conn: GameConnection; init: Init2D; back?: { screen: string; params?: Record<string, unknown> }; offline: boolean; privateCode?: string; worldId?: number },
   go: Go,
 ): () => void {
   const { conn, init } = params;
@@ -276,6 +277,8 @@ export function play2dScreen(
     );
   }
   function levelMenu() {
+    // gra z własnym menu (np. przeniesiona z GDevelopa) - poziomy wybiera się w jej menu
+    if (w.ownMenu) return "";
     const list = w.levels.filter((l) => (l.selectable || l.id === w.startLevel) && l.id !== level.id);
     if (!list.length || !w.levels.some((l) => l.selectable)) return "";
     return h(
@@ -297,7 +300,7 @@ export function play2dScreen(
     menu.replaceChildren(
       h("h3", null, init.info.name),
       h("p", { class: "muted" }, "Twórca: " + init.info.ownerName),
-      !level.character && selectable.length > 1
+      !level.character && !w.ownMenu && selectable.length > 1
         ? h(
             "div",
             { class: "char-pick" },
@@ -357,6 +360,32 @@ export function play2dScreen(
     conn.leave();
     back();
   }
+
+  // ---------- pokoje (multiplayer) i wyjście z gry ze skryptu / przycisku GUI ----------
+  /** pokój, w którym jest gracz (null = zwykły serwer gry) */
+  let room: { name: string; code?: string; max: number } | null = null;
+  conn.onMessage("rooms", (m: { target?: string; max?: number }) =>
+    openRoomsWindow({
+      worldId: params.worldId,
+      target: m?.target ?? "",
+      max: m?.max,
+      offline: params.offline,
+      go,
+      // z pokoju wraca się do zwykłej gry (jej menu), a stamtąd tam, skąd gracz przyszedł
+      back: room ? params.back : { screen: "play", params: { worldId: params.worldId, ...(params.back ? { back: params.back } : {}) } },
+      leave: () => {
+        leaving = true;
+        conn.leave();
+      },
+    }),
+  );
+  conn.onMessage("exit", () => exit());
+  conn.onMessage("room", (m: { name: string; code?: string; max: number }) => {
+    room = m;
+    const title = topbar.querySelector(".hud-title");
+    if (title) title.textContent = `${init.info.name} · 🎮 ${m.name}${m.code ? ` (kod ${m.code})` : ""}`;
+    toast(`🎮 Pokój „${m.name}”` + (m.code ? ` - kod dla znajomych: ${m.code}` : ""), "good");
+  });
 
   // ---------- wiadomości ----------
   // najpierw poziom z init - dopiero potem wiadomości, które czekały w buforze
@@ -663,8 +692,9 @@ export function play2dScreen(
       menu.classList.toggle("hidden");
     }
     const menuOpen = !menu.classList.contains("hidden");
-    const root = menuOpen ? menu : guiLayer.padRoot(!!level.menu);
-    padNav.update(pad, root, menuOpen ? () => menu.classList.add("hidden") : undefined);
+    const dialog = document.querySelector<HTMLElement>(".modal-bg .modal");
+    const root = dialog ?? (menuOpen ? menu : guiLayer.padRoot(!!level.menu));
+    padNav.update(pad, root, dialog ? () => dialog.closest(".modal-bg")?.remove() : menuOpen ? () => menu.classList.add("hidden") : undefined);
     return !!root;
   }
 

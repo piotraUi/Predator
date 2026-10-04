@@ -9,9 +9,11 @@ export type GuiElType = "frame" | "text" | "button" | "image";
  *  open  - zamyka to GUI i otwiera inne (target = id GUI)
  *  level - gry 2D: przenosi gracza na poziom (target = nazwa poziomu) i zamyka GUI
  *  place - gry 3D: przenosi gracza do innego miejsca (target = id miejsca)
+ *  rooms - okno pokoi gry (lista, tworzenie, dołączanie); target = poziom 2D / miejsce 3D, na którym gra się w pokoju
+ *  exit  - wyjście z gry (do strony głównej Predatora)
  * Skrypt i tak dostaje onGuiClick(player, gui, przycisk).
  */
-export type GuiActionType = "none" | "close" | "open" | "level" | "place";
+export type GuiActionType = "none" | "close" | "open" | "level" | "place" | "rooms" | "exit";
 
 export interface GuiAction {
   type: GuiActionType;
@@ -42,8 +44,12 @@ export interface GuiEl {
   align?: "left" | "center" | "right";
   /** obramowanie (kolor) */
   border?: string;
-  /** obrazek (data URL) */
+  /** obrazek (data URL) - w elemencie image albo jako wygląd przycisku */
   image?: string;
+  /** obrazek ostry jak pixel-art (bez rozmycia przy powiększaniu) */
+  pixel?: boolean;
+  /** obrazek odbity w poziomie */
+  flip?: boolean;
   action?: GuiAction;
 }
 
@@ -66,7 +72,7 @@ export const MAX_GUI_IMAGE = 400_000;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const IMAGE_RE = /^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
 const TYPES: GuiElType[] = ["frame", "text", "button", "image"];
-const ACTIONS: GuiActionType[] = ["none", "close", "open", "level", "place"];
+const ACTIONS: GuiActionType[] = ["none", "close", "open", "level", "place", "rooms", "exit"];
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 const str = (v: unknown, max: number, def = "") => (typeof v === "string" ? v.slice(0, max) : def);
@@ -100,6 +106,8 @@ function sanitizeEl(raw: unknown): GuiEl {
   const border = color(e.border);
   if (border) out.border = border;
   if (typeof e.image === "string" && e.image.length <= MAX_GUI_IMAGE && IMAGE_RE.test(e.image)) out.image = e.image;
+  if (e.pixel === true) out.pixel = true;
+  if (e.flip === true) out.flip = true;
   const a = obj(e.action);
   if (ACTIONS.includes(a.type as GuiActionType) && a.type !== "none") {
     out.action = { type: a.type as GuiActionType };
@@ -235,6 +243,38 @@ type LuaArg = string | number | boolean | null | undefined | LuaArg[];
  *   showGui(player, "Menu"), hideGui(player, "Menu"), toggleGui(player, "Menu"), isGuiOpen(player, "Menu"),
  *   setGuiText(player, "Licznik", "Napis", "⭐ 5")
  */
+/** pokój (multiplayer), w którym działa serwer - pokazywany graczom, czytany przez skrypty */
+export interface RoomInfo {
+  name: string;
+  /** kod prywatnego pokoju */
+  code?: string;
+  maxPlayers: number;
+}
+
+/**
+ * Wbudowane akcje przycisków, które działają po stronie gracza: okno pokoi i wyjście z gry.
+ * Zwraca true, gdy przycisk ich użył (GUI zostaje wtedy otwarte - np. menu pod oknem pokoi).
+ */
+export function clientGuiAction(action: GuiAction | undefined, send: (type: string, msg: unknown) => void) {
+  if (action?.type === "rooms") return send("rooms", { target: action.target ?? "" }), true;
+  if (action?.type === "exit") return send("exit", {}), true;
+  return false;
+}
+
+/** Lua: pokoje gry i wyjście (openRooms, exitGame, getRoom) */
+export function roomLuaFunctions(send: (sid: string, type: string, msg: unknown) => void, room: RoomInfo | undefined) {
+  return {
+    openRooms: (p: LuaArg, target: LuaArg, max: LuaArg) => {
+      if (typeof p === "string") send(p, "rooms", { target: typeof target === "string" ? target.slice(0, 40) : "", ...(typeof max === "number" ? { max: Math.min(30, Math.max(2, Math.round(max))) } : {}) });
+    },
+    exitGame: (p: LuaArg) => {
+      if (typeof p === "string") send(p, "exit", {});
+    },
+    /** nazwa pokoju ("" = zwykły serwer gry) */
+    getRoom: () => room?.name ?? "",
+  };
+}
+
 export function guiLuaFunctions(rt: GuiRuntime, players: () => string[], log: (text: string) => void) {
   const targets = (p: LuaArg) => (typeof p === "string" && p ? [p] : players());
   const known = (name: LuaArg) => {

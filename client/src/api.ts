@@ -270,6 +270,20 @@ export interface AdminAi {
   stats: { requests: number; tokens: number; users: number };
 }
 
+/** pokoje gry (multiplayer) */
+export interface RoomListItem {
+  roomId: string;
+  name: string;
+  players: number;
+  max: number;
+  private: boolean;
+  full?: boolean;
+}
+export const roomsApi = {
+  list: (worldId: number) => req<RoomListItem[]>("GET", `/worlds/${worldId}/rooms`),
+  byCode: (worldId: number, code: string) => req<RoomListItem>("GET", `/worlds/${worldId}/rooms?code=${encodeURIComponent(code)}`),
+};
+
 /** asystent AI w Studio */
 export interface AiPart {
   text?: string;

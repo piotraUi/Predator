@@ -8,6 +8,11 @@ const hexA = (hex: string, a: number) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
+const luminance = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+};
+
 /** jeden element GUI jako HTML (gra i edytor) */
 export function renderGuiEl(el: GuiEl, text?: string, editor = false): HTMLElement {
   const tag = el.type === "button" && !editor ? "button" : "div";
@@ -17,16 +22,26 @@ export function renderGuiEl(el: GuiEl, text?: string, editor = false): HTMLEleme
   st.top = el.y + "%";
   st.width = el.w + "%";
   st.height = el.h + "%";
+  // przycisk z obrazkiem (np. grafika z gry) - bez domyślnego tła
+  const imgButton = el.type === "button" && !!el.image;
   if (el.bg) st.background = hexA(el.bg, el.bgOpacity ?? 1);
-  else if (el.type === "button") st.background = hexA("#3a86ff", el.bgOpacity ?? 1);
+  else if (el.type === "button" && !imgButton) st.background = hexA("#3a86ff", el.bgOpacity ?? 1);
+  if (imgButton) node.classList.add("gui-imgbtn");
   if (el.radius) st.borderRadius = `calc(var(--gs, 1px) * ${el.radius})`;
   if (el.border) st.border = `calc(var(--gs, 1px) * 3) solid ${el.border}`;
   st.color = el.color ?? "#ffffff";
+  // ciemny napis (np. czarny jak w GDevelopie) - bez cienia
+  if (el.color && luminance(el.color) < 0.55) st.textShadow = "none";
   st.fontSize = `calc(var(--gs, 1px) * ${el.fontSize ?? 24})`;
   if (el.bold) st.fontWeight = "800";
   st.justifyContent = el.align === "left" ? "flex-start" : el.align === "right" ? "flex-end" : "center";
   st.textAlign = el.align ?? "center";
-  if (el.type === "image" && el.image) node.append(h("img", { src: el.image, alt: el.name, draggable: false }));
+  if ((el.type === "image" || el.type === "button") && el.image) {
+    const img = h("img", { src: el.image, alt: el.name, draggable: false });
+    if (el.pixel) img.style.imageRendering = "pixelated";
+    if (el.flip) img.style.transform = "scaleX(-1)";
+    node.append(img);
+  }
   const t = text ?? el.text;
   if (t && el.type !== "image") node.append(h("span", null, t));
   return node;

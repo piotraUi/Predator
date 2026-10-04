@@ -11,6 +11,8 @@ const hasGame = !!file;
 
 function setup() {
   const { data } = parseGameFile(fs.readFileSync(file, "utf8"));
+  // skrót w testach: "goto" na dowolny poziom (w grze poziom wybiera się w menu)
+  for (const l of data.world2d!.levels) l.selectable = true;
   const sent: { sid: string; type: string; msg: unknown }[] = [];
   const sim = new Sim2D(data, {
     send: (sid, type, msg) => sent.push({ sid, type, msg }),
@@ -27,15 +29,41 @@ function setup() {
       sim.tick();
     }
   };
-  return { sim, sent, w, lvl, byObj, levelName, wait };
+  const click = (sid: string, gui: string, button: string) => {
+    const g = data.guis!.find((x) => x.name === gui)!;
+    sim.handle(sid, "gui", { g: g.id, e: g.elements.find((e) => e.name === button)!.id });
+  };
+  return { sim, sent, w, lvl, byObj, levelName, wait, click };
 }
 
-test("Ludzik 3: skrypty bez błędów, trzy postacie do wyboru, 10 poziomów w menu", { skip: !hasGame }, () => {
-  const { sim, sent, w } = setup();
+test("Ludzik 3: menu z oryginału - start albo wybór poziomu, potem wybór postaci (Ludzik, Nero, Pies)", { skip: !hasGame }, () => {
+  const { sim, sent, w, levelName, click } = setup();
+  const charName = (sid: string) => w.characters.find((c) => c.id === (sent.filter((m) => m.sid === sid && (m.type === "cmd" || m.type === "level") && (m.msg as { character?: string }).character).at(-1)?.msg as { character: string }).character)?.name;
   sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: true });
   assert.deepEqual(sent.filter((m) => m.type === "log" && (m.msg as { error: boolean }).error), []);
   assert.deepEqual(w.characters.filter((c) => !c.npc).map((c) => c.name), ["Ludzik", "Nero", "Pies"]);
-  assert.equal(w.levels.filter((l) => l.selectable).length, 10);
+  assert.equal(w.ownMenu, true, "menu ☰ Predatora bez wyboru postaci i poziomów");
+  assert.equal((sent.find((m) => m.type === "init2d")!.msg as { sync: { level: string } }).sync.level, w.levels.find((l) => l.name === "Menu")!.id);
+  // Start -> wybór postaci -> Nero -> poziom 1 jako Nero
+  click("a", "Menu", "Start");
+  assert.equal(levelName(), "Wybór postaci");
+  click("a", "Wybór postaci", "Nero");
+  assert.equal(levelName(), "Level 1");
+  assert.equal(charName("a"), "Nero");
+  // wybór poziomu 7 -> Pies -> poziom 7 jako Pies
+  sim.handle("a", "goto", w.levels.find((l) => l.name === "Menu")!.id);
+  click("a", "Menu", "Wybor");
+  assert.equal(levelName(), "Wybor poziomow");
+  click("a", "Wybor poziomow", "_7");
+  click("a", "Wybór postaci", "Pies");
+  assert.equal(levelName(), "Level 7");
+  assert.equal(charName("a"), "Pies");
+  // strzałka wraca do menu, "Wyjdź" kończy grę
+  sim.handle("a", "goto", w.levels.find((l) => l.name === "Wybor poziomow")!.id);
+  click("a", "Wybor poziomow", "Powrot");
+  assert.equal(levelName(), "Menu");
+  click("a", "Menu", "Wyjdź");
+  assert.ok(sent.some((m) => m.sid === "a" && m.type === "exit"));
   sim.dispose();
 });
 
@@ -75,13 +103,13 @@ test("Ludzik 3: poziom 5 -> przerywnik -> poziom 6, poziom 10 -> walka -> kosmos
     assert.equal(levelName(), "Kosmiczna walka");
     const cmds = sent.filter((m) => m.type === "cmd").map((m) => m.msg as { force?: number });
     assert.ok(cmds.some((c) => c.force === 500), "w kosmosie ludzik sam leci w prawo");
-    // meta kosmosu -> walka 2 -> po wygranej koniec gry i powrót na poziom 1
+    // meta kosmosu -> walka 2 -> po wygranej koniec gry i powrót do menu
     const goal = byObj("Kosmiczna walka", "Meta")[0];
     sim.handle("a", "goto", lvl("Kosmiczna walka").id);
     sim.handle("a", "m", { x: goal.x + goal.w / 2, y: goal.y + goal.h / 2, anim: "Idle", flip: false });
     assert.equal(levelName(), "Walka 2");
     wait(39);
-    assert.equal(levelName(), "Level 1");
+    assert.equal(levelName(), "Menu");
     assert.ok(sent.some((m) => m.type === "chat" && String((m.msg as { text: string }).text).includes("Gigant pokonany")));
     sim.dispose();
   } finally {

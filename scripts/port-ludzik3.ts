@@ -2,7 +2,8 @@
 // Uruchom: npx tsx scripts/port-ludzik3.ts ścieżka/do/gry.zip
 // Wynik: games/Ludzik 3 & Nero.pgame (serwer wczytuje go jako przykładową grę).
 //
-// W GDevelopie każdy poziom był trzy razy (Ludzik, Nero, Pies) - tu jest jeden poziom, a postać wybiera się w menu.
+// W GDevelopie każdy poziom był trzy razy (Ludzik, Nero, Pies) - tu jest jeden poziom, a postać wybiera się
+// w oryginalnym menu gry (sceny "Menu", "Wybor poziomow" i "Wybór postaci" przeniesione jako GUI z tymi samymi grafikami).
 // Zdarzenia GDevelopa:
 //  - trampoliny, kolce, monety, strefy śmierci -> wbudowane zachowania obiektów
 //  - przejścia między poziomami, przerywniki, tabliczka "koniec" -> skrypty Lua
@@ -10,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { unzipSync } from "fflate";
-import { importGDevelop, importSound } from "../shared/import/gdevelop.ts";
+import { importGDevelop, importSound, uiSceneToGui } from "../shared/import/gdevelop.ts";
 import { makeGameFile } from "../shared/gamefile.ts";
 import type { WorldData } from "../shared/types.ts";
 import type { Character2D, Inst2D, Level2D, Obj2D } from "../shared/types2d.ts";
@@ -102,7 +103,7 @@ for (const l of w.levels) {
 }
 // wersje poziomu 10 dla Nero i Psa były potrzebne tylko dla ich postaci
 w.levels = w.levels.filter((l) => l.name !== "Level 10 Nero" && l.name !== "Level 10 Pies");
-for (const name of LEVELS) Object.assign(L(name), { zoom: 2, restartOnDeath: true, selectable: true });
+for (const name of LEVELS) Object.assign(L(name), { zoom: 2, restartOnDeath: true });
 // areny walk: kamera stoi (w GDevelopie nie szła za graczem)
 for (const name of ["Walka", "Walka 2"]) Object.assign(L(name), { zoom: 2, restartOnDeath: true, cameraX: 640, cameraY: 360 });
 // kosmos: lot w prawo, widok z góry, kamera idzie tylko w poziomie
@@ -115,7 +116,31 @@ for (const name of ["Cutscena", "Ending", "PrzedEnding"]) {
   for (const i of l.instances) if (!isObj(i, "Start")) i.layer = "hud";
   Object.assign(l, { zoom: 1, background: "#000000" });
 }
-w.startLevel = L("Level 1").id;
+// ---------- oryginalne menu (sceny z samym interfejsem) ----------
+// przyciski to te same grafiki w tych samych miejscach; klik obsługuje skrypt "Menu" albo akcja przycisku
+const btn = { button: true };
+const uiMenu = uiSceneToGui(files, res.project, "Menu", {
+  Start: btn,
+  Wybor: { button: true, action: { type: "level", target: "Wybor poziomow" } },
+  Wyjdź: { button: true, flip: true, action: { type: "exit" } },
+});
+const uiLevels = uiSceneToGui(files, res.project, "Wybor poziomow", {
+  ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`_${i + 1}`, btn])),
+  Powrot: { button: true, flip: true, action: { type: "level", target: "Menu" } },
+});
+// 10 scen "Wybór postaci N" różniło się tylko poziomem docelowym - jedna scena, poziom pamięta skrypt
+const uiChars = uiSceneToGui(files, res.project, "Wybór postaci 1", {
+  Ludzik: btn,
+  Nero: btn,
+  Pies: btn,
+  Powrot: { button: true, flip: true, action: { type: "level", target: "Menu" } },
+}, { guiName: "Wybór postaci" });
+uiChars.level.name = "Wybór postaci";
+const menus = [uiMenu, uiLevels, uiChars];
+w.levels.unshift(...menus.map((m) => m.level));
+const guis = menus.map((m) => m.gui);
+w.startLevel = uiMenu.level.id;
+w.ownMenu = true;
 
 // nieużywane obiekty i obrazki usuwamy
 const used = new Set<string>();
@@ -214,6 +239,25 @@ NEXT["Level 5"] = "Ending";
 NEXT["Level 9"] = "Cutscena";
 const luaTable = (o: Record<string, string>) => "{\n" + Object.entries(o).map(([k, v]) => `  [${JSON.stringify(k)}] = ${JSON.stringify(v)},`).join("\n") + "\n}";
 const scripts = [
+  lua("Menu", `
+-- Menu z oryginału: Start = poziom 1, wybór poziomu 1-10, potem wybór postaci (Ludzik, Nero, Pies)
+local wybrany = {}
+onGuiClick(function(player, gui, button)
+  if gui == "Menu" and button == "Start" then
+    wybrany[player] = 1
+    setLevel(player, "Wybór postaci")
+  elseif gui == "Wybor poziomow" then
+    local n = tonumber(string.match(button, "^_(%d+)$"))
+    if n then
+      wybrany[player] = n
+      setLevel(player, "Wybór postaci")
+    end
+  elseif gui == "Wybór postaci" and (button == "Ludzik" or button == "Nero" or button == "Pies") then
+    chooseCharacter(player, button)
+    setLevel(player, "Level " .. (wybrany[player] or 1))
+  end
+end)
+`),
   lua("Poziomy", `
 -- Kolejne poziomy (w GDevelopie: tabliczka "koniec", drzwi i teleporty)
 local NEXT = ${luaTable(NEXT)}
@@ -332,7 +376,7 @@ local function startFight(level)
           if f.next == "KONIEC" then
             tell(p, "🎉 Gigant pokonany! Koniec gry - brawo!")
             awardBadge(p, "Pogromca Giganta")
-            setLevel(p, "Level 1")
+            setLevel(p, "Menu")
           else
             setLevel(p, f.next)
           end
@@ -358,7 +402,7 @@ end)
 ];
 
 const badges = [{ id: newId2d(), name: "Pogromca Giganta", description: "Pokonaj Giganta w ostatniej walce", icon: "🏆", trigger: "script" as const, reward: 10 }];
-const data: WorldData = { ...emptyWorld(), parts: [], scripts, mode: "2d", world2d: w, genre: "platform", badges };
+const data: WorldData = { ...emptyWorld(), parts: [], scripts, mode: "2d", world2d: w, genre: "platform", badges, guis };
 const clean = sanitizeWorld(data);
 const out = path.join(import.meta.dirname, "..", "games", "Ludzik 3 & Nero.pgame");
 fs.writeFileSync(

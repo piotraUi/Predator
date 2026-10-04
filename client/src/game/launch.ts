@@ -10,6 +10,7 @@ import { h, toast } from "../ui/dom.ts";
 import { showBadge, type BadgeMsg } from "../ui/badgePopup.ts";
 import { BufferedConnection } from "./buffered.ts";
 import type { GameConnection } from "./connection.ts";
+import type { LobbyLaunch } from "./rooms.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 
@@ -21,6 +22,8 @@ export interface LaunchParams {
   offline?: { name: string; data: WorldData };
   /** gry 3D z kilkoma miejscami: do którego miejsca wejść (brak = startowe) */
   place?: string;
+  /** pokój gry (multiplayer): nowy albo istniejący */
+  lobby?: LobbyLaunch;
   back?: { screen: string; params?: Record<string, unknown> };
 }
 
@@ -46,7 +49,13 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
     ? import("./connection.ts").then(({ LocalRoom }) => new LocalRoom(offline.data, offline.name, me, params.place))
     : (() => {
         const client = new Client(wsUrl());
-        const r = params.roomId
+        const lobby = params.lobby;
+        const base = { token: getToken(), v: GAME_PROTOCOL };
+        const r = lobby?.create
+          ? client.create("lobby", { ...base, worldId: params.worldId, lobby: lobby.create, ...(lobby.code ? { lobbyCode: lobby.code } : {}) })
+          : lobby?.roomId
+            ? client.joinById(lobby.roomId, { ...base, ...(lobby.code ? { lobbyCode: lobby.code } : {}) })
+            : params.roomId
           ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL, ...(params.privateCode ? { privateCode: params.privateCode } : {}) })
           : params.privateCode
             ? client.joinOrCreate("private", { worldId: params.worldId, privateCode: params.privateCode, token: getToken(), v: GAME_PROTOCOL, ...(params.place ? { placeId: params.place } : {}) })
@@ -72,7 +81,7 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
             const { play2dScreen } = await import("../game2d/play2d.ts");
             if (disposed) return;
             wrap.remove();
-            inner = play2dScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode }, go);
+            inner = play2dScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode, worldId: params.worldId }, go);
           } else {
             const { playScreen } = await import("./play.ts");
             if (disposed) return;

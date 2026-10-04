@@ -363,22 +363,30 @@ export function openGuiEditor(o: GuiEditorOpts) {
       ["close", "Zamknij to GUI"],
       ["open", "Otwórz inne GUI"],
       ...(o.mode === "2d" ? [["level", "Idź na poziom"] as [GuiActionType, string]] : [["place", "Idź do miejsca"] as [GuiActionType, string]]),
+      ["rooms", "Pokoje (multiplayer): lista, tworzenie, dołączanie"],
+      ["exit", "Wyjdź z gry"],
     ];
     const targets: [string, string][] =
       actionType === "open"
         ? o.guis.filter((x) => x !== g).map((x) => [x.id, x.name])
-        : actionType === "level"
+        : actionType === "level" || (actionType === "rooms" && o.mode === "2d")
           ? (o.levels ?? []).map((n) => [n, n])
-          : actionType === "place"
+          : actionType === "place" || actionType === "rooms"
             ? (o.places ?? [])
             : [];
     elProps.replaceChildren(
       h("div", { class: "prop-group" }, KIND_LABELS[e.type]),
       field("Nazwa (dla skryptów)", text(e.name, (v) => (e.name = v.trim().slice(0, 40) || e.name))),
       e.type !== "image" && e.type !== "frame" ? field("Napis", text(e.text ?? "", (v) => (e.text = v.slice(0, 300)), true)) : "",
-      e.type === "image"
-        ? h("button", { class: "btn small", onClick: async () => { const img = await pickGuiImage(); if (img) upd(() => (e.image = img)); } }, "🖼 Zmień obrazek")
+      e.type === "image" || e.type === "button"
+        ? h(
+            "div",
+            { class: "row wrap" },
+            h("button", { class: "btn small", onClick: async () => { const img = await pickGuiImage(); if (img) upd(() => (e.image = img), true); } }, e.type === "button" ? "🖼 Obrazek przycisku" : "🖼 Zmień obrazek"),
+            e.type === "button" && e.image ? h("button", { class: "btn small", onClick: () => upd(() => delete e.image, true) }, "Bez obrazka") : "",
+          )
         : "",
+      e.image ? check("Ostry (pixel-art)", !!e.pixel, (v) => (v ? (e.pixel = true) : delete e.pixel)) : "",
       e.type !== "image" && e.type !== "frame"
         ? h(
             "div",
@@ -415,9 +423,9 @@ export function openGuiEditor(o: GuiEditorOpts) {
             null,
             h("div", { class: "prop-group" }, "Po kliknięciu"),
             field("Akcja", select(actionType, ACTIONS, (v) => (e.action = v === "none" ? undefined : { type: v, ...(e.action?.target ? { target: e.action.target } : {}) }))),
-            actionType !== "none" && actionType !== "close"
+            actionType !== "none" && actionType !== "close" && actionType !== "exit"
               ? field(
-                  actionType === "open" ? "Które GUI" : actionType === "level" ? "Który poziom" : "Które miejsce",
+                  actionType === "open" ? "Które GUI" : actionType === "rooms" ? (o.mode === "2d" ? "Poziom gry w pokoju" : "Miejsce gry w pokoju") : actionType === "level" ? "Który poziom" : "Które miejsce",
                   select(e.action?.target ?? "", [["", "(wybierz)"], ...targets], (v) => e.action && (e.action.target = v || undefined)),
                 )
               : "",

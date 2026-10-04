@@ -11,26 +11,44 @@ import { emptyWorld2D } from "../world2d.ts";
 const file = [path.resolve("games", "Ludzik 4.pgame"), path.resolve("..", "games", "Ludzik 4.pgame")].find((f) => fs.existsSync(f)) ?? "";
 const hasGame = !!file;
 
-function setup() {
+/** room = serwer jest pokojem multiplayer (gracze zaczynają na mapie multiplayer) */
+function setup(room = false) {
   const { data } = parseGameFile(fs.readFileSync(file, "utf8"));
   const sent: { sid: string; type: string; msg: unknown }[] = [];
   const sim = new Sim2D(data, {
     send: (sid, type, msg) => sent.push({ sid, type, msg }),
     broadcast: (type, msg) => sent.push({ sid: "*", type, msg }),
-  }, { id: 1, name: "Ludzik 4", ownerName: "Predator" });
+  }, { id: 1, name: "Ludzik 4", ownerName: "Predator", ...(room ? { room: { name: "Pokój Ani", maxPlayers: 3 }, startLevel: "Multiplayer" } : {}) });
   const w = data.world2d!;
   const lvl = (name: string) => w.levels.find((l) => l.name === name)!;
   const objId = (name: string) => w.objects.find((o) => o.name === name)!.id;
-  return { sim, sent, w, lvl, objId, last: (sid: string, type: string) => sent.filter((m) => (m.sid === sid || m.sid === "*") && m.type === type).at(-1)?.msg as never };
+  /** kliknięcie przycisku w GUI menu (jak w oryginale) */
+  const click = (sid: string, gui: string, button: string) => {
+    const g = data.guis!.find((x) => x.name === gui)!;
+    sim.handle(sid, "gui", { g: g.id, e: g.elements.find((e) => e.name === button)!.id });
+  };
+  return { sim, sent, w, lvl, objId, click, data, last: (sid: string, type: string) => sent.filter((m) => (m.sid === sid || m.sid === "*") && m.type === type).at(-1)?.msg as never };
 }
 
-test("Ludzik 4: start na poziomie 1, monety zbierane po drodze i reset po śmierci", { skip: !hasGame }, () => {
-  const { sim, lvl, objId, last } = setup();
+test("Ludzik 4: menu z oryginału, rozpoczęcie = poziom 1, monety zbierane po drodze i reset po śmierci", { skip: !hasGame }, () => {
+  const { sim, lvl, objId, last, click, sent } = setup();
   sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: false });
   const init = last("a", "init2d") as { sync: { level: string; x: number; y: number } };
+  assert.equal(init.sync.level, lvl("Menu").id, "gra zaczyna się w menu");
+  // przycisk "Multiplayer" -> lobby, "Dolacz" -> okno pokoi (mapa multiplayer, max 3 graczy), strzałka -> menu
+  click("a", "Menu", "Multiplayer");
+  assert.equal((last("a", "level") as { level: string }).level, lvl("Lobby").id);
+  click("a", "Lobby", "GreenButton");
+  assert.deepEqual(sent.filter((m) => m.type === "rooms").at(-1)?.msg, { target: "Multiplayer", max: 3 });
+  click("a", "Lobby", "NewSprite");
+  // wyjście z gry
+  click("a", "Menu", "Exit");
+  assert.ok(sent.some((m) => m.sid === "a" && m.type === "exit"));
+  click("a", "Menu", "Rozpoczecie");
   const l1 = lvl("Level 1");
-  assert.equal(init.sync.level, l1.id);
-  assert.deepEqual([init.sync.x, init.sync.y], [380, 301]);
+  const start = last("a", "level") as { level: string; x: number; y: number };
+  assert.equal(start.level, l1.id);
+  assert.deepEqual([start.x, start.y], [380, 301]);
   // idziemy w dół przez pierwsze monety (365..600, y 424)
   const coins = l1.instances.filter((i) => i.obj === objId("Coins") && i.y > 400 && i.y < 440 && i.x < 620);
   assert.ok(coins.length >= 5);
@@ -47,8 +65,9 @@ test("Ludzik 4: start na poziomie 1, monety zbierane po drodze i reset po śmier
 });
 
 test("Ludzik 4: koniec poziomu przenosi do części 2 (strefa NewSp)", { skip: !hasGame }, () => {
-  const { sim, lvl, objId, last } = setup();
+  const { sim, lvl, objId, last, click } = setup();
   sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: false });
+  click("a", "Menu", "Rozpoczecie");
   const goal = lvl("Level 1").instances.find((i) => i.obj === objId("NewSp"))!;
   sim.handle("a", "m", { x: goal.x, y: goal.y + 50, anim: "Idle", flip: false });
   const sync = last("a", "level") as { level: string };
@@ -57,12 +76,10 @@ test("Ludzik 4: koniec poziomu przenosi do części 2 (strefa NewSp)", { skip: !
 });
 
 test("Ludzik 4: mapa multiplayer - przycisk otwiera bramy dla wszystkich, monety są wspólne", { skip: !hasGame }, () => {
-  const { sim, lvl, objId, sent } = setup();
+  const { sim, lvl, objId, sent } = setup(true);
   const mp = lvl("Multiplayer");
-  for (const sid of ["a", "b"]) {
-    sim.join(sid, { userId: sid === "a" ? 1 : 2, username: sid, avatar: {} as never, isOwner: false });
-    sim.handle(sid, "goto", mp.id);
-  }
+  // pokój: gracze od razu na mapie multiplayer
+  for (const sid of ["a", "b"]) sim.join(sid, { userId: sid === "a" ? 1 : 2, username: sid, avatar: {} as never, isOwner: false });
   const button = mp.instances.find((i) => i.obj === objId("Button") && i.key === 1)!;
   sim.handle("a", "m", { x: button.x - 6, y: button.y - 20, anim: "Idle", flip: false });
   sim.tick();
@@ -75,33 +92,22 @@ test("Ludzik 4: mapa multiplayer - przycisk otwiera bramy dla wszystkich, monety
   sim.dispose();
 });
 
-test("Ludzik 4: na mapie multiplayer każdy wybiera swoją postać", { skip: !hasGame }, () => {
-  const { sim, w, lvl, last } = setup();
+test("Ludzik 4: w pokoju gracze 1-3 dostają kolejne postacie (Ludzik, Pies, Nero) jak w GDevelopie", { skip: !hasGame }, () => {
+  const { sim, w, lvl, last, sent } = setup(true);
   const mp = lvl("Multiplayer");
   const name = (id: string) => w.characters.find((c) => c.id === id)!.name;
-  const mpChar = (n: string) => mp.characters!.find((id) => name(id) === n)!;
-  assert.deepEqual(mp.characters!.map(name), ["Ludzik", "Pies", "Nero"]);
-  sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: false });
-  sim.join("b", { userId: 2, username: "Bartek", avatar: {} as never, isOwner: false });
-  // Bartek gra Psem w zwykłych poziomach - na mapie też dostaje Psa
-  sim.handle("b", "char", w.characters.find((c) => c.name === "Pies" && !c.npc)!.id);
-  for (const sid of ["a", "b"]) sim.handle(sid, "goto", mp.id);
-  assert.equal((last("a", "level") as { character: string }).character, mpChar("Ludzik"));
-  assert.equal((last("b", "level") as { character: string }).character, mpChar("Pies"));
-  // Ania zmienia postać na mapie na Nero
-  sim.handle("a", "char", mpChar("Nero"));
-  assert.equal((last("a", "cmd") as { character: string }).character, mpChar("Nero"));
-  sim.tick();
-  const seen = (last("b", "players") as { sid: string; character: string }[] | undefined)?.find((p) => p.sid === "a");
-  if (seen) assert.equal(seen.character, mpChar("Nero"));
-  // postać spoza listy mapy (duży Ludzik) nie zmienia wyglądu na mapie
-  sim.handle("a", "char", w.characters.find((c) => c.name === "Ludzik" && !c.npc)!.id);
-  assert.equal((last("a", "cmd") as { character: string }).character, mpChar("Nero"));
+  for (const [sid, n] of [["a", "Ania"], ["b", "Bartek"], ["c", "Celina"]] as const) sim.join(sid, { userId: n.length, username: n, avatar: {} as never, isOwner: false });
+  for (const sid of ["a", "b", "c"]) assert.equal((last(sid, "init2d") as { sync: { level: string } }).sync.level, mp.id);
+  const charOf = (sid: string) => name((sent.filter((m) => m.sid === sid && m.type === "cmd" && (m.msg as { character?: string }).character).at(-1)!.msg as { character: string }).character);
+  assert.equal(charOf("a"), "Gracz 1 (Ludzik)");
+  assert.equal(charOf("b"), "Gracz 2 (Pies)");
+  assert.equal(charOf("c"), "Gracz 3 (Nero)");
+  assert.ok(sent.some((m) => m.sid === "a" && m.type === "chat" && String((m.msg as { text: string }).text).includes("Pokój Ani")));
   sim.dispose();
 });
 
 test("Ludzik 4: potwór ginie na płonącej platformie i wraca po chwili", { skip: !hasGame }, () => {
-  const { sim, w, lvl, objId, sent } = setup();
+  const { sim, w, lvl, objId, sent, click } = setup();
   const l1 = lvl("Level 1");
   const monster = l1.instances.find((i) => i.obj === objId("Potwor"))!;
   const fire = l1.instances.find((i) => i.obj === objId("Flsmrplatforma"))!;
@@ -113,6 +119,7 @@ test("Ludzik 4: potwór ginie na płonącej platformie i wraca po chwili", { ski
   Date.now = () => clock;
   try {
     sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: false });
+    click("a", "Menu", "Rozpoczecie");
     for (let t = 0; t < 40; t++) ((clock += 50), sim.tick());
     const last = () => sent.filter((m) => m.type === "enemies").at(-1)?.msg as { id: string; dead?: boolean }[];
     assert.equal(last().find((e) => e.id === monster.id)?.dead, true, "potwór zginął w ogniu");

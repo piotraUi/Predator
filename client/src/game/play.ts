@@ -1,4 +1,5 @@
 // Ekran gry - łączy się z serwerem, steruje postacią i pokazuje innych graczy.
+import { openRoomsWindow } from "./rooms.ts";
 import { PadMenuNav, type PadState } from "../engine/gamepad.ts";
 import { GuiOverlay } from "../ui/guiOverlay.ts";
 import { MAIN_PLACE } from "../../../shared/places.ts";
@@ -936,6 +937,29 @@ export function playScreen(
         ...(m.id !== start ? { place: m.id } : params.offline ? { place: m.id } : {}),
       });
     });
+    // pokoje (multiplayer) i wyjście z gry - przycisk GUI albo skrypt
+    let inRoom = false;
+    r.onMessage("rooms", (m: { target?: string; max?: number }) =>
+      openRoomsWindow({
+        worldId: params.worldId,
+        target: m?.target ?? "",
+        max: m?.max,
+        offline: !!params.offline,
+        go,
+        back: inRoom ? params.back : { screen: "play", params: { worldId: params.worldId, ...(params.back ? { back: params.back } : {}) } },
+        leave: () => {
+          leaving = true;
+          room?.leave();
+        },
+      }),
+    );
+    r.onMessage("exit", () => leave());
+    r.onMessage("room", (m: { name: string; code?: string }) => {
+      inRoom = true;
+      const title = topbar.querySelector(".hud-title");
+      if (title) title.textContent = `${init.info.name} · 🎮 ${m.name}${m.code ? ` (kod ${m.code})` : ""}`;
+      toast(`🎮 Pokój „${m.name}”` + (m.code ? ` - kod dla znajomych: ${m.code}` : ""), "good");
+    });
     r.onMessage("sky", (c: string) => world.setSky(c));
     r.onMessage("skybox", (id: string) => (id ? world.setSkybox(id) : world.setSky(init.world.skyColor)));
     r.onMessage("light", (l: { brightness?: number; fog?: number }) => {
@@ -1057,8 +1081,9 @@ export function playScreen(
       if (pad.pressed.y && !guiPlace) emoteMenu.classList.toggle("hidden");
       const menuOpen = !menu.classList.contains("hidden");
       const emotesOpen = !emoteMenu.classList.contains("hidden");
-      const root = menuOpen ? menu : emotesOpen ? emoteMenu : guiLayer.padRoot(guiPlace);
-      padNav.update(pad, root, menuOpen ? () => menu.classList.add("hidden") : emotesOpen ? () => emoteMenu.classList.add("hidden") : undefined);
+      const dialog = document.querySelector<HTMLElement>(".modal-bg .modal");
+      const root = dialog ?? (menuOpen ? menu : emotesOpen ? emoteMenu : guiLayer.padRoot(guiPlace));
+      padNav.update(pad, root, dialog ? () => dialog.closest(".modal-bg")?.remove() : menuOpen ? () => menu.classList.add("hidden") : emotesOpen ? () => emoteMenu.classList.add("hidden") : undefined);
       if (root || guiPlace) return !!root;
       // prawa gałka: kamera (jak myszka)
       const look = 2.8 * dt;

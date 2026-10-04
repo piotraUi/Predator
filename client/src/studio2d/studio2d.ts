@@ -1597,6 +1597,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       const desc = h("textarea", { value: meta.description, maxLength: 500, rows: 3 });
       const maxP = h("input", { type: "number", min: "1", max: String(MAX_PLAYERS_LIMIT), value: String(meta.maxPlayers) });
       const pub = h("input", { type: "checkbox", checked: src.published });
+      const ownMenu = h("input", { type: "checkbox", checked: !!w.ownMenu });
       const phys = w.physics;
       const pf: [keyof typeof phys, string][] = [
         ["maxSpeed", "Prędkość biegu"],
@@ -1635,6 +1636,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
           h("label", null, "Opis", desc),
           h("label", null, "Kategoria (gracze znajdą grę w Hitach i wyszukiwarce)", genreSel),
           h("label", null, `Maks. graczy na serwer (1–${MAX_PLAYERS_LIMIT})`, maxP),
+          h("label", { class: "check" }, ownMenu, h("span", null, "Własne menu gry (GUI): w menu ☰ Predatora nie ma wyboru postaci i poziomów")),
           h("div", { class: "prop-group" }, "Fizyka postaci (piksele na sekundę)"),
           h("div", { class: "grid2" }, physIn.map((p) => p.el)),
           h("div", { class: "prop-group" }, "Dźwięki"),
@@ -1664,6 +1666,8 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
                 else delete w.sounds[s.k];
               }
               src.published = pub.checked;
+              if (ownMenu.checked) w.ownMenu = true;
+              else delete w.ownMenu;
               data.badges = badges.read();
               if (genreSel.value) data.genre = genreSel.value;
               else delete data.genre;

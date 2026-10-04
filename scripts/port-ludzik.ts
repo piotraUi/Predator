@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { unzipSync } from "fflate";
-import { importGDevelop, importSound } from "../shared/import/gdevelop.ts";
+import { importGDevelop, importSound, uiSceneToGui } from "../shared/import/gdevelop.ts";
 import { makeGameFile } from "../shared/gamefile.ts";
 import type { WorldData } from "../shared/types.ts";
 import type { Character2D, Inst2D, Level2D, Obj2D } from "../shared/types2d.ts";
@@ -85,7 +85,7 @@ set("NewText", { text: "Czas: {time}" }, "Multiplayergame");
 const spawn: Obj2D = { id: newId2d(), name: "Start", kind: "sprite", anims: [], w: 50, h: 50, hitbox: [0, 0, 1, 1], solid: "none", role: "spawn", hidden: true };
 w.objects.push(spawn);
 
-Object.assign(L1, { zoom: 2, killY: 587, cameraBottom: 587, restartOnDeath: true, selectable: true });
+Object.assign(L1, { zoom: 2, killY: 587, cameraBottom: 587, restartOnDeath: true });
 L1.instances.push(inst(spawn, 380, 301));
 Object.assign(L2, { name: "Level 1 Cz2", zoom: 2, killY: 587, cameraBottom: 587, restartOnDeath: true });
 L2.instances.push(inst(spawn, -5574, -820));
@@ -97,10 +97,11 @@ for (const i of L2.instances) {
 // w części 2 jest ciemno (warstwa oświetlenia 50%)
 L2.ambient = "#808080";
 
-Object.assign(MP, { name: "Multiplayer", zoom: 3, background: "#4a90e2", stackPlayers: true, selectable: true, killY: 1200 });
+Object.assign(MP, { name: "Multiplayer", zoom: 3, background: "#4a90e2", stackPlayers: true, killY: 1200 });
 // miejsca startu graczy 1-3 (w GDevelopie to byli gracze Player1..3)
 const mpPlayers = ["Player1", "Player2", "Player3"].map((n) => O(n, "Multiplayergame"));
-const MP_NAMES = ["Ludzik", "Pies", "Nero"];
+// gracze 1-3 w pokoju multiplayer (jak Player1..3 w GDevelopie) - kolejność wejścia do pokoju
+const MP_NAMES = ["Gracz 1 (Ludzik)", "Gracz 2 (Pies)", "Gracz 3 (Nero)"];
 for (const i of [...MP.instances]) {
   const idx = mpPlayers.findIndex((o) => o.id === i.obj);
   if (idx < 0) continue;
@@ -127,7 +128,28 @@ w.characters = [
   ...mpChars,
 ];
 MP.characters = mpChars.map((c) => c.id);
-w.startLevel = L1.id;
+// ---------- oryginalne menu (sceny z samym interfejsem) ----------
+// te same grafiki w tych samych miejscach; "Rozpoczęcie" i "z zapisem" były odwrócone zdarzeniem na start sceny
+const uiMenu = uiSceneToGui(files, res.project, "Menu", {
+  Rozpoczecie: { button: true, flip: true, action: { type: "level", target: "Level 1" } },
+  Rozpoczeciezzapisem: { button: true, flip: true },
+  Exit: { button: true, action: { type: "exit" } },
+  Multiplayer: { button: true, action: { type: "level", target: "Lobby" } },
+  // test joysticka GDevelopa - Predator ma własne sterowanie (dotyk, klawiatura, pad)
+  TEST: { skip: true },
+  // pole na kod: kliknięcie otwiera okienko z pytaniem (skrypt "Menu")
+  Kody: { button: true, el: { text: "Wpisz kod....", bg: "#ffffff", color: "#777777", border: "#000000", align: "left", fontSize: 20 } },
+});
+const uiLobby = uiSceneToGui(files, res.project, "Lobby", {
+  // przycisk z rozszerzenia GDevelopa (zielony panel z napisem) - otwiera okno pokoi
+  GreenButton: { button: true, el: { text: "Dolacz", bg: "#8ee04a", color: "#45781f", fontSize: 64, radius: 18, border: "#c9f59a", align: "center" } },
+  NewSprite: { button: true, action: { type: "level", target: "Menu" } },
+});
+for (const e of uiLobby.gui.elements) if (e.type === "text") e.align = "center";
+w.levels.unshift(uiMenu.level, uiLobby.level);
+const guis = [uiMenu.gui, uiLobby.gui];
+w.startLevel = uiMenu.level.id;
+w.ownMenu = true;
 
 // ---------- dźwięki ----------
 const snd = (name: string) => importSound(files, res.project, w, name);
@@ -158,6 +180,33 @@ w.assets = w.assets.filter((a) => usedAssets.has(a.id));
 // ---------- logika ze zdarzeń GDevelopa jako Lua ----------
 const lua = (name: string, source: string) => ({ id: newId2d(), name, type: "lua" as const, source: source.trim() + "\n", enabled: true });
 const scripts = [
+  lua("Menu", `
+-- Menu z oryginału: rozpoczęcie, rozpoczęcie z zapisem, kody, multiplayer (lobby z pokojami)
+onGuiClick(function(player, gui, button)
+  if gui == "Menu" then
+    if button == "Rozpoczeciezzapisem" then
+      setLevel(player, loadData(player, "poziom", "Level 1"))
+    elseif button == "Kody" then
+      prompt(player, "kod", "Wpisz kod")
+    end
+  elseif gui == "Lobby" and button == "GreenButton" then
+    -- okno pokoi: lista, tworzenie i dołączanie; w pokoju gra się na mapie multiplayer (max. 3 graczy)
+    openRooms(player, "Multiplayer", 3)
+  end
+end)
+
+-- kod z menu GDevelopa: dźwięk monety i przejście do części 2
+onAnswer(function(player, id, text)
+  if id ~= "kod" then return end
+  if text == "L3v3lS3l3ctKEY" then
+    playSound("CoinPickUp.wav", player)
+    tell(player, "Kod przyjęty! Przenoszę do części 2.")
+    setLevel(player, "Level 1 Cz2")
+  elseif text ~= "" then
+    tell(player, "Zły kod")
+  end
+end)
+`),
   lua("Poziom 1", `
 -- Przyspieszenie (NewSprite): bieg 1000 px/s i animacja biegu
 onTouch("NewSprite", function(player)
@@ -188,12 +237,9 @@ onTouch("Koniec", function(player)
   autoWalk(player, 1)
 end)
 
--- Stary kod wyboru poziomu z menu GDevelopa
-onChat(function(player, message)
-  if message == "L3v3lS3l3ctKEY" then
-    tell(player, "Kod przyjęty! Przenoszę do części 2.")
-    setLevel(player, "Level 1 Cz2")
-  end
+-- zapis postępu (przycisk "Rozpoczęcie z zapisem" w menu)
+onLevelEnter(function(player, level)
+  if level == "Level 1" or level == "Level 1 Cz2" then saveData(player, "poziom", level) end
 end)
 `),
   lua("Poziom 1 część 2", `
@@ -219,6 +265,26 @@ end)
 -- Gdy przejdą wszyscy - nowa runda.
 local MAPA = "Multiplayer"
 local doorOpen = false
+
+-- gracze 1-3 jak w GDevelopie: kolejne wolne miejsce w pokoju (Ludzik, Pies, Nero)
+local POSTACIE = { "Gracz 1 (Ludzik)", "Gracz 2 (Pies)", "Gracz 3 (Nero)" }
+local miejsce = {}
+onLevelEnter(function(player, level)
+  if level == MAPA then
+    local zajete = {}
+    for _, p in ipairs(getPlayersOnLevel(MAPA)) do
+      if p ~= player and miejsce[p] then zajete[miejsce[p]] = true end
+    end
+    local n = 1
+    while zajete[n] do n = n + 1 end
+    miejsce[player] = n
+    setCharacter(player, POSTACIE[((n - 1) % 3) + 1])
+    if getRoom() ~= "" then tell(player, "Jesteś graczem " .. n .. " w pokoju „" .. getRoom() .. "”") end
+  elseif miejsce[player] then
+    miejsce[player] = nil
+    setCharacter(player)
+  end
+end)
 
 every(0.25, function()
   if not doorOpen and #getPlayersOnLevel(MAPA) > 0 and countObjects("Coin", MAPA) == 0 then
@@ -246,7 +312,7 @@ end)
 `),
 ];
 
-const data: WorldData = { ...emptyWorld(), parts: [], scripts, mode: "2d", world2d: w };
+const data: WorldData = { ...emptyWorld(), parts: [], scripts, mode: "2d", world2d: w, guis };
 const clean = sanitizeWorld(data);
 const out = path.join(import.meta.dirname, "..", "games", "Ludzik 4.pgame");
 fs.writeFileSync(

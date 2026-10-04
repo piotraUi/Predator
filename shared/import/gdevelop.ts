@@ -4,6 +4,7 @@
 // automatycznie - trzeba je napisać w Lua albo użyć wbudowanych zachowań Predatora.
 import type { Anim2D, Asset2D, Character2D, Inst2D, Level2D, Obj2D, World2D } from "../types2d.ts";
 import { DEFAULT_PHYSICS_2D, newId2d } from "../world2d.ts";
+import { newGuiId, type GuiDef, type GuiEl } from "../gui.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;
@@ -324,4 +325,116 @@ export function importSound(files: Map<string, Uint8Array>, project: Json, world
   const a: Asset2D = { id: newId2d(), name: resName.replace(/^assets[\\/]/, ""), type: "sound", data: `data:${mime};base64,${toBase64(bytes)}` };
   world.assets.push(a);
   return a;
+}
+
+// ---------- sceny z samym interfejsem (menu, wybór poziomu / postaci, lobby) ----------
+
+/** jak przenieść jeden obiekt sceny UI do GUI */
+export interface UiObjectRule {
+  /** przycisk (klikalny) zamiast obrazka */
+  button?: boolean;
+  action?: GuiEl["action"];
+  /** odbity w poziomie (np. zdarzenie "na start sceny: odwróć") */
+  flip?: boolean;
+  /** inne cechy elementu (np. napis i kolory przycisku z rozszerzenia GDevelopa) */
+  el?: Partial<GuiEl>;
+  /** pomiń obiekt (np. joystick ekranowy) */
+  skip?: boolean;
+}
+
+/**
+ * Scena GDevelopa z samym interfejsem -> poziom menu Predatora (bez postaci, kamera stoi) + GUI z tymi samymi
+ * grafikami w tych samych miejscach (pozycje w % ekranu 1280x720, obrazki ostre jak pixel-art).
+ */
+export function uiSceneToGui(
+  files: Map<string, Uint8Array>,
+  project: Json,
+  sceneName: string,
+  rules: Record<string, UiObjectRule> = {},
+  opts: { width?: number; height?: number; guiName?: string } = {},
+): { level: Level2D; gui: GuiDef } {
+  const W = opts.width ?? project.properties?.windowWidth ?? 1280;
+  const H = opts.height ?? project.properties?.windowHeight ?? 720;
+  const scene = project.layouts.find((l: Json) => l.name === sceneName);
+  if (!scene) throw new Error("Brak sceny " + sceneName);
+  const find = (file: string) => {
+    if (files.has(file)) return files.get(file);
+    for (const [k, v] of files) if (k.endsWith("/" + file)) return v;
+    return undefined;
+  };
+  const res = new Map<string, Json>(project.resources.resources.map((r: Json) => [r.name, r]));
+  const pct = (v: number, of: number) => Math.round((v / of) * 10000) / 100;
+  const elements: GuiEl[] = [];
+  const instances = [...(scene.instances ?? [])].sort((a: Json, b: Json) => (a.zOrder ?? 0) - (b.zOrder ?? 0));
+  for (const i of instances) {
+    const o = (scene.objects ?? []).find((x: Json) => x.name === i.name) ?? (project.objects ?? []).find((x: Json) => x.name === i.name);
+    const rule = rules[i.name] ?? {};
+    if (!o || rule.skip) continue;
+    const type = String(o.type);
+    const base = { id: newGuiId(), name: i.name, x: pct(i.x, W), y: pct(i.y, H) };
+    if (type === "Sprite") {
+      const img = o.animations?.[0]?.directions?.[0]?.sprites?.[0]?.image;
+      const r = img ? res.get(img) : undefined;
+      const bytes = r ? find(r.file) : undefined;
+      if (!bytes) continue;
+      const size = imageSize(bytes) ?? { w: 32, h: 32 };
+      const w = i.customSize ? i.width : size.w;
+      const h = i.customSize ? i.height : size.h;
+      const ext = (r.file.split(".").pop() ?? "png").toLowerCase();
+      elements.push({
+        ...base,
+        type: rule.button ? "button" : "image",
+        w: pct(w, W),
+        h: pct(h, H),
+        image: `data:${MIME[ext] ?? "image/png"};base64,${toBase64(bytes)}`,
+        // małe obrazki powiększone (pixel-art) - ostre krawędzie
+        ...(w >= size.w * 1.5 || h >= size.h * 1.5 ? { pixel: true } : {}),
+        ...(rule.flip ? { flip: true } : {}),
+        ...(rule.action ? { action: rule.action } : {}),
+        ...rule.el,
+      });
+    } else if (type.endsWith("Text") && !type.includes("Input")) {
+      const c = o.content ?? o;
+      const text = String(c.text ?? o.string ?? "");
+      const size = Number(c.characterSize ?? o.characterSize ?? 20);
+      const lines = text.split("\n");
+      const longest = Math.max(...lines.map((l) => l.length));
+      // tekst w GDevelopie ma lewy górny róg w x, y i szerokość wg napisu
+      const w = i.customSize && i.width > 0 ? Math.max(i.width, longest * size * 0.56) : longest * size * 0.56 + size;
+      const h = lines.length * size * 1.25 + size * 0.2;
+      const align = c.textAlignment === "center" || c.align === "center" ? "center" : c.textAlignment === "right" ? "right" : "left";
+      elements.push({
+        ...base,
+        type: rule.button ? "button" : "text",
+        w: pct(w, W),
+        h: pct(h, H),
+        text,
+        fontSize: size,
+        color: rgb(c.color ?? o.color, "#000000"),
+        align,
+        ...(c.bold ? { bold: true } : {}),
+        ...(rule.action ? { action: rule.action } : {}),
+        ...rule.el,
+      });
+    } else if (rule.el || rule.button) {
+      // inne obiekty (pole tekstowe, przycisk z rozszerzenia) - według reguły
+      const w = i.customSize ? i.width : 200;
+      const h = i.customSize ? i.height : 60;
+      elements.push({ ...base, type: rule.button ? "button" : "frame", w: pct(w, W), h: pct(h, H), ...(rule.action ? { action: rule.action } : {}), ...rule.el });
+    }
+  }
+  const level: Level2D = {
+    id: newId2d(),
+    name: sceneName,
+    background: rgb(`${scene.r ?? 0};${scene.v ?? scene.g ?? 0};${scene.b ?? 0}`, "#000000"),
+    zoom: 1,
+    instances: [],
+    killY: null,
+    cameraBottom: null,
+    menu: true,
+    cameraX: W / 2,
+    cameraY: H / 2,
+  };
+  const gui: GuiDef = { id: newGuiId(), name: opts.guiName ?? sceneName, open: true, where: level.id, elements };
+  return { level, gui };
 }

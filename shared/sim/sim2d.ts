@@ -10,7 +10,7 @@ import { instBox, levelByName, newId2d, overlaps, SPRING_PUSH, type Box } from "
 import type { SimInfo, SimTransport, SimUser } from "./gameSim.ts";
 import { GameShop } from "./shop.ts";
 import { PlayerDataStore } from "./playerData.ts";
-import { GuiRuntime, guiLuaFunctions, type GuiDef } from "../gui.ts";
+import { clientGuiAction, GuiRuntime, guiLuaFunctions, roomLuaFunctions, type GuiDef } from "../gui.ts";
 
 const LIMIT = 1_000_000;
 /** dalej niż tyle na jedną wiadomość = teleport (nie sprawdzamy dotknięć po drodze) */
@@ -264,7 +264,8 @@ export class Sim2D {
   // ---------- gracze ----------
 
   join(sid: string, user: SimUser) {
-    const start = this.w.levels.find((l) => l.id === this.w.startLevel) ?? this.w.levels[0];
+    // pokój gra na swoim poziomie (np. mapa multiplayer)
+    const start = (this.info.startLevel ? levelByName(this.w, this.info.startLevel) : undefined) ?? this.w.levels.find((l) => l.id === this.w.startLevel) ?? this.w.levels[0];
     const p: PlayerState = {
       sid,
       username: user.username,
@@ -382,7 +383,9 @@ export class Sim2D {
     const c = this.gui.click(p.sid, msg);
     if (!c) return;
     const a = c.el.action;
-    if (a && a.type !== "none") {
+    if (clientGuiAction(a, (type, m) => this.t.send(p.sid, type, m))) {
+      // okno pokoi / wyjście - GUI zostaje
+    } else if (a && a.type !== "none") {
       this.gui.setOpen(p.sid, c.gui.id, false);
       if (a.type === "open" && a.target) this.gui.setOpen(p.sid, a.target, true);
       if (a.type === "level" && a.target) {
@@ -866,6 +869,20 @@ export class Sim2D {
     const S = (v: LuaValue) => (typeof v === "string" ? v : v === null || v === undefined ? "" : String(v));
     const N = (v: LuaValue, def = 0) => (typeof v === "number" && Number.isFinite(v) ? v : def);
     this.lua.defineFunctions(guiLuaFunctions(this.gui, () => [...this.players.keys()], (text) => this.log(text, true)));
+    // wybór postaci z menu gry (jak przycisk postaci w menu ☰): postać gracza na zwykłych poziomach
+    this.lua.defineFunctions({
+      chooseCharacter: (sid: unknown, name: unknown) => {
+        const c = typeof name === "string" ? this.w.characters.find((x) => x.name === name) : undefined;
+        if (typeof sid !== "string" || !c) return this.log(`chooseCharacter: nie ma postaci „${String(name ?? "")}”`, true);
+        const p = this.players.get(sid);
+        if (!p) return;
+        p.chosen = c.id;
+        p.character = this.charFor(p)?.id ?? "";
+        this.levelState(p.level).playersDirty = true;
+        this.t.send(sid, "cmd", { character: p.character } satisfies Cmd2D);
+      },
+    });
+    this.lua.defineFunctions(roomLuaFunctions((sid, type, msg) => this.players.has(sid) && this.t.send(sid, type, msg), this.info.room));
     this.lua.defineFunctions({
       setLevel: (sid, name) => {
         const p = P(S(sid));

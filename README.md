@@ -199,15 +199,17 @@ Gra 2D działa tak samo jak 3D: na serwerze z multiplayerem, w przeglądarce, na
   - gracze: `hidePlayer`, `restartLevel`.
 
   Pełna lista jest w oknie skryptu w Studio.
+- **Własne menu gry:** w Ustawieniach gry zaznacz „Własne menu gry (GUI)”. Wtedy w ☰ nie ma wyboru postaci ani poziomów Predatora, a gra pokazuje swoje GUI. Przyciski GUI mogą mieć **obrazek** zamiast tła (z opcją „Ostry (pixel-art)” i odbiciem). Mają też akcje **„Pokoje”** (lista pokoi multiplayer na wybranym poziomie) i **„Wyjdź z gry”**.
 - **Import z GDevelopa:** Studio → Plik → „Importuj grę z GDevelopa (.zip)” (eksport HTML5). Przenosi sceny, obiekty, animacje, maski kolizji, dźwięki i światła. Logikę (zdarzenia) trzeba ustawić zachowaniami i w Lua.
 
 ### Ludzik 4
 
 Gra **Ludzik 4** (z GDevelopa) jest przeniesiona do Predatora i serwer tworzy ją sam jako przykładową grę (`games/Ludzik 4.pgame`):
 
-- **Level 1:** monety, ogień, potwór, drabiny, checkpoint, przyspieszenie, liana i Michael Jackson. Postać do wyboru w menu: Ludzik z psem, Ludzik, Pies albo Nero.
+- **Menu jak w oryginale:** ekran startowy z oryginalnymi grafikami przycisków (Rozpoczęcie, Rozpoczęcie z zapisem, Multiplayer, Exit i okienko na kody).
+- **Level 1:** monety, ogień, potwór, drabiny, checkpoint, przyspieszenie, liana i Michael Jackson.
 - **Level 1 część 2:** noc ze światłami, jazda w prawo.
-- **Multiplayer:** mapa dla drużyny. Przyciski otwierają bramy, monety są wspólne, a po zebraniu wszystkich otwierają się drzwi. Zamiast serwerów GDevelopa działa multiplayer Predatora: wchodzisz z menu gry („Idź do poziomu”).
+- **Multiplayer z pokojami:** w menu Multiplayer → „Dołącz” otwiera listę pokoi. Można założyć własny pokój (też prywatny, z kodem) albo dołączyć do cudzego. W pokoju gracze dostają po kolei Ludzika, Psa i Nero. Przyciski otwierają bramy, monety są wspólne, a po zebraniu wszystkich otwierają się drzwi.
 
 Twórcą gry jest **Fadnmade**. Jeśli konto o tym nicku już istnieje, serwer przy starcie przekazuje mu grę. Jeśli nie, gra trafia do tego, kto założy konto Fadnmade. Twórca może ją edytować w Studio i dostaje monety za wizyty. Listę gier z przypisanymi twórcami ustawisz w `server/src/creators.ts`.
 
@@ -218,7 +220,7 @@ Plik powstaje z oryginalnego zipa skryptem `npx tsx scripts/port-ludzik.ts game.
 Druga gra Fadnmade (`games/Ludzik 3 & Nero.pgame`). Serwer też tworzy ją sam i przekazuje twórcy:
 
 - **Poziomy 1-10:** trampoliny, beczki, cylindry, lód, kolce i monety. Tabliczka „koniec” albo drzwi prowadzą dalej.
-- **Postacie:** Ludzik, Nero albo Pies do wyboru w menu (☰). W GDevelopie każdy poziom był trzy razy, tu jest raz.
+- **Menu jak w oryginale:** ekran Start, wybór poziomu (1-10) i wybór postaci (Ludzik, Nero, Pies) z oryginalnymi grafikami. W GDevelopie każdy poziom był trzy razy (dla każdej postaci), tu jest raz.
 - **Walka z Gigantem:** trzeba przetrwać jego ataki. Dotknięcie Giganta zaczyna walkę od nowa.
 - **Lot przez kosmos:** widok z góry i kamienie do rozbijania.
 - **Druga walka:** po wygranej gracz dostaje odznakę „Pogromca Giganta”.
@@ -303,6 +305,10 @@ end)
 | `giveTool`, `removeTool`, `hasTool` | ekwipunek (narzędzia po nazwie) |
 | `damage`, `heal`, `getHealth`, `setHealth` | zdrowie (0–100) |
 | `setCharacter(player, "Nazwa")` | wygląd gracza jako postać ze Studio (bez nazwy = własny awatar) |
+| `chooseCharacter(player, "Nazwa")` | (2D) postać gracza z listy postaci gry, jak wybór w menu |
+| `openRooms(player, "Poziom", 4)` | okno pokoi multiplayer: gracz zakłada pokój albo dołącza do pokoju, gra toczy się na podanym poziomie / w miejscu (maks. graczy) |
+| `getRoom()` | pokój, w którym działa serwer: `{name, code, maxPlayers}` albo `nil` |
+| `exitGame(player)` | wyjście gracza z gry |
 | `playAnimation(player, "Nazwa")`, `stopAnimation(player)` | animacja z edytora animacji na graczu |
 | `npcAnimation("NazwaKlocka", "Animacja")` | animacja NPC |
 | `setSky("#0b1026")` | kolor nieba (np. noc) |

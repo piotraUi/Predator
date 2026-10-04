@@ -168,3 +168,43 @@ export function upgradeLudzikPart2(stored: WorldData, fresh: WorldData, levelNam
   }
   return added ? { ...stored, world2d: out } : null;
 }
+
+/**
+ * Własne menu gry z oryginału (sceny UI z GDevelopa): poziomy menu, GUI z grafikami i skrypty menu.
+ * Dla gier zapisanych starszą wersją (np. na koncie twórcy, gdzie plik gry ich nie podmienia).
+ * Skrypty o tych samych nazwach dostają nową wersję, a postacie z mapy multiplayer - nowe nazwy.
+ */
+export function upgradeOwnMenu(stored: WorldData, fresh: WorldData): WorldData | null {
+  const fw = fresh.world2d;
+  if (!stored.world2d || !fw?.ownMenu || stored.world2d.ownMenu) return null;
+  const out = structuredClone(stored);
+  const w = out.world2d!;
+  const menus = fw.levels.filter((l) => l.menu && !w.levels.some((x) => x.name === l.name));
+  w.levels.unshift(...structuredClone(menus));
+  const startName = fw.levels.find((l) => l.id === fw.startLevel)?.name;
+  const start = w.levels.find((l) => l.name === startName);
+  if (start) w.startLevel = start.id;
+  w.ownMenu = true;
+  // GUI menu (odwołują się do poziomów menu po id - te są skopiowane razem z id)
+  const names = new Set((fresh.guis ?? []).map((g) => g.name));
+  out.guis = [...(out.guis ?? []).filter((g) => !names.has(g.name)), ...structuredClone(fresh.guis ?? [])];
+  // skrypty: nowe wersje (np. koniec gry wraca do menu) i nowe skrypty menu
+  for (const s of fresh.scripts) {
+    const i = out.scripts.findIndex((x) => x.name === s.name);
+    if (i >= 0) out.scripts[i] = { ...out.scripts[i], source: s.source, type: s.type, enabled: s.enabled };
+    else out.scripts.push(structuredClone(s));
+  }
+  // postacie z listy poziomu (np. gracze 1-3 na mapie multiplayer) - nazwy jak w nowej wersji
+  for (const fl of fw.levels) {
+    if (!fl.characters?.length) continue;
+    const sl = w.levels.find((l) => l.name === fl.name);
+    sl?.characters?.forEach((id, k) => {
+      const c = w.characters.find((x) => x.id === id);
+      const fc = fw.characters.find((x) => x.id === fl.characters![k]);
+      if (c && fc) c.name = fc.name;
+    });
+  }
+  // dźwięki użyte w menu (np. kod w menu) - brakujące dokładamy
+  for (const a of fw.assets) if (a.type === "sound" && !w.assets.some((x) => x.name === a.name)) w.assets.push(structuredClone(a));
+  return out;
+}

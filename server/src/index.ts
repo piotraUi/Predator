@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import type { WorldData } from "../../shared/types.ts";
 import { demoArena, demoObby, sanitizeWorld, welcomeBadge } from "../../shared/world.ts";
-import { upgradeAngles, upgradeLudzikCharacters, upgradeLudzikPart2 } from "../../shared/import/upgrades.ts";
+import { upgradeAngles, upgradeLudzikCharacters, upgradeLudzikPart2, upgradeOwnMenu } from "../../shared/import/upgrades.ts";
 import { demoCity } from "../../shared/demos/city.ts";
 import { MINIGAMES } from "../../shared/demos/minigames.ts";
 import { api } from "./api.ts";
@@ -78,6 +78,8 @@ gameServer.define("world", WorldRoom).filterBy(["worldId", "placeId"]);
 gameServer.define("private", WorldRoom).filterBy(["worldId", "privateCode", "placeId"]);
 // wspólna edycja w Studiu - jeden pokój na grę
 gameServer.define("studio", StudioRoom).filterBy(["worldId"]);
+// pokoje gier (multiplayer) zakładane przez graczy z okna "Pokoje" - zawsze nowy pokój, dołącza się po id
+gameServer.define("lobby", WorldRoom);
 
 // przykładowe gry - tworzone, jeśli ich jeszcze nie ma
 /** gra z pliku .pgame w folderze games/ (np. przeniesiona z GDevelopa) */
@@ -155,6 +157,15 @@ for (const [name, description, make, thumb] of demos) {
     const part2 = cur && upgradeLudzikPart2(cur, fresh);
     if (part2) (cur = part2), console.log("Ludzik 4: nowa część 2 (sprężyna, kolce, beczka, monety)");
     if (cur && (chars || angles || part2)) worlds.setData(id, sanitizeWorld(cur));
+  }
+  // gry z GDevelopa zapisane starszą wersją: oryginalne menu (sceny UI), wybór postaci i pokoje multiplayer
+  if (name === "Ludzik 4" || name === "Ludzik 3 & Nero") {
+    const r = worlds.byId(id);
+    const menu = r && upgradeOwnMenu(JSON.parse(r.data) as WorldData, make());
+    if (menu) {
+      worlds.setData(id, sanitizeWorld(menu));
+      console.log(`${name}: oryginalne menu z GDevelopa (wybór postaci, poziomów, pokoje)`);
+    }
   }
   // nowa wersja gry z pliku (np. straszniejszy Tunnel Escape) - podmieniamy, póki gra jest na koncie Predator
   const hash = fileHashes.get(name);

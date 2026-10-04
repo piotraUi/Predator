@@ -12,7 +12,7 @@ import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, World
 import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
 
 import { MAX_LABEL } from "../world.ts";
-import { GuiRuntime, guiLuaFunctions } from "../gui.ts";
+import { clientGuiAction, GuiRuntime, guiLuaFunctions, roomLuaFunctions, type RoomInfo } from "../gui.ts";
 import { findPlace, MAIN_PLACE } from "../places.ts";
 
 /** zmiana klocka wysyłana graczom; tw = płynne przejście do nowej pozycji (sekundy) */
@@ -51,6 +51,10 @@ export interface SimInfo {
   id: number;
   name: string;
   ownerName: string;
+  /** serwer jest pokojem (multiplayer) - nazwa, kod */
+  room?: RoomInfo;
+  /** gry 2D: poziom, na który wchodzą gracze (pokój gra na swoim poziomie) */
+  startLevel?: string;
 }
 
 interface PlayerState extends NetPlayer {
@@ -274,7 +278,9 @@ export class GameSim {
     const c = this.gui.click(sid, msg);
     if (!c) return;
     const a = c.el.action;
-    if (a && a.type !== "none") {
+    if (clientGuiAction(a, (type, m) => this.t.send(sid, type, m))) {
+      // okno pokoi / wyjście - GUI zostaje
+    } else if (a && a.type !== "none") {
       this.gui.setOpen(sid, c.gui.id, false);
       if (a.type === "open" && a.target) this.gui.setOpen(sid, a.target, true);
       if (a.type === "place" && a.target) this.teleportToPlace(sid, a.target);
@@ -857,6 +863,7 @@ export class GameSim {
       return name;
     };
     this.lua.defineFunctions(guiLuaFunctions(this.gui, () => [...this.players.keys()], (text) => this.log(text, true)));
+    this.lua.defineFunctions(roomLuaFunctions((sid, type, msg) => this.players.has(sid) && this.t.send(sid, type, msg), this.info.room));
     this.lua.defineFunctions({
       // miejsca gry: teleportToPlace(player, "Arena"), getPlace() = nazwa tego miejsca
       teleportToPlace: (sid, name) => this.teleportToPlace(String(sid ?? ""), String(name ?? "")),
