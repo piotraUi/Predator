@@ -40,14 +40,13 @@ export function robloxCamera(camera: ArcRotateCamera, inputs: MapEntry[]) {
 /** przy inertia = 0 obrót to dokładnie przesunięcie / czułość; suwak z ustawień to mnożnik */
 function applySensitivity(camera: ArcRotateCamera, degPerPx: number) {
   const base = 180 / Math.PI / (degPerPx * settings.sensitivity);
-  // w pierwszej osobie kamera stoi w oczach - przeciągnięcie ma obracać głową, a nie krążyć wokół postaci
-  const fp = firstPersonCams.has(camera) ? -1 : 1;
-  camera.angularSensibilityX = base * fp;
-  camera.angularSensibilityY = (settings.invertY ? -base : base) * fp;
+  // ten sam kierunek w pierwszej i trzeciej osobie: palec / mysz w prawo = patrzysz w prawo, w dół = w dół
+  camera.angularSensibilityX = base;
+  camera.angularSensibilityY = settings.invertY ? -base : base;
 }
 
 const firstPersonCams = new WeakSet<ArcRotateCamera>();
-/** Pierwsza osoba: odwraca kierunki obrotu (palec / prawy przycisk w prawo = głowa w prawo) */
+/** Pierwsza osoba (zapamiętane dla kamery; obrót działa tak samo jak w trzeciej osobie) */
 export function setCameraFirstPerson(camera: ArcRotateCamera, on: boolean) {
   if (on) firstPersonCams.add(camera);
   else firstPersonCams.delete(camera);
