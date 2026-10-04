@@ -33,6 +33,7 @@ import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Rid
 import { openInviteFriends } from "./inviteFriends.ts";
 import { VoiceChat } from "./voice.ts";
 import { chatBox } from "./chatBox.ts";
+import { promptBox, type PromptMsg } from "./promptBox.ts";
 import { setupVoxels, type VoxelPlay } from "./voxelPlay.ts";
 import { GameAudio } from "./audio3d.ts";
 import { AvatarModel } from "../engine/avatar.ts";
@@ -673,41 +674,7 @@ export function playScreen(
     }
 
     // okienko z pytaniem od skryptu (prompt) - odpowiedź trafia do onAnswer
-    const promptBox = h("div", { class: "prompt-box hidden" });
-    let promptId = "";
-    const showPrompt = (m: { id: string; question: string; speak?: string; lang?: string } | null) => {
-      if (!m) {
-        promptBox.classList.add("hidden");
-        return;
-      }
-      promptId = m.id;
-      const input = h("input", { class: "prompt-input", maxLength: 80, autocomplete: "off", placeholder: "Wpisz odpowiedź…" });
-      const send = () => {
-        const text = input.value.trim();
-        if (!text) return;
-        r.send("answer", { id: promptId, text });
-        promptBox.classList.add("hidden");
-        input.blur();
-      };
-      input.addEventListener("keydown", (e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") send();
-      });
-      promptBox.replaceChildren(
-        h("div", { class: "prompt-q" }, m.question),
-        h(
-          "div",
-          { class: "prompt-row" },
-          m.speak ? h("button", { class: "btn", title: "Posłuchaj jeszcze raz", onClick: () => audio.speak(m.speak!, m.lang) }, "🔊") : "",
-          input,
-          h("button", { class: "btn primary", onClick: send }, "OK"),
-        ),
-      );
-      promptBox.classList.remove("hidden");
-      if (m.speak) audio.speak(m.speak, m.lang);
-      setTimeout(() => input.focus(), 50);
-    };
-    wrap.append(promptBox);
+    const showPrompt = promptBox(wrap, (id, text) => r.send("answer", { id, text }), (t, l) => audio.speak(t, l));
 
     // emotki
     const emoteMenu = h(
@@ -964,7 +931,7 @@ export function playScreen(
     r.onMessage("sound", (m: { name: string }) => audio.play(m.name));
     r.onMessage("music", (m: { name: string }) => audio.setMusic(m.name));
     r.onMessage("speak", (m: { text: string; lang?: string }) => audio.speak(m.text, m.lang));
-    r.onMessage("prompt", (m: { id: string; question: string; speak?: string; lang?: string } | null) => showPrompt(m));
+    r.onMessage("prompt", (m: PromptMsg | null) => showPrompt(m));
     r.onMessage("boost", (b: { secs: number; mult: number }) => {
       boostUntil = performance.now() + b.secs * 1000;
       boostMult = b.mult;

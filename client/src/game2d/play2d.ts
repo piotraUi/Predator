@@ -18,6 +18,7 @@ import { safety } from "../safety.ts";
 import { openInviteFriends } from "../game/inviteFriends.ts";
 import { AssetStore, unlockAudio } from "./assets.ts";
 import { GuiOverlay } from "../ui/guiOverlay.ts";
+import { promptBox, type PromptMsg } from "../game/promptBox.ts";
 import { fitScale, LevelView, type Camera2D, type Entity2D } from "./render.ts";
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
@@ -430,6 +431,9 @@ export function play2dScreen(
   conn.onMessage("background", (c: string) => (view.background = c));
   conn.onMessage("cmd", (c: Cmd2D) => applyCmd(c));
   conn.onMessage("chat", (m: ChatMsg) => addChat(m));
+  // okienko z pytaniem od skryptu (np. kody w Ludziku 4) - odpowiedź trafia do onAnswer
+  const showPrompt = promptBox(wrap, (id, text) => conn.send("answer", { id, text }));
+  conn.onMessage("prompt", (m: PromptMsg | null) => showPrompt(m));
   conn.onMessage("log", (l: { text: string; error: boolean }) => {
     if (l.error) toast("Skrypt: " + l.text, "error");
     console[l.error ? "warn" : "log"]("[Lua]", l.text);

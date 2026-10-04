@@ -116,6 +116,8 @@ export const LUA_HELP_2D: [string, string][] = [
   ['chooseCharacter(player, "Nero")', "wybór postaci gracza (jak w menu postaci) - np. z własnego menu gry"],
   ["getRoom()", "nazwa pokoju, w którym działa serwer (\"\" = zwykły serwer gry)"],
   ["exitGame(player)", "wyjście gracza z gry (do strony głównej)"],
+  ['prompt(player, "kod", "Wpisz kod")', "okienko z pytaniem - odpowiedź przychodzi do onAnswer"],
+  ["onAnswer(function(player, id, text) ... end)", "gracz odpowiedział w okienku prompt"],
   ["getLevel(player)", "nazwa poziomu gracza"],
   ['getPlayersOnLevel("Poziom 1")', "lista graczy na poziomie"],
   ['playSound("nazwa", player)', "zagraj dźwięk (bez player = wszystkim)"],

@@ -370,6 +370,12 @@ export class Sim2D {
         return this.onChooseCharacter(p, msg);
       case "gui":
         return this.onGui(p, msg);
+      case "answer": {
+        // odpowiedź z okienka prompt() skryptu
+        const v = (msg ?? {}) as Record<string, unknown>;
+        if (typeof v.id !== "string" || typeof v.text !== "string") return;
+        return this.lua?.answered(sid, v.id.slice(0, 40), v.text.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 80));
+      }
       case "goto": {
         const l = this.w.levels.find((x) => x.id === msg);
         if (l && (l.selectable || l.id === this.w.startLevel) && l.id !== p.level) this.setPlayerLevel(p, l.id);
@@ -883,6 +889,17 @@ export class Sim2D {
       },
     });
     this.lua.defineFunctions(roomLuaFunctions((sid, type, msg) => this.players.has(sid) && this.t.send(sid, type, msg), this.info.room));
+    // okienko z pytaniem: prompt(player, "id", "Pytanie?") - odpowiedź w onAnswer(function(player, id, text))
+    this.lua.defineFunctions({
+      prompt: (target, id, question) => {
+        if (typeof target !== "string" || !this.players.has(target)) return;
+        this.t.send(target, "prompt", { id: S(id).slice(0, 40), question: filterChat(S(question)).slice(0, 200) });
+      },
+      closePrompt: (target) => {
+        if (typeof target === "string" && this.players.has(target)) this.t.send(target, "prompt", null);
+        else this.t.broadcast("prompt", null);
+      },
+    });
     this.lua.defineFunctions({
       setLevel: (sid, name) => {
         const p = P(S(sid));

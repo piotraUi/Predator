@@ -183,3 +183,15 @@ end)
   assert.ok(sent.some((m) => m.type === "create"));
   sim.dispose();
 });
+
+test("Ludzik 4: kody z menu - okienko prompt i przejście do części 2", { skip: !hasGame }, () => {
+  const { sim, lvl, last, click, sent } = setup();
+  sim.join("a", { userId: 1, username: "Ania", avatar: {} as never, isOwner: true });
+  click("a", "Menu", "Kody");
+  assert.deepEqual(last("a", "prompt"), { id: "kod", question: "Wpisz kod" });
+  sim.handle("a", "answer", { id: "kod", text: "zly" });
+  assert.ok(sent.some((m) => m.type === "chat" && (m.msg as { text: string }).text === "Zły kod"));
+  sim.handle("a", "answer", { id: "kod", text: "L3v3lS3l3ctKEY" });
+  assert.equal((last("a", "level") as { level: string }).level, lvl("Level 1 Cz2").id);
+  assert.ok(!sent.some((m) => m.type === "log" && (m.msg as { error: boolean }).error), "bez błędów skryptu");
+});
