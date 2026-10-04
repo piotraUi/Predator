@@ -48,6 +48,9 @@ import { genreSelect, productEditor } from "./productEditor.ts";
 import { soundsLightEditor } from "./soundsEditor.ts";
 import { SKYBOXES } from "../../../shared/skybox.ts";
 import { skyPreview } from "../engine/skybox.ts";
+import { VoxelView } from "../engine/voxelView.ts";
+import { VoxelWorld } from "../../../shared/voxel.ts";
+import { blocksEditor } from "./blocksEditor.ts";
 import {
   behaviorIdOf,
   behaviorsOf,
@@ -198,6 +201,20 @@ export function studioScreen(
     view.setCharacters(data.characters, data.animations);
     view.load(data.parts.filter((p) => placeOf(p) === MAIN_PLACE));
     view.setTerrain(TerrainGrid.decode(data.terrain));
+    // świat z bloków (podgląd - budują go gracze w grze)
+    let voxView: VoxelView | null = null;
+    let voxWorld: VoxelWorld | null = null;
+    function loadVoxels() {
+      voxView?.dispose();
+      voxView = null;
+      voxWorld = null;
+      if (!data.blocks || curPlace !== MAIN_PLACE) return;
+      voxWorld = new VoxelWorld(data.blocks);
+      voxView = new VoxelView(scene, voxWorld);
+    }
+    loadVoxels();
+    scene.onBeforeRenderObservable.add(() => voxView?.update(camera.target.x, camera.target.z));
+    cleanups.push(() => voxView?.dispose());
 
     // ---------- kamera ----------
     const camera = new ArcRotateCamera("cam", -Math.PI / 2 + 0.6, 1.0, 60, new Vector3(0, 0, 0), scene);
@@ -206,6 +223,12 @@ export function studioScreen(
     camera.minZ = 0.3;
     camera.maxZ = 3000;
     robloxCamera(camera, STUDIO_INPUTS);
+    const vw0 = voxWorld as VoxelWorld | null;
+    if (vw0) {
+      const sp = vw0.spawn();
+      camera.setTarget(new Vector3(sp.x, sp.y, sp.z));
+      camera.radius = 90;
+    }
     // środkowy przycisk myszy = przesuwanie widoku, na dotyku dwa palce
     camera.attachControl(true, false, 1);
     (camera.inputs.attached.pointers as unknown as { multiTouchPanning: boolean }).multiTouchPanning = true;
@@ -1259,6 +1282,7 @@ export function studioScreen(
       view.load(placeParts());
       // teren jest tylko w głównym miejscu
       view.setTerrain(id === MAIN_PLACE ? TerrainGrid.decode(data.terrain) : null);
+      loadVoxels();
       applyPlaceSky();
       renderPlaces();
       renderExplorer();
@@ -2681,6 +2705,7 @@ export function studioScreen(
       const products = productEditor(data.products);
       const genreSel = genreSelect(data.genre);
       const audioLight = soundsLightEditor(data);
+      const blocks = blocksEditor(data.blocks);
       const close = modal(
         "Ustawienia gry",
         h(
@@ -2696,6 +2721,7 @@ export function studioScreen(
           h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
           audioLight.el,
+          blocks.el,
           badges.el,
           products.el,
           src.online
@@ -2717,6 +2743,12 @@ export function studioScreen(
               for (const k of ["sounds", "music", "light"] as const) delete data[k];
               Object.assign(data, JSON.parse(JSON.stringify(al)));
               data.badges = badges.read();
+              const b = blocks.read();
+              if (JSON.stringify(b ?? null) !== JSON.stringify(data.blocks ?? null)) {
+                if (b) data.blocks = b;
+                else delete data.blocks;
+                loadVoxels();
+              }
               if (genreSel.value) data.genre = genreSel.value;
               else delete data.genre;
               const prod = products.read();
@@ -2840,6 +2872,7 @@ export function studioScreen(
       if (f.has("scripts")) renderScripts();
       if (f.has("skybox") || f.has("skyColor") || f.has("places")) applyPlaceSky();
       if (f.has("terrain")) terrainPanel.reload();
+      if (f.has("blocks")) loadVoxels();
       if (selected && c.del.includes(selected.id)) select(null);
       else if (selected && c.parts.includes(selected)) {
         gizmos.attachToMesh(view.meshes.get(selected.id) ?? null);
@@ -2862,7 +2895,7 @@ export function studioScreen(
           // ktoś edytował wcześniej - stan z serwera jest aktualny
           const keep = new Set(srv.parts.map((p) => p.id));
           const del = data.parts.filter((p) => !keep.has(p.id)).map((p) => p.id);
-          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace"] as const).filter(
+          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace", "blocks"] as const).filter(
             (k) => JSON.stringify(srv[k] ?? null) !== JSON.stringify(data[k] ?? null),
           );
           for (const k of fields) {

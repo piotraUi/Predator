@@ -12,7 +12,7 @@ import { queueWorldScan } from "../moderation.ts";
 /** pola gry (poza klockami), które synchronizujemy w całości */
 export const STUDIO_FIELDS = [
   "scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter",
-  "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace",
+  "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace", "blocks",
 ] as const;
 type Field = (typeof STUDIO_FIELDS)[number];
 

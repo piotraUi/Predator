@@ -33,6 +33,7 @@ import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Rid
 import { openInviteFriends } from "./inviteFriends.ts";
 import { VoiceChat } from "./voice.ts";
 import { chatBox } from "./chatBox.ts";
+import { setupVoxels, type VoxelPlay } from "./voxelPlay.ts";
 import { GameAudio } from "./audio3d.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
@@ -225,6 +226,8 @@ export function playScreen(
     cleanups.push(pointerButtons(camera, canvas, [2]));
     // na starcie patrzymy w stronę środka mapy (kamera za plecami gracza)
     camera.alpha = Math.atan2(init.spawn.z, init.spawn.x);
+    // świat z bloków: jak w Minecrafcie zaczynamy w pierwszej osobie
+    if (init.world.blocks) camera.radius = 1;
     // odległość kamery wybrana przez gracza (kółko / szczypanie) - kolizja może ją chwilowo skrócić
     let wantRadius = camera.radius;
     let setRadius = camera.radius;
@@ -333,9 +336,24 @@ export function playScreen(
     let autoAlpha: number | null = null;
     let camHoldUntil = 0;
 
+    // świat z bloków (Minecraft): rysowanie, kopanie, stawianie, ekwipunek, moby
+    const vox: VoxelPlay | null = init.world.blocks
+      ? setupVoxels(init.world.blocks, {
+          scene, camera, world, wrap, conn: r, body, shadows: world.shadows,
+          firstPerson: () => fp,
+          dead: () => dead,
+          toggleView: () => (camera.radius = fp ? 12 : 1),
+        })
+      : null;
+    if (vox) {
+      collisions.voxels = vox.world;
+      cleanups.push(() => vox.dispose());
+    }
+
     const spawnPoint = () => {
       const spawns = [...parts.values()].filter((p) => p.kind === "spawn");
       const s = spawns[Math.floor(Math.random() * spawns.length)];
+      if (!s && vox) return vox.spawn();
       return s
         ? { x: s.x + (Math.random() - 0.5) * 2, y: s.y + s.sy / 2 + 3, z: s.z + (Math.random() - 0.5) * 2 }
         : { x: 0, y: 5, z: 0 };
@@ -521,7 +539,7 @@ export function playScreen(
     });
     for (const p of init.players) if (p.seat && p.sid !== init.you) rides.start(p.sid, p.seat);
     if (localStorage.getItem("predator.debug"))
-      (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, get ry() { return ry; }, camera, get fp() { return fp; } };
+      (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, get ry() { return ry; }, camera, get fp() { return fp; }, vox };
 
     /** Dymek z wiadomością nad głową gracza (znika po 6 s) */
     const showBubble = (username: string, text: string) => {
@@ -607,6 +625,7 @@ export function playScreen(
       hpFill.style.background = k > 0.5 ? "#2ecc71" : k > 0.25 ? "#f1c40f" : "#e74c3c";
       hpText.textContent = String(Math.round(hp));
       if (hp < lastHp) input.pads.rumble(hp > 0 ? 0.5 : 1, hp > 0 ? 0.3 : 0.8, hp > 0 ? 160 : 450);
+      if (hp < lastHp) vox?.hurt();
       if (hp < lastHp && hp > 0) {
         local.flash();
         hurt.classList.remove("on");
@@ -792,7 +811,7 @@ export function playScreen(
         e.preventDefault();
         chat.focus();
       } else if (e.code === "KeyR") die();
-      else if (/^Digit[1-9]$/.test(e.code)) hotbar.toggle(Number(e.code.slice(5)) - 1);
+      else if (/^Digit[1-9]$/.test(e.code)) !vox && hotbar.toggle(Number(e.code.slice(5)) - 1);
       else if (e.code === "Digit0" || e.code === "Backquote") hotbar.select(null);
       else if (e.key === "Escape") menu.classList.toggle("hidden");
       else if (e.key === "F9" && init.info.isOwner) consoleBox.classList.toggle("hidden");
@@ -1053,7 +1072,7 @@ export function playScreen(
     let zoomRepeat = 0;
     function handlePad(pad: PadState, dt: number): boolean {
       if (pad.pressed.start) menu.classList.toggle("hidden");
-      if (pad.pressed.y && !guiPlace) emoteMenu.classList.toggle("hidden");
+      if (pad.pressed.y && !guiPlace && !vox) emoteMenu.classList.toggle("hidden");
       const menuOpen = !menu.classList.contains("hidden");
       const emotesOpen = !emoteMenu.classList.contains("hidden");
       const dialog = document.querySelector<HTMLElement>(".modal-bg .modal");
@@ -1065,10 +1084,12 @@ export function playScreen(
       camera.alpha -= pad.rx * look;
       const b = camera.beta - pad.ry * look * 0.8 * (settings.invertY ? -1 : 1);
       camera.beta = Math.min(camera.upperBetaLimit ?? Math.PI, Math.max(camera.lowerBetaLimit ?? 0, b));
+      // świat z bloków: RT kopie, LT stawia, LB / RB zmiana przedmiotu, Y ekwipunek
+      if (vox) vox.pad(pad);
       // RT / R2: narzędzie (trzymanie = co odnowienie), L1 / R1 i krzyżak w bok: zmiana narzędzia
-      if (pad.down.rt) useTool();
-      if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
-      if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
+      else if (pad.down.rt) useTool();
+      if (!vox && (pad.pressed.rb || pad.pressed.right)) hotbar.cycle(1);
+      if (!vox && (pad.pressed.lb || pad.pressed.left)) hotbar.cycle(-1);
       // X / □: wsiądź / wysiądź
       if (pad.pressed.x) myRide ? leaveSeat(true) : trySit();
       // krzyżak góra / dół: przybliżenie kamery (do pierwszej osoby), R3: pierwsza osoba i z powrotem
@@ -1208,6 +1229,7 @@ export function playScreen(
           body.z += nz * push;
         }
       }
+      vox?.update(dt, swimming);
       for (const id of newTouch) if (!touching.has(id)) r.send("touch", id);
       touching = newTouch;
       if (body.y < -150 && !dead) die();

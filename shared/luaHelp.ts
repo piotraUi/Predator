@@ -76,6 +76,17 @@ export const LUA_HELP: [string, string][] = [
   ['setSkybox("night")', "gotowe niebo: day, cloudy, sunset, dawn, night, aurora, space, storm, candy, hell (\"\" = zwykły kolor)"],
   ['setSkybox("space", player)', "gotowe niebo tylko dla jednego gracza"],
   ["setLight(0.2, 60, player)", "jasność i mgła (bez gracza = dla wszystkich)"],
+  ['getBlock(x, y, z)', "świat z bloków: blok na pozycji (współrzędne bloków, y = 0 to dno) - np. \"stone\", \"air\""],
+  ['setBlock(x, y, z, "glass")', "postaw / zmień blok (\"air\" = usuń)"],
+  ["blockAt(x, y, z)", "blok pod punktem świata (np. pozycją gracza): b = blockAt(...) - b[1], b[2], b[3]"],
+  ["getSurface(x, z)", "wysokość najwyższego bloku w kolumnie"],
+  ['giveItem(player, "diamond", 3)', "daj przedmiot (bloki, diamond, iron_ingot, apple, wood_pickaxe, diamond_sword…)"],
+  ['takeItem(player, "coal", 1) / countItem(player, "coal")', "zabierz przedmiot (false = za mało) / ile ma"],
+  ["onBlockBreak(function(player, x, y, z, block) ... end)", "gracz wykopał blok"],
+  ["onBlockPlace(function(player, x, y, z, block) ... end)", "gracz postawił blok"],
+  ["setTime(0.25) / getTime() / isNight()", "pora dnia: 0 wschód, 0.25 południe, 0.5 zachód, 0.75 północ"],
+  ['spawnMob("zombie", x, y, z)', "stwórz moba: zombie, creeper, pig, sheep, cow"],
+  ["explode(x, y, z, 3)", "wybuch jak TNT (promień w blokach)"],
 ];
 
 export const LUA_HELP_2D: [string, string][] = [

@@ -193,6 +193,31 @@ export interface WorldData {
   startPlace?: string;
   /** tylko w grze: miejsce, w którym jest ten serwer */
   currentPlace?: { id: string; name: string; gui?: boolean };
+  /** świat z bloków (jak w Minecrafcie) - shared/voxel.ts */
+  blocks?: BlockWorldDef;
+}
+
+/** Ustawienia świata z bloków */
+export interface BlockWorldDef {
+  /** rozmiar w blokach: szerokość, wysokość, długość */
+  sx: number;
+  sy: number;
+  sz: number;
+  /** bok bloku w jednostkach świata (gracz ma ~5 wysokości) */
+  size: number;
+  /** ziarno generatora - inne ziarno = inny świat */
+  seed: number;
+  gen: "hills" | "flat";
+  /** survival = kopanie, zbieranie i crafting; creative = wszystkie bloki od razu */
+  mode: "survival" | "creative";
+  /** długość doby w sekundach (0 = zawsze dzień) */
+  day: number;
+  /** zwierzęta i potwory (zombie, creepery w nocy) */
+  mobs: boolean;
+  caves: boolean;
+  trees: boolean;
+  /** zmiany zrobione przez twórcę (base64, VoxelWorld.encodeEdits) */
+  edits?: string;
 }
 
 /** Miejsce (place) gry 3D - osobna mapa w tej samej grze; gracz przechodzi skryptem albo przyciskiem GUI */

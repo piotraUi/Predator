@@ -14,6 +14,7 @@ import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../t
 import { MAX_LABEL } from "../world.ts";
 import { clientGuiAction, GuiRuntime, guiLuaFunctions, roomLuaFunctions, type RoomInfo } from "../gui.ts";
 import { findPlace, MAIN_PLACE } from "../places.ts";
+import { VoxelGame } from "./voxelSim.ts";
 
 /** zmiana klocka wysyłana graczom; tw = płynne przejście do nowej pozycji (sekundy) */
 export type PartChange = Partial<Part> & { tw?: number };
@@ -34,6 +35,8 @@ export interface SimTransport {
   storage?: GameStorage;
   /** wykryto oszukiwanie ruchem (kick = wyrzucić z gry) */
   cheat?(sid: string, reason: string, kick: boolean): void;
+  /** zapis świata z bloków (to, co zbudowali gracze) */
+  worldSave?: { load(): string | null; save(data: string): void };
 }
 
 export interface SimUser {
@@ -110,6 +113,8 @@ export class GameSim {
   private skybox: string;
   /** GUI graczy (które okienka są otwarte) */
   readonly gui: GuiRuntime;
+  /** świat z bloków (Minecraft) */
+  readonly vox: VoxelGame | null = null;
 
   constructor(
     private data: WorldData,
@@ -125,13 +130,43 @@ export class GameSim {
     this.sky = data.skyColor;
     this.skybox = data.skybox ?? "";
     this.gui = new GuiRuntime(data.guis ?? [], (sid, msg) => this.t.send(sid, "gui", msg));
+    if (data.blocks)
+      this.vox = new VoxelGame(data.blocks, {
+        players: () => this.players.values(),
+        player: (sid) => this.players.get(sid),
+        send: (sid, type, msg) => this.t.send(sid, type, msg),
+        broadcast: (type, msg) => this.t.broadcast(type, msg),
+        damage: (sid, n) => {
+          const p = this.players.get(sid);
+          if (p) this.damage(p, n, null);
+        },
+        heal: (sid, n) => {
+          const p = this.players.get(sid);
+          if (p) this.heal(p, n);
+        },
+        log: (text, error) => this.log(text, error),
+        getData: (sid, key) => this.dataStore.get(sid, key),
+        setData: (sid, key, value) => {
+          try {
+            this.dataStore.set(sid, key, value);
+          } catch {
+            /* gracz już wyszedł */
+          }
+        },
+        lua: () => this.lua,
+        collisions: this.collisions,
+        gravity: data.gravity,
+        worldSave: t.worldSave,
+      });
     this.startScripts();
   }
 
   // ---------- Dołączanie ----------
 
   join(sid: string, user: SimUser) {
-    const spawn = this.spawnPoint();
+    // zapis gracza wczytujemy od razu (świat z bloków pamięta jego ekwipunek i miejsce)
+    this.dataStore.attach(sid, user.userId);
+    const spawn = this.vox && !this.hasSpawnParts ? this.vox.spawnFor(sid) : this.spawnPoint();
     const p: PlayerState = {
       sid,
       userId: user.userId,
@@ -162,17 +197,23 @@ export class GameSim {
     const { scripts: _hidden, ...publicData } = this.data;
     this.t.send(sid, "init", {
       you: sid,
-      world: { ...publicData, skyColor: this.sky, skybox: this.skybox || undefined, parts: [...this.partsById.values()] },
+      world: {
+        ...publicData,
+        skyColor: this.sky,
+        skybox: this.skybox || undefined,
+        parts: [...this.partsById.values()],
+        ...(this.vox ? { blocks: { ...this.vox.cfg, edits: this.vox.editsForJoin() } } : {}),
+      },
       info: { ...this.info, isOwner: user.isOwner },
       players: [...this.players.values()].map(this.netPlayer),
       spawn,
       inventory: p.tools,
     });
     this.gui.enter(sid, this.data.currentPlace?.id ?? MAIN_PLACE);
+    this.vox?.join(sid);
     this.t.broadcast("join", this.netPlayer(p), sid);
     this.chat({ from: "", text: `${user.username} dołączył do gry`, system: true });
     if (user.isOwner) for (const l of this.logs) this.t.send(sid, "log", l);
-    this.dataStore.attach(sid, user.userId);
     this.shop.attach(sid, user.owned, user.isOwner);
     this.lua?.playerJoined(sid);
     this.scoresDirty = true;
@@ -183,6 +224,7 @@ export class GameSim {
     if (!p) return;
     this.standUp(p);
     this.lua?.playerLeft(sid);
+    this.vox?.leave(sid);
     this.dataStore.detach(sid);
     this.shop.detach(sid);
     this.gui.leave(sid);
@@ -193,6 +235,7 @@ export class GameSim {
   }
 
   dispose() {
+    this.vox?.dispose();
     this.lua?.close();
     this.lua = null;
   }
@@ -219,10 +262,15 @@ export class GameSim {
     return this.data.tools.filter((t) => t.starter).slice(0, MAX_INVENTORY).map((t) => t.id);
   }
 
+  private get hasSpawnParts() {
+    for (const p of this.partsById.values()) if (p.kind === "spawn") return true;
+    return false;
+  }
+
   private spawnPoint() {
     const spawns = [...this.partsById.values()].filter((p) => p.kind === "spawn");
     const s = spawns[Math.floor(Math.random() * spawns.length)];
-    if (!s) return { x: 0, y: 5, z: 0 };
+    if (!s) return this.vox ? this.vox.world.spawn() : { x: 0, y: 5, z: 0 };
     return { x: s.x + (Math.random() - 0.5) * 2, y: s.y + s.sy / 2 + 3, z: s.z + (Math.random() - 0.5) * 2 };
   }
 
@@ -270,6 +318,8 @@ export class GameSim {
         if (!this.players.has(sid) || typeof v.id !== "string" || typeof v.text !== "string") return;
         return this.lua?.answered(sid, v.id.slice(0, 40), v.text.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 80));
       }
+      default:
+        this.vox?.handle(sid, type, msg);
     }
   }
 
@@ -687,6 +737,7 @@ export class GameSim {
 
   tick() {
     this.lua?.tick();
+    this.vox?.tick(0.05);
     if (this.players.size > 0) {
       const snap = [...this.players.values()].map((p) => [
         p.sid,
@@ -850,6 +901,7 @@ export class GameSim {
     }
     this.dataStore.register(this.lua);
     this.shop.register(this.lua);
+    if (this.vox) this.lua.defineFunctions(this.vox.luaFunctions());
     // cel: id gracza albo pusty tekst / nil = wszyscy
     const to = (target: unknown, type: string, msg: unknown) => {
       const sid = typeof target === "string" ? target : "";

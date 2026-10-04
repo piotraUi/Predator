@@ -10,6 +10,7 @@
 // i dzielenie szybkiego ruchu na małe kroki (brak przelatywania przez cienkie klocki).
 import type { Part } from "./types.ts";
 import type { TerrainGrid } from "./terrain.ts";
+import { AIR, BARRIER, block, LAVA, WATER, type VoxelWorld } from "./voxel.ts";
 
 /** "klocek" zwracany, gdy gracz stoi na terenie albo promień trafił w teren */
 export const TERRAIN_PART: Part = {
@@ -150,6 +151,8 @@ function normal(b: Box, x: number, y: number, z: number): [number, number, numbe
 export class CollisionWorld {
   /** teren (siatka wysokości) - osobno od klocków */
   terrain: TerrainGrid | null = null;
+  /** świat z bloków (Minecraft) - też osobno */
+  voxels: VoxelWorld | null = null;
   private boxes = new Map<string, Box>();
   private grid = new Map<string, Set<Box>>();
   private big: Set<Box> = new Set(); // bardzo duże klocki (np. podłoże) poza siatką
@@ -201,6 +204,53 @@ export class CollisionWorld {
   }
 }
 
+// ---------- świat z bloków ----------
+
+const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+const voxelParts = new Map<number, Part>();
+/** "klocek" udający blok (kolizje, czego dotyka gracz, w co trafił promień) */
+export function voxelPart(id: number): Part {
+  let p = voxelParts.get(id);
+  if (!p) {
+    const def = block(id);
+    p = {
+      id: "__vox" + id, name: def?.name ?? "Bariera", shape: "box", kind: id === LAVA ? "kill" : id === WATER ? "water" : "normal",
+      x: 0, y: 0, z: 0, sx: 1, sy: 1, sz: 1, ry: 0, color: "#888888", transparency: id === BARRIER ? 1 : 0,
+      collide: id === BARRIER || !!def?.solid, material: "plastic",
+    };
+    voxelParts.set(id, p);
+  }
+  return p;
+}
+
+/** bloki (twarde i lawa) w prostopadłościanie - jako "klocki" do kolizji */
+export function voxelBoxes(v: VoxelWorld, minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number): Box[] {
+  const out: Box[] = [];
+  const S = v.S, h = S / 2;
+  const x0 = v.bx(minX), x1 = v.bx(maxX), y0 = Math.max(-1, v.by(minY)), y1 = Math.min(v.sy, v.by(maxY)), z0 = v.bz(minZ), z1 = v.bz(maxZ);
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > 4000) return out;
+  for (let y = y0; y <= y1; y++)
+    for (let z = z0; z <= z1; z++)
+      for (let x = x0; x <= x1; x++) {
+        const id = v.get(x, y, z);
+        if (id === AIR || id === WATER || (id !== BARRIER && id !== LAVA && !block(id)?.solid)) continue;
+        const cx = v.x0 + (x + 0.5) * S, cy = (y + 0.5) * S, cz = v.z0 + (z + 0.5) * S;
+        // każdy blok to osobny "klocek" (kopiujemy, bo klocek ma pozycję)
+        const part = { ...voxelPart(id), x: cx, y: cy, z: cz, sx: S, sy: S, sz: S };
+        out.push({ part, minX: cx - h, maxX: cx + h, minY: cy - h, maxY: cy + h, minZ: cz - h, maxZ: cz + h, hx: h, hy: h, hz: h, m: IDENTITY, rotated: false });
+      }
+  return out;
+}
+
+/** powierzchnia wody z bloków nad punktem (gdy punkt jest w wodzie) */
+function voxelWaterAt(v: VoxelWorld, x: number, y: number, z: number): number | null {
+  const bx = v.bx(x), bz = v.bz(z);
+  let by = v.by(y);
+  if (v.get(bx, by, bz) !== WATER) return null;
+  while (v.get(bx, by + 1, bz) === WATER) by++;
+  return (by + 1) * v.S - v.S * 0.12;
+}
+
 // ---------- postać ----------
 
 export interface Body {
@@ -237,6 +287,10 @@ export const SWIM_SPEED = 16;
  */
 export function waterAt(world: CollisionWorld, x: number, y: number, z: number): number | null {
   let top: number | null = world.terrain?.waterAt(x, y, z) ?? null;
+  if (world.voxels) {
+    const vt = voxelWaterAt(world.voxels, x, y, z);
+    if (vt !== null && (top === null || vt > top)) top = vt;
+  }
   for (const b of world.query(x, x, z, z)) {
     if (b.part.kind !== "water") continue;
     if (y < b.minY || y > b.maxY || x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
@@ -407,6 +461,15 @@ export function stepBody(world: CollisionWorld, body: Body, dt: number, gravity:
     body.x - pad + Math.min(0, tx), body.x + pad + Math.max(0, tx),
     body.z - pad + Math.min(0, tz), body.z + pad + Math.max(0, tz),
   );
+  const vox = world.voxels
+    ? voxelBoxes(
+        world.voxels,
+        body.x - pad + Math.min(0, tx), body.x + pad + Math.max(0, tx),
+        body.y - pad + Math.min(0, ty), body.y + PLAYER_HEIGHT + pad + Math.max(0, ty),
+        body.z - pad + Math.min(0, tz), body.z + pad + Math.max(0, tz),
+      )
+    : [];
+  for (const b of vox) near.add(b);
   const solids = [...near].filter((b) => b.part.collide);
   const terr = world.terrain;
 
@@ -561,6 +624,14 @@ export function raycastParts(
   let best: { dist: number; part: Part } | null = null;
   const tHit = world.terrain?.raycast(ox, oy, oz, dx, dy, dz, maxDist) ?? null;
   if (tHit !== null) best = { dist: tHit, part: TERRAIN_PART };
+  if (world.voxels) {
+    const v = world.voxels;
+    const vh = v.raycast(ox, oy, oz, dx, dy, dz, maxDist, (id) => id !== AIR && id !== BARRIER && !!block(id)?.solid);
+    if (vh && (!best || vh.dist < best.dist)) {
+      const [cx, cy, cz] = v.center(vh.x, vh.y, vh.z);
+      best = { dist: vh.dist, part: { ...voxelPart(vh.id), x: cx, y: cy, z: cz, sx: v.S, sy: v.S, sz: v.S } };
+    }
+  }
   for (const b of candidates) {
     if (!b.part.collide || b.part.transparency >= 0.999) continue;
     // klocek, w którym promień się zaczyna, pomijamy (np. kamera w środku NPC)

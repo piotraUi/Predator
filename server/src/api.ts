@@ -1,3 +1,4 @@
+import { demoBlocks } from "../../shared/demos/blocks.ts";
 import { giveGamesToCreator } from "./creators.ts";
 import { emptyWorld2D, topDownWorld2D } from "../../shared/world2d.ts";
 import express, { type Response } from "express";
@@ -348,9 +349,11 @@ api.post("/worlds", requireAuth, (req, res) => {
   const base =
     mode === "2d" || mode === "2dtop"
       ? { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: mode === "2dtop" ? topDownWorld2D() : emptyWorld2D() }
-      : emptyWorld();
+      : mode === "blocks"
+        ? demoBlocks(Math.floor(Math.random() * 1_000_000))
+        : emptyWorld();
   // każda nowa gra ma od razu odznakę za wejście - twórca może ją zmienić w Studio
-  const data = { ...base, badges: [welcomeBadge()] };
+  const data = { ...base, badges: base.badges?.length ? base.badges : [welcomeBadge()] };
   const w = worlds.create(user.id, name, data, DEFAULT_MAX_PLAYERS);
   res.json(infoById(w.id));
 });

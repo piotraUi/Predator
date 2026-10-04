@@ -43,7 +43,10 @@ export function placeData(data: WorldData, placeId?: string): WorldData {
     currentPlace: { id: place.id, name: place.name, ...(place.gui ? { gui: true } : {}) },
   };
   // teren jest tylko w głównym miejscu
-  if (!main) delete out.terrain;
+  if (!main) {
+    delete out.terrain;
+    delete out.blocks;
+  }
   if (place.skyColor) out.skyColor = place.skyColor;
   if (place.skybox !== undefined) {
     if (place.skybox) out.skybox = place.skybox;

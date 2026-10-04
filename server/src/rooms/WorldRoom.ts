@@ -8,7 +8,7 @@ import { creatorCut, GAME_PROTOCOL, REPORT_REASONS, type BadgeDef, type ProductD
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
-import { alerts, badges, friends, gameData, purchases, toPublicUser, users, worlds, type UserRow, type WorldRow } from "../db.ts";
+import { alerts, badges, friends, gameData, purchases, toPublicUser, users, worlds, worldSaves, type UserRow, type WorldRow } from "../db.ts";
 import { presence } from "../presence.ts";
 import { areFriends, blocks, mutes, privacy, privateServers, reports, type PrivateServerRow } from "../social.ts";
 import { filterChat } from "../../../shared/chatFilter.ts";
@@ -23,7 +23,7 @@ const VOICE_MAX = 12;
 const VISIT_MILESTONES: [number, number][] = [
   [1, 10], [10, 25], [50, 50], [100, 100], [500, 250], [1000, 500], [5000, 1000], [10000, 2500],
 ];
-const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto", "answer", "sit", "unsit", "gui"];
+const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto", "answer", "sit", "unsit", "gui", "vb", "vp", "vs", "vsw", "vd", "vg", "vc", "ve", "vh", "vf"];
 
 export class WorldRoom extends Room {
   private world!: WorldRow;
@@ -101,6 +101,13 @@ export class WorldRoom extends Room {
             reports.add(predator.id, "user", j.userId, "Oszukiwanie", `🤖 Automatyczne wykrycie w grze „${this.world.name}”: ${reason}.${kick ? " Gracz został wyrzucony z gry." : ""}`);
           if (kick) this.clients.find((c) => c.sessionId === sid)?.leave(4000);
         },
+        // świat z bloków: zapis tego, co zbudowali gracze (osobno dla ziarna, miejsca i prywatnego serwera; pokoje nie są zapisywane)
+        ...(data.blocks && !this.lobby
+          ? (() => {
+              const key = `${data.currentPlace?.id ?? "main"}:${data.blocks.seed}:${this.priv ? "p" + this.priv.id : "pub"}`;
+              return { worldSave: { load: () => worldSaves.load(world.id, key), save: (d: string) => worldSaves.save(world.id, key, d) } };
+            })()
+          : {}),
         // postęp graczy w tej grze zapisywany w bazie
         storage: {
           load: (userId) => (userId > 0 ? (gameData.load(world.id, userId) as Record<string, never>) : {}),

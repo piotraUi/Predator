@@ -99,6 +99,15 @@ CREATE TABLE IF NOT EXISTS game_data (
   PRIMARY KEY (world_id, user_id)
 );
 
+-- zapisane światy z bloków (to, co gracze zbudowali i wykopali)
+CREATE TABLE IF NOT EXISTS world_saves (
+  world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (world_id, key)
+);
+
 -- współtwórcy gier (mogą edytować w Studiu razem z właścicielem)
 CREATE TABLE IF NOT EXISTS world_editors (
   world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
@@ -446,6 +455,23 @@ export const gameData = {
     db.prepare(
       "INSERT INTO game_data (world_id, user_id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(world_id, user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
     ).run(worldId, userId, JSON.stringify(data), Date.now());
+  },
+};
+
+/** zapisane światy z bloków: jeden na grę, miejsce, ziarno i prywatny serwer */
+export const worldSaves = {
+  load(worldId: number, key: string): string | null {
+    const row = db.prepare("SELECT data FROM world_saves WHERE world_id = ? AND key = ?").get(worldId, key) as { data: string } | undefined;
+    return row?.data ?? null;
+  },
+  save(worldId: number, key: string, data: string) {
+    db.prepare(
+      "INSERT INTO world_saves (world_id, key, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(world_id, key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+    ).run(worldId, key, data, Date.now());
+  },
+  /** twórca zaczyna świat od nowa */
+  clear(worldId: number) {
+    db.prepare("DELETE FROM world_saves WHERE world_id = ?").run(worldId);
   },
 };
 

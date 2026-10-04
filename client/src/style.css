@@ -1513,3 +1513,57 @@ button.gui-el.gui-imgbtn { background: transparent; box-shadow: none; padding: 0
 .rooms-list { display: flex; flex-direction: column; gap: 6px; max-height: 38vh; overflow-y: auto; }
 .room-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--bg3); }
 .room-main { flex: 1; display: flex; flex-direction: column; }
+
+/* ---------- świat z bloków (Minecraft) ---------- */
+.voxel-mode .hotbar, .voxel-mode .action-btn, .voxel-mode .fp-cross { display: none !important; }
+.vox-cross { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); pointer-events: none; z-index: 4; }
+.vox-cross::before, .vox-cross::after { content: ""; position: absolute; background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 2px #000; }
+.vox-cross::before { left: 10px; top: 2px; width: 2px; height: 18px; }
+.vox-cross::after { left: 2px; top: 10px; width: 18px; height: 2px; }
+.vox-hotbar {
+  position: absolute; left: 50%; bottom: calc(10px + var(--safe-bottom)); transform: translateX(-50%); z-index: 5;
+  display: flex; gap: 3px; padding: 4px; background: rgba(0, 0, 0, 0.55); border-radius: 8px;
+}
+.vox-slot {
+  position: relative; width: 46px; height: 46px; padding: 3px; border-radius: 4px; border: 2px solid rgba(255, 255, 255, 0.18);
+  background: rgba(60, 60, 60, 0.6); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 22px;
+}
+.vox-slot img { width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
+.vox-slot.on { border-color: #fff; box-shadow: 0 0 0 2px #000 inset; background: rgba(110, 110, 110, 0.7); }
+.vox-slot.picked { border-color: #ffd23f; background: rgba(255, 210, 63, 0.35); }
+.vox-count { position: absolute; right: 3px; bottom: 1px; font-size: 13px; font-weight: 800; color: #fff; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000; pointer-events: none; }
+.vox-name {
+  position: absolute; left: 50%; bottom: calc(72px + var(--safe-bottom)); transform: translateX(-50%); z-index: 5; pointer-events: none;
+  color: #fff; font-weight: 700; text-shadow: 1px 1px 0 #000; opacity: 0; transition: opacity 0.3s;
+}
+.vox-name.on { opacity: 1; }
+.vox-btn {
+  position: absolute; z-index: 5; width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 28px; background: rgba(0, 0, 0, 0.35); border: 2px solid rgba(255, 255, 255, 0.35); touch-action: none; user-select: none;
+}
+.vox-btn.active { background: rgba(255, 255, 255, 0.35); }
+.vox-mine { right: calc(118px + var(--inset-right, 0px)); bottom: calc(40px + var(--safe-bottom)); }
+.vox-place { right: calc(40px + var(--inset-right, 0px)); bottom: calc(126px + var(--safe-bottom)); }
+.vox-view { right: calc(118px + var(--inset-right, 0px)); bottom: calc(126px + var(--safe-bottom)); width: 46px; height: 46px; font-size: 20px; }
+.vox-modal .modal { width: min(920px, 96vw); max-width: 96vw; }
+.vox-inv { display: flex; gap: 16px; align-items: flex-start; }
+.vox-inv-left { display: flex; flex-direction: column; gap: 6px; }
+.vox-grid { display: grid; grid-template-columns: repeat(9, 42px); gap: 3px; }
+.vox-grid .vox-slot { width: 42px; height: 42px; }
+.vox-grid.pal { grid-template-columns: repeat(auto-fill, 42px); max-height: 52vh; overflow-y: auto; }
+.vox-crafting, .vox-palette { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.vox-recipe { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; background: var(--bg3); }
+.vox-recipe img { width: 32px; height: 32px; image-rendering: pixelated; }
+.vox-recipe.missing { opacity: 0.55; }
+.vox-r-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+@media (max-width: 760px), (max-height: 520px) {
+  .vox-slot { width: 36px; height: 36px; padding: 2px; }
+  .vox-hotbar { bottom: calc(6px + var(--safe-bottom)); gap: 2px; padding: 3px; }
+  .vox-count { font-size: 11px; }
+  .vox-name { bottom: calc(56px + var(--safe-bottom)); }
+  .vox-inv { flex-direction: column; }
+  .vox-grid { grid-template-columns: repeat(9, 34px); }
+  .vox-grid .vox-slot { width: 34px; height: 34px; }
+  .vox-modal .modal-body { max-height: 78vh; overflow-y: auto; }
+  .vox-crafting, .vox-palette { max-height: none; }
+}

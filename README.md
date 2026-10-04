@@ -174,6 +174,20 @@ To samo dzieje się automatycznie po wypchnięciu tagu, np. `git tag v0.1.0 && g
 - **APK (Android):** potrzebujesz Android Studio. Potem `cd client`, `npm run build:app`, `npx cap add android`, `npx cap open android`.
 - **iOS:** tylko na Macu z Xcode: `cd client`, `npm run build:app`, `npx cap add ios`, `npx cap open ios`.
 
+## Świat z bloków (jak Minecraft)
+
+Gra 3D może mieć **świat z bloków**: Twórz → Nowa gra → **⛏️ Świat z bloków**, albo w Studio: Gra → Ustawienia gry → „Świat z bloków”.
+
+- **Generowany teren** z ziarna: wzgórza, góry ze śniegiem, pustynie, lasy, jeziora, ocean dookoła, jaskinie z lawą i rudy (węgiel, żelazo, złoto, diamenty). Ten sam świat buduje serwer i każdy gracz, więc przez sieć idą tylko zmiany. Plik gry ma kilka KB.
+- **Kopanie i stawianie:** przytrzymaj lewy przycisk, żeby kopać, a prawym stawiasz. Na telefonie są do tego przyciski ⛏ i 🧱. Na padzie: RT kopie, LT stawia, LB/RB zmieniają przedmiot, Y otwiera ekwipunek. Kamień i rudy wymagają kilofa, a lepszy kilof kopie szybciej. Serwer sprawdza zasięg i czas kopania.
+- **Ekwipunek i crafting** (E albo 🎒): deski, patyki, stół rzemieślniczy, kilofy i miecze (drewno, kamień, żelazo, diament), piec, TNT, cegły, szkło. Wytapianie rud w piecu wymaga paliwa (węgiel, pień albo deski). Stół i piec muszą stać obok.
+- **Dzień i noc:** w nocy wychodzą zombie i creepery, a w dzień są świnie, owce i krowy. Zombie płoną w słońcu, creepery wybuchają. Jest też jedzenie (jabłka, schab) i obrażenia od upadku.
+- **TNT i wybuchy** niszczą bloki i ranią.
+- **Tryb kreatywny:** wszystkie bloki od razu i natychmiastowe kopanie.
+- **Zapis:** serwer zapisuje świat (osobno dla każdego ziarna i prywatnego serwera), a także ekwipunek i miejsce każdego gracza. Pokoje multiplayer nie są zapisywane.
+- **Lua:** `getBlock`, `setBlock`, `blockAt`, `getSurface`, `giveItem`, `takeItem`, `countItem`, `onBlockBreak`, `onBlockPlace`, `setTime`, `getTime`, `isNight`, `spawnMob`, `explode`.
+- **Klawisze:** 1-9 i kółko myszy zmieniają przedmiot, V przełącza pierwszą i trzecią osobę, Q wyrzuca przedmiot.
+
 ## Gry 2D
 
 Oprócz gier 3D w Predatorze można robić **platformówki 2D** z obrazków (pixel art). Przy tworzeniu gry wybierz **Gra 2D**.

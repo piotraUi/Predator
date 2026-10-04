@@ -55,7 +55,7 @@ const HOOK_EVERY = 1000;
 const MAX_HOOKS = 300;
 
 const PRELUDE = `
-local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {}, answer = {}, purchase = {}, sit = {}, unsit = {}, gui = {} }
+local handlers = { join = {}, leave = {}, chat = {}, touch = {}, respawn = {}, died = {}, tool = {}, level = {}, answer = {}, purchase = {}, sit = {}, unsit = {}, gui = {}, blockBreak = {}, blockPlace = {} }
 local tasks = {}
 local now = 0
 
@@ -97,6 +97,9 @@ function onUnsit(fn) table.insert(handlers.unsit, fn) end
 function onPurchase(fn) table.insert(handlers.purchase, fn) end
 -- GUI: onGuiClick(function(player, guiName, buttonName) ... end) - gracz kliknął przycisk w GUI
 function onGuiClick(fn) table.insert(handlers.gui, fn) end
+-- świat z bloków: onBlockBreak(function(player, x, y, z, block) ... end), onBlockPlace tak samo
+function onBlockBreak(fn) table.insert(handlers.blockBreak, fn) end
+function onBlockPlace(fn) table.insert(handlers.blockPlace, fn) end
 -- gry 2D: onLevelEnter(function(player, levelName) ... end)
 function onLevelEnter(fn) table.insert(handlers.level, fn) end
 function onTouch(partName, fn)
@@ -124,8 +127,8 @@ function after(seconds, fn)
   end)
 end
 
-function __fire(kind, a, b, c)
-  for _, fn in ipairs(handlers[kind]) do spawn(fn, a, b, c) end
+function __fire(kind, a, b, c, d, e)
+  for _, fn in ipairs(handlers[kind]) do spawn(fn, a, b, c, d, e) end
 end
 
 function __fireTouch(partName, player)
@@ -441,8 +444,8 @@ export class LuaEngine {
   }
 
   /** Wywołuje zdarzenie ze skryptów (np. "level" dla onLevelEnter) */
-  fire(kind: string, a: string | number, b: string | number = "", c: string | number = "") {
-    this.call("__fire", kind, a, b, c);
+  fire(kind: string, a: string | number, b: string | number = "", c: string | number = "", d: string | number = "", e: string | number = "") {
+    this.call("__fire", kind, a, b, c, d, e);
   }
 
   /** Wywołuje globalną funkcję Lua z argumentami (tekst lub liczba) z limitem instrukcji. */

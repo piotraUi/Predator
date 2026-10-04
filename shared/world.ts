@@ -3,12 +3,14 @@ import { sanitizeGuis } from "./gui.ts";
 import { sanitizePlaces } from "./places.ts";
 import { sanitizeWorld2D } from "./world2d.ts";
 import { sanitizeTerrain } from "./terrain.ts";
+import { voxelConfig } from "./voxel.ts";
 import { TOOL_MODELS, TOOL_TEMPLATES } from "./tools.ts";
 import { DEFAULT_AVATAR } from "./catalog.ts";
 import { findSkybox } from "./skybox.ts";
 import { filterChat } from "./chatFilter.ts";
 import type {
   BadgeDef,
+  BlockWorldDef,
   Accessory,
   AnimDef,
   Avatar,
@@ -316,6 +318,14 @@ export function sanitizeWorld(input: unknown): WorldData {
       const terrain = sanitizeTerrain(w.terrain);
       return terrain ? { terrain } : {};
     })() : {}),
+    ...(w.blocks && typeof w.blocks === "object" && w.mode !== "2d"
+      ? (() => {
+          const b = w.blocks as Record<string, unknown>;
+          // zmiany twórcy: base64 (po 4 bajty), najwyżej ~2 MB
+          const edits = typeof b.edits === "string" && b.edits.length <= 2_800_000 && /^[A-Za-z0-9+/=]*$/.test(b.edits) ? b.edits : undefined;
+          return { blocks: voxelConfig({ ...(b as Partial<BlockWorldDef>), edits }) };
+        })()
+      : {}),
     ...(Array.isArray(w.products) && w.products.length ? { products: sanitizeProducts(w.products) } : {}),
     ...sanitizeAudioLight(w),
     ...(w.mode === "2d" ? { mode: "2d" as const, world2d: sanitizeWorld2D(w.world2d) } : {}),
