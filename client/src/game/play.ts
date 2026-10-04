@@ -32,6 +32,7 @@ import { TerrainGrid } from "../../../shared/terrain.ts";
 import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride } from "./vehicles.ts";
 import { openInviteFriends } from "./inviteFriends.ts";
 import { VoiceChat } from "./voice.ts";
+import { chatBox } from "./chatBox.ts";
 import { GameAudio } from "./audio3d.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { Input } from "../engine/input.ts";
@@ -549,13 +550,19 @@ export function playScreen(
 
     // ---------- HUD ----------
     const coinsEl = h("span", null, String(me.coins));
-    const chatLog = h("div", { class: "chat-log" });
-    const chatInput = h("input", {
-      class: "chat-input",
-      placeholder: "Napisz wiadomość i naciśnij Enter…",
-      maxLength: 200,
+    const chat = chatBox({
+      placeholder: "Napisz wiadomość…",
+      onSend: (t) => {
+        const em = /^\/e(?:mote)?\s+(\S+)/i.exec(t);
+        if (em) {
+          const e = EMOTE_ALIASES[em[1].toLowerCase()];
+          if (e && hasEmote(e)) startEmote(e);
+          else if (e) toast("Tę emotkę kupisz w sklepie: Awatar → 💃 Emotki", "info");
+          else toast("Emotki: /e wave, dance, cheer, point, sit", "info");
+        } else r.send("chat", t);
+      },
+      onTyping: (typing) => (input.enabled = !typing && !guiPlace),
     });
-    const chatBox = h("div", { class: "chat" }, chatLog, chatInput);
     const board = h("div", { class: "leaderboard hidden" });
     const consoleLog = h("div", { class: "console-log" });
     const consoleBox = h(
@@ -579,7 +586,7 @@ export function playScreen(
       "div",
       { class: "hud-top" },
       h("button", { class: "hud-btn", onClick: () => menu.classList.toggle("hidden"), title: "Menu" }, "☰"),
-      h("button", { class: "hud-btn", onClick: () => openChat(), title: "Czat" }, "💬"),
+      chat.button,
       init.info.isOwner
         ? h("button", { class: "hud-btn", onClick: () => consoleBox.classList.toggle("hidden"), title: "Konsola (F9)" }, "🖥")
         : null,
@@ -742,7 +749,7 @@ export function playScreen(
     });
     hotbar.set(toolDefs(init.inventory));
 
-    wrap.append(topbar, chatBox, board, consoleBox, menu, hpBox, hurt, emoteMenu, actionBtn, exitBtn, enterBtn);
+    wrap.append(topbar, chat.box, board, consoleBox, menu, hpBox, hurt, emoteMenu, actionBtn, exitBtn, enterBtn);
     // czat głosowy ze znajomymi (tylko w grze na serwerze)
     if (!params.offline) {
       const voice = new VoiceChat(r, init.you);
@@ -776,46 +783,14 @@ export function playScreen(
     const addChat = (m: ChatMsg) => {
       // wiadomości zablokowanych graczy nie pokazujemy
       if (!m.system && safety.isBlockedName(m.from)) return;
-      const line = m.system
-        ? h("div", { class: "chat-line system" }, m.text)
-        : h("div", { class: "chat-line" }, h("b", null, m.from + ": "), m.text);
-      chatLog.append(line);
-      while (chatLog.children.length > 60) chatLog.firstChild?.remove();
-      chatLog.scrollTop = chatLog.scrollHeight;
+      chat.add(m);
       if (!m.system) showBubble(m.from, m.text);
     };
-    const openChat = () => {
-      chatBox.classList.add("open");
-      chatInput.focus();
-    };
-    chatInput.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Enter") {
-        const t = chatInput.value.trim();
-        const em = /^\/e(?:mote)?\s+(\S+)/i.exec(t);
-        if (em) {
-          const e = EMOTE_ALIASES[em[1].toLowerCase()];
-          if (e && hasEmote(e)) startEmote(e);
-          else if (e) toast("Tę emotkę kupisz w sklepie: Awatar → 💃 Emotki", "info");
-          else toast("Emotki: /e wave, dance, cheer, point, sit", "info");
-        } else if (t) r.send("chat", t);
-        chatInput.value = "";
-        chatInput.blur();
-      } else if (e.key === "Escape") chatInput.blur();
-    });
-    chatInput.addEventListener("focus", () => {
-      input.enabled = false;
-      chatBox.classList.add("open");
-    });
-    chatInput.addEventListener("blur", () => {
-      input.enabled = !guiPlace;
-      chatBox.classList.remove("open");
-    });
     const onKey = (e: KeyboardEvent) => {
-      if (document.activeElement === chatInput) return;
+      if (chat.typing()) return;
       if (e.key === "Enter" || e.key === "/") {
         e.preventDefault();
-        openChat();
+        chat.focus();
       } else if (e.code === "KeyR") die();
       else if (/^Digit[1-9]$/.test(e.code)) hotbar.toggle(Number(e.code.slice(5)) - 1);
       else if (e.code === "Digit0" || e.code === "Backquote") hotbar.select(null);

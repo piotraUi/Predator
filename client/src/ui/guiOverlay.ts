@@ -13,15 +13,37 @@ const luminance = (hex: string) => {
   return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
 };
 
+/** pozycja i rozmiar w jednej osi: pos/size w % ekranu, px = piksele wzorca na 1% */
+function place(st: CSSStyleDeclaration, posProp: "left" | "top", sizeProp: "width" | "height", pos: number, size: number, px: number) {
+  // tła i paski na całą szerokość / wysokość dalej wypełniają ekran
+  if (size >= 95) {
+    st[posProp] = pos + "%";
+    st[sizeProp] = size + "%";
+    return;
+  }
+  const real = `calc(var(--gs, 1px) * ${size * px})`;
+  st[sizeProp] = real;
+  if (pos <= 2) st[posProp] = pos + "%";
+  else if (pos + size >= 98) st[posProp] = `calc(${pos + size}% - ${real.slice(5, -1)})`;
+  else st[posProp] = `calc(${pos + size / 2}% - var(--gs, 1px) * ${(size * px) / 2})`;
+}
+
 /** jeden element GUI jako HTML (gra i edytor) */
 export function renderGuiEl(el: GuiEl, text?: string, editor = false): HTMLElement {
   const tag = el.type === "button" && !editor ? "button" : "div";
   const node = h(tag, { class: `gui-el gui-${el.type}` });
   const st = node.style;
-  st.left = el.x + "%";
-  st.top = el.y + "%";
-  st.width = el.w + "%";
-  st.height = el.h + "%";
+  if (editor) {
+    st.left = el.x + "%";
+    st.top = el.y + "%";
+    st.width = el.w + "%";
+    st.height = el.h + "%";
+  } else {
+    // w grze ekran rzadko ma 16:9 (telefony są szersze): element zachowuje kształt ze wzorca 1280x720,
+    // a miejsce liczy się od krawędzi, do której przylega, albo od środka
+    place(st, "left", "width", el.x, el.w, 12.8);
+    place(st, "top", "height", el.y, el.h, 7.2);
+  }
   // przycisk z obrazkiem (np. grafika z gry) - bez domyślnego tła
   const imgButton = el.type === "button" && !!el.image;
   if (el.bg) st.background = hexA(el.bg, el.bgOpacity ?? 1);
@@ -32,7 +54,8 @@ export function renderGuiEl(el: GuiEl, text?: string, editor = false): HTMLEleme
   st.color = el.color ?? "#ffffff";
   // ciemny napis (np. czarny jak w GDevelopie) - bez cienia
   if (el.color && luminance(el.color) < 0.55) st.textShadow = "none";
-  st.fontSize = `calc(var(--gs, 1px) * ${el.fontSize ?? 24})`;
+  // na małym telefonie napis nie robi się nieczytelny
+  st.fontSize = `max(${editor ? 0 : 10}px, calc(var(--gs, 1px) * ${el.fontSize ?? 24}))`;
   if (el.bold) st.fontWeight = "800";
   st.justifyContent = el.align === "left" ? "flex-start" : el.align === "right" ? "flex-end" : "center";
   st.textAlign = el.align ?? "center";

@@ -11,6 +11,7 @@ import { Input } from "../engine/input.ts";
 import type { GameConnection } from "../game/connection.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
 import { VoiceChat } from "../game/voice.ts";
+import { chatBox } from "../game/chatBox.ts";
 import { gameShop } from "../game/gameShop.ts";
 import { openGameReport, playersPanel } from "../game/playersPanel.ts";
 import { safety } from "../safety.ts";
@@ -237,37 +238,17 @@ export function play2dScreen(
   }
 
   // ---------- HUD ----------
-  const chatLog = h("div", { class: "chat-log" });
-  const chatInput = h("input", { class: "chat-input", placeholder: "Napisz i naciśnij Enter", maxLength: 200 });
-  const chat = h("div", { class: "chat" }, chatLog, chatInput);
+  const chat = chatBox({
+    placeholder: "Napisz wiadomość…",
+    onSend: (t) => conn.send("chat", t),
+    onTyping: (typing) => (input.enabled = !typing),
+  });
   const board = h("div", { class: "leaderboard hidden" });
   const menu = h("div", { class: "game-menu hidden" });
-  const openChat = () => {
-    chat.classList.add("open");
-    input.enabled = false;
-    chatInput.focus();
-  };
-  const closeChat = () => {
-    chat.classList.remove("open");
-    input.enabled = true;
-    chatInput.blur();
-  };
-  chatInput.addEventListener("keydown", (e) => {
-    e.stopPropagation();
-    if (e.key === "Enter") {
-      const t = chatInput.value.trim();
-      if (t) conn.send("chat", t);
-      chatInput.value = "";
-      closeChat();
-    } else if (e.key === "Escape") closeChat();
-  });
   function addChat(m: ChatMsg) {
     // wiadomości zablokowanych graczy nie pokazujemy
     if (!m.system && safety.isBlockedName(m.from)) return;
-    const line = h("div", { class: "chat-line" + (m.system ? " system" : "") }, m.system ? m.text : [h("b", null, m.from + ": "), m.text]);
-    chatLog.append(line);
-    while (chatLog.children.length > 60) chatLog.firstChild?.remove();
-    chatLog.scrollTop = chatLog.scrollHeight;
+    chat.add(m);
   }
   function showScores(list: { name: string; score: number }[]) {
     board.classList.remove("hidden");
@@ -334,10 +315,10 @@ export function play2dScreen(
     "div",
     { class: "hud-top" },
     h("div", { class: "hud-title" }, init.info.name),
-    h("button", { class: "hud-btn", title: "Czat", onClick: () => openChat() }, "💬"),
+    chat.button,
     h("button", { class: "hud-btn", title: "Menu", onClick: () => (renderMenu(), menu.classList.toggle("hidden")) }, "☰"),
   );
-  wrap.append(topbar, chat, board, menu);
+  wrap.append(topbar, chat.box, board, menu);
   // GUI gry: okienka i przyciski (serwer mówi, które są otwarte)
   const guiLayer = new GuiOverlay(wrap, init.guis ?? [], (g, e) => conn.send("gui", { g, e }));
   conn.onMessage("gui", (m: { open: string[]; text: Record<string, string> }) => guiLayer.setState(m));
@@ -503,10 +484,10 @@ export function play2dScreen(
       });
       return;
     }
-    if (chat.classList.contains("open")) return;
+    if (chat.typing()) return;
     if (e.key === "Enter" || e.key === "/") {
       e.preventDefault();
-      openChat();
+      chat.focus();
     } else if (e.key === "Escape") {
       renderMenu();
       menu.classList.toggle("hidden");
