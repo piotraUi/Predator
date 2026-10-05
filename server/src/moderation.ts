@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS world_moderation (
   checked_at INTEGER NOT NULL
 );
 `);
+// zatwierdzenie przez administratora (fałszywy alarm AI): odcisk treści gry - po zmianie gry sprawdza ją znowu AI
+if (!(db.prepare("PRAGMA table_info(world_moderation)").all() as { name: string }[]).some((c) => c.name === "approved_fp"))
+  db.exec("ALTER TABLE world_moderation ADD COLUMN approved_fp TEXT NOT NULL DEFAULT ''");
 
 export { settings };
 
@@ -69,6 +72,7 @@ const OK: Verdict = { ok: true, reason: "" };
 const RULES = `Jesteś moderatorem platformy z grami dla dzieci i młodzieży (Predator, podobna do Robloxa). Treści są po polsku, angielsku albo w innych językach.
 Zablokuj (ok=false): treści seksualne i nagość, nienawiść i rasizm, nękanie i wyzwiska wobec ludzi, groźby wobec prawdziwych osób, zachęcanie do samookaleczenia, narkotyki, proszenie o dane osobowe albo ich podawanie (telefon, adres, szkoła, hasło), oszustwa i linki do wyłudzeń, bardzo wulgarne przekleństwa (także pisane z błędami, spacjami albo cyframi).
 Przepuść (ok=true): zwykłą przemoc z gier (miecze, potwory, "zabij smoka", "zginąłeś"), lekkie słowa, żarty, wyzwania w grze, zwykłe rozmowy.
+Obrazki: oceniaj tylko to, co jest wyraźnie i celowo pokazane. Nie dopatruj się kształtów w układzie drzew, krzaków, chmur, klocków, terenu, cieni ani przypadkowych wzorów - zwykłe krajobrazy, rośliny, budynki, postacie i widoki z gier są w porządku. Blokuj tylko, gdy niedozwolona treść jest oczywista dla każdego, a w razie wątpliwości przepuść.
 Powód pisz krótko po polsku.`;
 
 // ---------- kolejka zapytań (Groq ma limity: tokeny na minutę i zapytania na dzień) ----------
@@ -537,9 +541,35 @@ interface WorldModRow {
   status: "ok" | "flagged" | "pending";
   reason: string;
   want_publish: number;
+  approved_fp: string;
+}
+
+/** odcisk treści gry (nazwa, opis, dane, miniaturka) - zatwierdzenie admina obowiązuje, dopóki gra się nie zmieni */
+function worldFingerprint(worldId: number): string {
+  const w = worlds.byId(worldId);
+  return w ? sha(`${w.name}\n${w.description}\n${w.data}\n${worlds.thumbnail(worldId) ?? ""}`) : "";
 }
 export const worldMod = {
-  get: (worldId: number) => db.prepare("SELECT status, reason, want_publish FROM world_moderation WHERE world_id = ?").get(worldId) as WorldModRow | undefined,
+  get: (worldId: number) => db.prepare("SELECT status, reason, want_publish, approved_fp FROM world_moderation WHERE world_id = ?").get(worldId) as WorldModRow | undefined,
+  /** gry zatrzymane albo czekające na sprawdzenie (panel admina) */
+  list: () =>
+    db
+      .prepare(
+        "SELECT m.world_id AS id, m.status, m.reason, m.checked_at AS checkedAt, w.name, u.username AS owner FROM world_moderation m JOIN worlds w ON w.id = m.world_id JOIN users u ON u.id = w.owner_id WHERE m.status != 'ok' ORDER BY m.checked_at DESC LIMIT 100",
+      )
+      .all() as { id: number; status: string; reason: string; checkedAt: number; name: string; owner: string }[],
+  /** administrator zatwierdza grę (np. fałszywy alarm AI) - publikuje ją, jeśli twórca chciał */
+  approve(worldId: number) {
+    const w = worlds.byId(worldId);
+    const m = worldMod.get(worldId);
+    if (!w) return false;
+    const wantPublish = !!w.published || !!m?.want_publish;
+    worldMod.set(worldId, "ok", "", false);
+    db.prepare("UPDATE world_moderation SET approved_fp = ? WHERE world_id = ?").run(worldFingerprint(worldId), worldId);
+    if (wantPublish && !w.published) worlds.setPublished(worldId, true);
+    alerts.add(w.owner_id, `✅ Gra „${w.name}” została sprawdzona przez administratora i jest w porządku${wantPublish ? " - jest znowu opublikowana" : ""}.`);
+    return true;
+  },
   set: (worldId: number, status: WorldModRow["status"], reason: string, wantPublish: boolean) =>
     db
       .prepare(
@@ -636,6 +666,12 @@ export async function runWorldScan(worldId: number): Promise<{ ok: boolean; prob
     if (!before) return null;
     const prev = worldMod.get(worldId);
     const wantPublish = !!before.published || !!prev?.want_publish;
+    // gra zatwierdzona przez administratora i od tamtej pory niezmieniona - AI jej nie zatrzymuje
+    if (prev?.approved_fp && prev.approved_fp === worldFingerprint(worldId)) {
+      if (prev.status !== "ok") worldMod.set(worldId, "ok", "", false);
+      if (wantPublish && !before.published) worlds.setPublished(worldId, true);
+      return { ok: true, problems: [] };
+    }
     const problems = await scanWorld(worldId);
     const w = worlds.byId(worldId);
     if (!w) return null;

@@ -502,6 +502,7 @@ async function aiTab(el: HTMLElement) {
 async function moderationTab(el: HTMLElement) {
   const s = await run(adminApi.moderation());
   if (!s) return;
+  const flagged = (await run(adminApi.flaggedWorlds())) ?? [];
   const keyIn = h("input", { type: "password", placeholder: s.hasKey ? `Zapisany klucz: ${s.keyHint}` : "gsk_...", autocomplete: "off" });
   const testIn = h("input", { placeholder: "Np. wiadomość do sprawdzenia" });
   const testOut = h("div", { class: "muted small" });
@@ -597,6 +598,26 @@ async function moderationTab(el: HTMLElement) {
             "Sprawdź wszystkie opublikowane gry",
           ),
       s.scanAll && !s.scanAll.running && s.scanAll.checked ? h("p", { class: "muted small" }, `Ostatnio: sprawdzono ${s.scanAll.checked}, ukryto ${s.scanAll.flagged}.`) : "",
+      flagged.length
+        ? h(
+            "div",
+            { class: "adm-list" },
+            h("p", { class: "muted small" }, "Zatrzymane gry. AI czasem się myli (np. „widzi” kształty w drzewach) - „Zatwierdź” publikuje grę mimo to, dopóki twórca jej nie zmieni."),
+            flagged.map((f) =>
+              h(
+                "div",
+                { class: "adm-row" },
+                h("div", null, h("b", null, `${f.status === "pending" ? "⏳" : "🚫"} ${f.name}`), h("span", { class: "muted small" }, ` · ${f.owner}`), f.reason ? h("div", { class: "muted small" }, f.reason) : ""),
+                h(
+                  "div",
+                  { class: "row" },
+                  h("button", { class: "btn small primary", onClick: async () => (await run(adminApi.approveWorld(f.id), "Zatwierdzono grę")) && redraw() }, "✅ Zatwierdź"),
+                  h("button", { class: "btn small", onClick: async () => (await run(adminApi.scanWorld(f.id), "Sprawdzono jeszcze raz")) && redraw() }, "🔁 Sprawdź jeszcze raz"),
+                ),
+              ),
+            ),
+          )
+        : "",
     ),
     h(
       "div",

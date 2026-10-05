@@ -8,7 +8,7 @@ import { presence } from "./presence.ts";
 import { adminLog, groups, mutes, reports } from "./social.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings } from "./moderation.ts";
+import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings, worldMod } from "./moderation.ts";
 import { deleteServiceAccount, gemini, geminiFastModel, geminiModel, geminiReady, geminiStatus, responseText, saveServiceAccount } from "./gemini.ts";
 import { assistantStats } from "./assistant.ts";
 import { BACKUP_DIR, BACKUP_NAME_RE, backupNow, checkUpdates, isGitRepo, listBackups, runUpdate, supervised, updateState } from "./maintenance.ts";
@@ -371,6 +371,17 @@ admin.post("/moderation/scan", (req, res) => {
   void scanAllPublished()
     .then((r) => (scanAll = { running: false, ...r }))
     .catch(() => (scanAll = { ...scanAll, running: false }));
+  res.json({ ok: true });
+});
+
+/** gry zatrzymane przez moderację (do sprawdzenia przez admina) */
+admin.get("/moderation/worlds", (_req, res) => res.json(worldMod.list()));
+
+/** fałszywy alarm: admin zatwierdza grę (zostaje zatwierdzona, dopóki twórca jej nie zmieni) */
+admin.post("/moderation/worlds/:id/approve", (req, res) => {
+  const id = Number(req.params.id);
+  if (!worldMod.approve(id)) return fail(res, 404, "Nie ma takiej gry");
+  log(req, `Zatwierdzenie gry #${id} mimo moderacji AI`);
   res.json({ ok: true });
 });
 

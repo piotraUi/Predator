@@ -351,6 +351,8 @@ export const adminApi = {
   testModeration: (text: string) => req<{ ok: boolean; reason: string }>("POST", "/admin/moderation/test", { text }),
   scanAllWorlds: () => req<{ ok: true }>("POST", "/admin/moderation/scan"),
   scanWorld: (id: number) => req<{ ok: boolean; problems: { where: string; reason: string }[] }>("POST", `/admin/moderation/worlds/${id}`),
+  flaggedWorlds: () => req<{ id: number; status: string; reason: string; checkedAt: number; name: string; owner: string }[]>("GET", "/admin/moderation/worlds"),
+  approveWorld: (id: number) => req<{ ok: true }>("POST", `/admin/moderation/worlds/${id}/approve`),
   users: (q = "") => req<AdminUser[]>("GET", "/admin/users?q=" + encodeURIComponent(q)),
   coins: (id: number, amount: number, set = false) => req<AdminUser>("POST", `/admin/users/${id}/coins`, { amount, set }),
   ban: (id: number, banned: boolean) => req<AdminUser>("POST", `/admin/users/${id}/ban`, { banned }),
