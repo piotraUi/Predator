@@ -75,14 +75,14 @@ export function demoApexShowcase(): WorldData {
     return p;
   };
   const vx = VILLAGE.x, vz = VILLAGE.z;
-  P({ name: "Plac", x: vx, y: GY + 0.1, z: vz, sx: 44, sy: 0.2, sz: 44, color: "#d9d4c7" });
+  P({ name: "Plac", x: vx, y: GY + 0.1, z: vz, sx: 44, sy: 0.2, sz: 44, color: "#d9d4c7", texture: "tiles" });
   P({ name: "Spawn", kind: "spawn", x: vx - 12, y: GY + 0.4, z: vz - 6, sx: 6, sy: 0.4, sz: 6, color: "#ffb347", material: "neon" });
   const houseColors = ["#e8d5b7", "#c9a27e", "#b7c9d8", "#d8b7c6", "#e0e0d0", "#a9c9a4"];
   const roofColors = ["#a8412b", "#8c3a3a", "#3d5a80", "#6b4423", "#7d3c98", "#2f6b4f"];
   const house = (x: number, z: number, w: number, d: number, h: number, i: number, ry = 0) => {
     const c = Math.cos((ry * Math.PI) / 180), s = Math.sin((ry * Math.PI) / 180);
     const at = (lx: number, lz: number) => ({ x: x + lx * c + lz * s, z: z - lx * s + lz * c });
-    P({ name: "Dom", x, y: GY + 0.2 + h / 2, z, sx: w, sy: h, sz: d, ry, color: houseColors[i % 6] });
+    P({ name: "Dom", x, y: GY + 0.2 + h / 2, z, sx: w, sy: h, sz: d, ry, color: houseColors[i % 6], texture: i % 2 ? "planks" : "brick" });
     const rh = h * 0.55;
     const a = at(0, -d / 4), b = at(0, d / 4);
     P({ name: "Dach", shape: "wedge", x: a.x, y: GY + 0.2 + h + rh / 2, z: a.z, sx: w + 1.2, sy: rh, sz: d / 2 + 0.6, ry, color: roofColors[i % 6] });
@@ -101,7 +101,7 @@ export function demoApexShowcase(): WorldData {
   house(vx + 14, vz + 34, 12, 10, 7, 4, 180);
   house(vx - 8, vz - 32, 12, 10, 8, 5, 0);
   P({ name: "Wieżowiec", x: vx + 34, y: GY + 0.2 + 13, z: vz - 16, sx: 12, sy: 26, sz: 12, color: "#6fb8ff", material: "glass", transparency: 0.1 });
-  P({ name: "Rdzeń", x: vx + 34, y: GY + 0.2 + 13, z: vz - 16, sx: 5, sy: 26.4, sz: 5, color: "#223344", collide: false });
+  P({ name: "Rdzeń", x: vx + 34, y: GY + 0.2 + 13, z: vz - 16, sx: 5, sy: 26.4, sz: 5, color: "#aab8c8", texture: "metal", collide: false });
   P({ name: "Neon", x: vx + 34, y: GY + 29, z: vz - 16, sx: 12.4, sy: 1.4, sz: 12.4, color: "#ff8a1f", material: "neon", collide: false });
   P({ name: "Neon", x: vx + 40.4, y: GY + 12, z: vz - 16, sx: 0.5, sy: 20, sz: 0.8, color: "#00e5ff", material: "neon", collide: false });
   for (let k = 0; k < 8; k++) {
@@ -123,9 +123,9 @@ export function demoApexShowcase(): WorldData {
     P({ name: "Korona", shape: "sphere", x: x + 0.4 * s, y: g + 8 * s, z, sx: 3.6 * s, sy: 3.4 * s, sz: 3.6 * s, color: gc, collide: false });
   }
   const PG = { x: vx + 6, z: vz + 4 };
-  P({ name: "Rampa", shape: "wedge", x: PG.x, y: GY + 0.2 + 3.5, z: PG.z - 6, sx: 12, sy: 7, sz: 14, color: "#ff6b4a" });
-  P({ name: "Ściana", x: PG.x - 10, y: GY + 0.2 + 3, z: PG.z + 6, sx: 2, sy: 6, sz: 12, color: "#7c4dff" });
-  P({ name: "Ściana", x: PG.x + 10, y: GY + 0.2 + 2, z: PG.z + 10, sx: 2, sy: 4, sz: 14, color: "#00bfa5" });
+  P({ name: "Rampa", shape: "wedge", x: PG.x, y: GY + 0.2 + 3.5, z: PG.z - 6, sx: 12, sy: 7, sz: 14, color: "#ff6b4a", texture: "hazard" });
+  P({ name: "Ściana", x: PG.x - 10, y: GY + 0.2 + 3, z: PG.z + 6, sx: 2, sy: 6, sz: 12, color: "#7c4dff", texture: "concrete" });
+  P({ name: "Ściana", x: PG.x + 10, y: GY + 0.2 + 2, z: PG.z + 10, sx: 2, sy: 4, sz: 14, color: "#00bfa5", texture: "cobble" });
   P({ name: "Rampa", shape: "wedge", x: PG.x + 2, y: GY + 0.2 + 1.5, z: PG.z + 12, sx: 10, sy: 3, sz: 8, color: "#ffc400" });
   // pojazdy: auto, deskorolka, krzesło i łódka na jeziorze (E albo dotknięcie siedzenia)
   const car = (x: number, z: number, color: string) => {

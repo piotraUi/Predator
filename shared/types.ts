@@ -7,6 +7,22 @@ export type PartShape = "box" | "sphere" | "cylinder" | "wedge";
  *  pickup = leży na nim narzędzie, które gracz podnosi dotykając, water = woda (można w niej pływać) */
 export type PartKind = "normal" | "spawn" | "kill" | "bounce" | "pickup" | "npc" | "water" | "seat";
 /** siedzenie kierowcy: cały model (klocki z tym samym "group") jedzie razem z graczem */
+/** Wzory do nałożenia na klocki (Part.texture): id i nazwa w Studiu */
+export const PART_TEXTURES: { id: string; name: string }[] = [
+  { id: "brick", name: "Cegły" },
+  { id: "planks", name: "Deski" },
+  { id: "stone", name: "Kamień" },
+  { id: "cobble", name: "Bruk" },
+  { id: "grass", name: "Trawa" },
+  { id: "sand", name: "Piasek" },
+  { id: "dirt", name: "Ziemia" },
+  { id: "checker", name: "Szachownica" },
+  { id: "tiles", name: "Kafelki" },
+  { id: "metal", name: "Blacha" },
+  { id: "concrete", name: "Beton" },
+  { id: "hazard", name: "Pasy ostrzegawcze" },
+];
+
 export type VehicleType = "car" | "boat" | "skate";
 export const VEHICLE_TYPES: VehicleType[] = ["car", "boat", "skate"];
 
@@ -30,6 +46,8 @@ export interface Part {
   /** czy gracz się o niego zderza */
   collide: boolean;
   material?: "plastic" | "neon" | "glass" | "metal";
+  /** wzór na ścianach klocka (id z PART_TEXTURES) - pokazuje go silnik Apex */
+  texture?: string;
   /** Które narzędzie leży na klocku (tylko kind = "pickup") */
   toolId?: string;
   /** Postać NPC stojąca na klocku (tylko kind = "npc") */

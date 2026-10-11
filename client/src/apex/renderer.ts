@@ -3,7 +3,8 @@
 import { SKYBOXES, type SkyboxDef } from "../../../shared/skybox.ts";
 import { TERRAIN_MATERIALS, type TerrainGrid } from "../../../shared/terrain.ts";
 import type { Part, PartShape } from "../../../shared/types.ts";
-import { boxMesh, cylinderMesh, sphereMesh, wedgeMesh, type Mesh } from "./geometry.ts";
+import { boxMesh, cylinderMesh, frustumMesh, hemiMesh, sphereMesh, torusMesh, wedgeMesh, type Mesh } from "./geometry.ts";
+import { partTextureCanvas } from "../engine/partTextures.ts";
 import { invert, lookAt, multiply, ortho, perspective, type Mat4, type V3 } from "./math.ts";
 
 void SKYBOXES;
@@ -24,6 +25,9 @@ export function rgb(hex: string): [number, number, number] {
   return c;
 }
 
+/** ile jednostek świata zajmuje jedno powtórzenie tekstury klocka */
+const PART_TILE = 8;
+
 const VS = `#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNrm;
@@ -36,13 +40,18 @@ layout(location=7) in vec4 iCol;
 layout(location=8) in vec4 iMisc;
 uniform mat4 uVP;
 uniform mat4 uLightVP;
-out vec3 vN; out vec3 vW; out vec2 vUv; out vec4 vCol; out float vMat; out vec4 vL;
+uniform float uTile;
+out vec3 vN; out vec3 vW; out vec2 vUv; out vec4 vCol; out float vMat; out vec4 vL; out vec2 vT;
 void main(){
   mat4 M = mat4(iM0,iM1,iM2,iM3);
   vec4 w = M * vec4(aPos,1.0);
   vec3 s = max(iMisc.xyz, vec3(1e-3));
   vN = mat3(M) * (aNrm / (s*s));
   vW = w.xyz; vUv = aUv; vCol = iCol; vMat = iMisc.w;
+  // tekstura kafelkowana w jednostkach świata: rzut wzdłuż dominującej osi normalnej
+  vec3 lp = aPos * s; vec3 an = abs(aNrm);
+  vec2 tp = an.x > 0.5 ? lp.zy : (an.y > 0.5 ? lp.xz : lp.xy);
+  vT = tp / max(uTile, 0.001);
   // przesunięcie wzdłuż normalnej przy liczeniu cienia - mniej plam na ścianach ustawionych bokiem do słońca
   vL = uLightVP * vec4(w.xyz + normalize(vN) * 0.4, 1.0);
   gl_Position = uVP * w;
@@ -51,7 +60,8 @@ void main(){
 const FS = `#version 300 es
 precision highp float;
 precision highp sampler2DShadow;
-in vec3 vN; in vec3 vW; in vec2 vUv; in vec4 vCol; in float vMat; in vec4 vL;
+in vec3 vN; in vec3 vW; in vec2 vUv; in vec4 vCol; in float vMat; in vec4 vL; in vec2 vT;
+uniform sampler2D uTexD; uniform float uUseTex; uniform float uTile;
 uniform vec3 uCam; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSky; uniform vec3 uGround;
 uniform vec3 uFogCol; uniform vec2 uFog; uniform float uTime; uniform float uBevel; uniform float uShadowOn;
 uniform sampler2DShadow uShadow; uniform float uShadowTexel;
@@ -73,6 +83,11 @@ void main(){
   vec3 base = vCol.rgb;
   float mat = vMat;
   float alpha = vCol.a;
+  if (uUseTex > 0.5) {
+    vec4 tx = texture(uTexD, uTile > 0.0 ? vT : vec2(vUv.x, 1.0 - vUv.y));
+    base *= tx.rgb;
+    alpha *= tx.a;
+  }
   vec3 V = normalize(uCam - vW);
   vec3 col;
   if (mat > 0.5 && mat < 1.5) {
@@ -193,6 +208,9 @@ class Batch {
   data = new Float32Array(STRIDE * 64);
   count = 0;
   dirty = true;
+  /** tekstura całej paczki (null = kolor) i rozmiar kafelka w jednostkach świata (0 = UV ściany) */
+  tex: WebGLTexture | null = null;
+  tile = 0;
   buf: WebGLBuffer;
   vao: WebGLVertexArrayObject;
   cap = 0;
@@ -282,7 +300,10 @@ export class ApexRenderer {
   private depthProg: Program;
   private skyProg: Program;
   private decalProg: Program;
-  private meshes = new Map<PartShape, GpuMesh>();
+  private meshes = new Map<string, GpuMesh>();
+  private partTex = new Map<string, WebGLTexture>();
+  private texIds = new WeakMap<WebGLTexture, number>();
+  private texCounter = 0;
   private quad: GpuMesh;
   /** stałe klocki świata (id -> miejsce w paczce) */
   private statics = new Map<string, Slot>();
@@ -368,10 +389,44 @@ export class ApexRenderer {
 
   // ---------- klocki ----------
 
-  private batchFor(map: Map<string, Batch>, shape: PartShape, transparent: boolean): Batch {
-    const key = shape + (transparent ? "|t" : "");
+  /** bryła o danej nazwie: box, sphere, cylinder, wedge, hemi, frustum:<góra>, torus:<rurka> */
+  private meshFor(shape: string): GpuMesh {
+    let m = this.meshes.get(shape);
+    if (!m) {
+      const [kind, arg] = shape.split(":");
+      const q = Math.round(parseFloat(arg ?? "0") * 50) / 50;
+      m = new GpuMesh(this.gl, kind === "hemi" ? hemiMesh() : kind === "frustum" ? frustumMesh(q) : torusMesh(Math.max(0.04, q)));
+      this.meshes.set(shape, m);
+    }
+    return m;
+  }
+
+  private texId(t: WebGLTexture) {
+    let id = this.texIds.get(t);
+    if (id === undefined) this.texIds.set(t, (id = ++this.texCounter));
+    return id;
+  }
+
+  /** tekstura wzoru klocka (Part.texture) - tworzona raz, powtarzana na ścianach */
+  texFor(id: string): WebGLTexture | null {
+    let t = this.partTex.get(id);
+    if (!t) {
+      const c = partTextureCanvas(id);
+      if (!c) return null;
+      t = this.makeTexture(c, true);
+      this.partTex.set(id, t);
+    }
+    return t;
+  }
+
+  private batchFor(map: Map<string, Batch>, shape: string, transparent: boolean, tex: WebGLTexture | null = null, tile = 0): Batch {
+    const key = shape + (tex ? "@" + this.texId(tex) + "/" + tile : "") + (transparent ? "|t" : "");
     let b = map.get(key);
-    if (!b) map.set(key, (b = new Batch(this.gl, this.meshes.get(shape)!)));
+    if (!b) {
+      map.set(key, (b = new Batch(this.gl, this.meshFor(shape))));
+      b.tex = tex;
+      b.tile = tile;
+    }
     return b;
   }
 
@@ -398,16 +453,18 @@ export class ApexRenderer {
     this.removePart(p.id);
     if (p.transparency >= 0.999) return;
     const t = this.isTransparent(p);
-    const batch = this.batchFor(this.staticBatches, p.shape, t);
+    const tex = p.texture ? this.texFor(p.texture) : null;
+    const batch = this.batchFor(this.staticBatches, p.shape, t, tex, PART_TILE);
     const index = batch.add();
     this.writePart(batch.data, index * STRIDE, p, rot);
-    this.statics.set(p.id, { batch, index, key: p.shape + (t ? "|t" : "") });
+    this.statics.set(p.id, { batch, index, key: p.shape + "|" + (tex ? this.texId(tex) : 0) + (t ? "|t" : "") });
   }
 
   updatePart(p: Part, rot: number[]) {
     const s = this.statics.get(p.id);
     const t = this.isTransparent(p);
-    if (!s || s.key !== p.shape + (t ? "|t" : "") || p.transparency >= 0.999) return this.addPart(p, rot);
+    const tex = p.texture ? this.texFor(p.texture) : null;
+    if (!s || s.key !== p.shape + "|" + (tex ? this.texId(tex) : 0) + (t ? "|t" : "") || p.transparency >= 0.999) return this.addPart(p, rot);
     this.writePart(s.batch.data, s.index * STRIDE, p, rot);
     s.batch.dirty = true;
   }
@@ -437,9 +494,9 @@ export class ApexRenderer {
   // ---------- klatkowe (awatary itp.) ----------
 
   /** klocek rysowany tylko w tej klatce */
-  drawBox(shape: PartShape, rot: number[], pos: V3, size: V3, color: [number, number, number], alpha = 1, material: number = MAT.plastic) {
+  drawBox(shape: string, rot: number[], pos: V3, size: V3, color: [number, number, number], alpha = 1, material: number = MAT.plastic, tex: WebGLTexture | null = null, tile = 0) {
     const t = alpha < 0.999 || material === MAT.glass;
-    const b = this.batchFor(this.frameBatches, shape, t);
+    const b = this.batchFor(this.frameBatches, shape, t, tex, tile);
     const i = b.add();
     const o = b.data, a = i * STRIDE;
     o[a] = rot[0] * size[0]; o[a + 1] = rot[3] * size[0]; o[a + 2] = rot[6] * size[0]; o[a + 3] = 0;
@@ -462,7 +519,7 @@ export class ApexRenderer {
   }
 
   /** tekstura z płótna (np. twarz awatara) */
-  makeTexture(canvas: HTMLCanvasElement): WebGLTexture {
+  makeTexture(canvas: HTMLCanvasElement, repeat = false): WebGLTexture {
     const gl = this.gl;
     const t = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -471,6 +528,11 @@ export class ApexRenderer {
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    const wrap = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+    const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
     return t;
   }
   deleteTexture(t: WebGLTexture) {
@@ -727,6 +789,8 @@ export class ApexRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
     gl.uniform1i(p.loc("uShadow"), 0);
     gl.uniform1f(p.loc("uBevel"), 0);
+    gl.uniform1i(p.loc("uTexD"), 2);
+    gl.uniform1f(p.loc("uUseTex"), 0);
     if (this.terrain) this.drawTerrain(this.terrain);
     this.drawBatches(this.staticBatches, false, p);
     this.drawBatches(this.frameBatches, false, p);
@@ -736,6 +800,7 @@ export class ApexRenderer {
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
     gl.uniform1f(p.loc("uBevel"), 0);
+    gl.uniform1f(p.loc("uUseTex"), 0);
     if (this.water) this.drawTerrain(this.water);
     this.drawBatches(this.staticBatches, true, p);
     this.drawBatches(this.frameBatches, true, p);
@@ -804,7 +869,16 @@ export class ApexRenderer {
     for (const [key, b] of map) {
       if (!b.count || key.endsWith("|t") !== transparent) continue;
       if (transparent && !p) continue;
-      if (p) gl.uniform1f(p.loc("uBevel"), key.startsWith("box") || key.startsWith("wedge") ? 1 : 0);
+      if (p) {
+        gl.uniform1f(p.loc("uBevel"), key.startsWith("box") || key.startsWith("wedge") ? 1 : 0);
+        gl.uniform1f(p.loc("uUseTex"), b.tex ? 1 : 0);
+        if (b.tex) {
+          gl.uniform1f(p.loc("uTile"), b.tile);
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, b.tex);
+          gl.activeTexture(gl.TEXTURE0);
+        }
+      }
       gl.bindVertexArray(b.vao);
       gl.drawElementsInstanced(gl.TRIANGLES, b.mesh.n, gl.UNSIGNED_SHORT, 0, b.count);
       this.stats.draws++;

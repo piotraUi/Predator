@@ -21,7 +21,8 @@
     "color": "#d9d4c7",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "tiles"
    },
    {
     "id": "ax1",
@@ -55,7 +56,8 @@
     "color": "#e8d5b7",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "brick"
    },
    {
     "id": "ax3",
@@ -157,7 +159,8 @@
     "color": "#c9a27e",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "planks"
    },
    {
     "id": "ax9",
@@ -259,7 +262,8 @@
     "color": "#b7c9d8",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "brick"
    },
    {
     "id": "ax15",
@@ -361,7 +365,8 @@
     "color": "#d8b7c6",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "planks"
    },
    {
     "id": "ax21",
@@ -463,7 +468,8 @@
     "color": "#e0e0d0",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "brick"
    },
    {
     "id": "ax27",
@@ -565,7 +571,8 @@
     "color": "#a9c9a4",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "planks"
    },
    {
     "id": "ax33",
@@ -681,10 +688,11 @@
     "sy": 26.4,
     "sz": 5,
     "ry": 0,
-    "color": "#223344",
+    "color": "#aab8c8",
     "transparency": 0,
     "collide": false,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "metal"
    },
    {
     "id": "ax40",
@@ -4067,7 +4075,8 @@
     "color": "#ff6b4a",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "hazard"
    },
    {
     "id": "ax239",
@@ -4084,7 +4093,8 @@
     "color": "#7c4dff",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "concrete"
    },
    {
     "id": "ax240",
@@ -4101,7 +4111,8 @@
     "color": "#00bfa5",
     "transparency": 0,
     "collide": true,
-    "material": "plastic"
+    "material": "plastic",
+    "texture": "cobble"
    },
    {
     "id": "ax241",

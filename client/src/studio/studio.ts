@@ -17,7 +17,7 @@ import {
 } from "@babylonjs/core";
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
 import type { AnimDef, CharacterDef, Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
-import { MAX_PLAYERS_LIMIT } from "../../../shared/types.ts";
+import { MAX_PLAYERS_LIMIT, PART_TEXTURES } from "../../../shared/types.ts";
 import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
 import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
 import { openGuiEditor } from "./guiEditor.ts";
@@ -2124,6 +2124,16 @@ export function studioScreen(
           ),
         ),
         field(
+          "Wzór (Apex)",
+          h(
+            "select",
+            { onChange: (e: Event) => editMany(() => parts.forEach((x) => { const v = (e.target as HTMLSelectElement).value; if (v) x.texture = v; else delete x.texture; })) },
+            [...(same("texture") ? [] : [["#", "(różne)"]]), ["", "Brak"], ...PART_TEXTURES.map((t) => [t.id, t.name])].map(([v, l]) =>
+              h("option", { value: v === "#" ? "" : v, selected: same("texture") ? (parts[0].texture ?? "") === v : v === "#", disabled: v === "#" }, l),
+            ),
+          ),
+        ),
+        field(
           "Przezroczystość",
           h("input", { type: "range", min: "0", max: "1", step: "0.05", value: String(parts[0].transparency), onChange: (e: Event) => editMany(() => parts.forEach((x) => (x.transparency = Number((e.target as HTMLInputElement).value)))) }),
         ),
@@ -2303,6 +2313,12 @@ export function studioScreen(
           "Materiał",
           select_(p.material ?? "plastic", [["plastic", "Plastik"], ["neon", "Neon (świeci)"], ["glass", "Szkło"], ["metal", "Metal"]], (v) =>
             upd(() => (p.material = v)),
+          ),
+        ),
+        field(
+          "Wzór (Apex)",
+          select_(p.texture ?? "", [["", "Brak"], ...PART_TEXTURES.map((t): [string, string] => [t.id, t.name])], (v) =>
+            upd(() => (v ? (p.texture = v) : delete p.texture)),
           ),
         ),
         h("div", { class: "prop-group" }, "Pozycja"),
