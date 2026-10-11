@@ -1,0 +1,38 @@
+TRAILER PREDATORA - jak zrobic film na swoim komputerze
+=========================================================
+
+Film (80 s, z muzyka) sklada sie z dwoch rzeczy:
+  - prawdziwych zrzutow aplikacji i gier Predatora (folder assets),
+  - sceny 3D rysowanej silnikiem Apex (WebGL2), ktora jest tlem i pokazem fizyki.
+Wszystko liczy sie klatka po klatce, wiec wynik jest zawsze taki sam.
+
+Potrzebujesz (jednorazowo):
+  1. Node.js  (https://nodejs.org, wersja LTS)
+  2. ffmpeg   (Windows, w terminalu:  winget install Gyan.FFmpeg  - potem otworz NOWE okno)
+
+Uruchomienie (Windows):
+  Kliknij dwa razy  zrob-trailer.bat
+  (pierwszy raz pobierze Playwright i Chromium, ok. 150 MB)
+
+Co sie dzieje:
+  - music.mjs    generuje muzyke (syntezator, bez probek) -> predator-music.wav
+  - render.mjs   rysuje 2418 klatek 1920x1080 na karcie graficznej -> folder frames
+  - ffmpeg       sklada klatki + muzyke -> Predator-trailer.mp4
+
+Na RTX 4060 render powinien trwac kilkanascie minut (okolo 3-6 klatek na sekunde na proces).
+W oknie zobaczysz nazwe karty (np. "NVIDIA GeForce RTX 4060 Laptop GPU"). Jesli napisze
+"SwiftShader", render idzie na procesorze (wolno) - w laptopie z dwiema kartami ustaw dla
+node.exe i Chromium w Ustawieniach Windows -> Grafika "Wysoka wydajnosc".
+Jesli nadal SwiftShader: uruchom z oknem przegladarki (set HEADED=1) - wtedy karta jest uzywana na pewno.
+
+Opcje (przed uruchomieniem, w tym samym oknie):
+  set RES=1440        rozdzielczosc 2560x1440 (RES=2160 = 4K)
+  set FPS=60          60 klatek na sekunde (dwa razy wiecej klatek)
+  set WORKERS=3       ile procesow renderuje naraz (domyslnie 2)
+  set HEADED=1        pokazuje okno przegladarki
+Przerwany render mozna wznowic - istniejace klatki sa pomijane.
+Zeby zrobic film od nowa w innej rozdzielczosci, usun folder frames.
+
+Zrodla (repozytorium Predator): branding/predator-trailer (predator.ts - scena i czasy,
+music-predator - muzyka, assets - zrzuty). Po zmianie predator.ts zbuduj predator.js:
+  npx esbuild branding/predator-trailer/predator.ts --bundle --format=iife --outfile=predator.js
