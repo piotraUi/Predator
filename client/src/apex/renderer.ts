@@ -51,7 +51,11 @@ void main(){
   // tekstura kafelkowana w jednostkach świata: rzut wzdłuż dominującej osi normalnej
   vec3 lp = aPos * s; vec3 an = abs(aNrm);
   vec2 tp = an.x > 0.5 ? lp.zy : (an.y > 0.5 ? lp.xz : lp.xy);
-  vT = tp / max(uTile, 0.001);
+  vec2 uv = aUv;
+  // uTile < 0: UV ściany (-1), tułów w koszulce (-2: przód i tył = lewa połowa, boki = prawa), kończyna (-3: paski z góry i z dołu)
+  if (uTile < -1.5 && uTile > -2.5) uv.x = an.z > 0.5 ? uv.x * 0.5 : 0.5 + uv.x * 0.5;
+  else if (uTile < -2.5 && uTile > -3.5) { if (aNrm.y > 0.5) uv.y = 0.97 + 0.03 * uv.y; else if (aNrm.y < -0.5) uv.y = 0.03 * uv.y; }
+  vT = uTile > 0.0 ? tp / uTile : uv;
   // przesunięcie wzdłuż normalnej przy liczeniu cienia - mniej plam na ścianach ustawionych bokiem do słońca
   vL = uLightVP * vec4(w.xyz + normalize(vN) * 0.4, 1.0);
   gl_Position = uVP * w;
@@ -84,7 +88,7 @@ void main(){
   float mat = vMat;
   float alpha = vCol.a;
   if (uUseTex > 0.5) {
-    vec4 tx = texture(uTexD, uTile > 0.0 ? vT : vec2(vUv.x, 1.0 - vUv.y));
+    vec4 tx = texture(uTexD, uTile > 0.0 || uTile < -3.5 ? vT : vec2(vT.x, 1.0 - vT.y));
     base *= tx.rgb;
     alpha *= tx.a;
   }
@@ -259,7 +263,10 @@ class GpuMesh {
   vb: WebGLBuffer;
   ib: WebGLBuffer;
   n: number;
+  /** typ indeksów: 16 bitów, a dla dużych modeli 32 */
+  type: number;
   constructor(gl: WebGL2RenderingContext, m: Mesh) {
+    this.type = m.index instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
     this.vb = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vb);
     gl.bufferData(gl.ARRAY_BUFFER, m.verts, gl.STATIC_DRAW);
@@ -393,12 +400,30 @@ export class ApexRenderer {
   private meshFor(shape: string): GpuMesh {
     let m = this.meshes.get(shape);
     if (!m) {
-      const [kind, arg] = shape.split(":");
+      const [kind, arg, arg2] = shape.split(":");
       const q = Math.round(parseFloat(arg ?? "0") * 50) / 50;
-      m = new GpuMesh(this.gl, kind === "hemi" ? hemiMesh() : kind === "frustum" ? frustumMesh(q) : torusMesh(Math.max(0.04, q)));
+      const seg = Math.max(3, Math.min(32, parseInt(arg2 ?? "20", 10) || 20));
+      m = new GpuMesh(this.gl, kind === "hemi" ? hemiMesh() : kind === "frustum" ? frustumMesh(q, seg) : torusMesh(Math.max(0.04, q)));
       this.meshes.set(shape, m);
     }
     return m;
+  }
+
+  /** własna siatka (model glb) pod kluczem `glb:...` - rysuje się przez drawBox(klucz, ...) */
+  registerMesh(key: string, m: Mesh) {
+    if (!this.meshes.has(key)) this.meshes.set(key, new GpuMesh(this.gl, m));
+  }
+  /** usuwa własne siatki o kluczach zaczynających się od `prefix` (i ich paczki) */
+  deleteMeshes(prefix: string) {
+    const gl = this.gl;
+    for (const [k, m] of this.meshes)
+      if (k.startsWith(prefix)) {
+        gl.deleteBuffer(m.vb);
+        gl.deleteBuffer(m.ib);
+        this.meshes.delete(k);
+      }
+    for (const map of [this.frameBatches, this.staticBatches])
+      for (const k of [...map.keys()]) if (k.startsWith(prefix)) map.delete(k);
   }
 
   private texId(t: WebGLTexture) {
@@ -880,7 +905,7 @@ export class ApexRenderer {
         }
       }
       gl.bindVertexArray(b.vao);
-      gl.drawElementsInstanced(gl.TRIANGLES, b.mesh.n, gl.UNSIGNED_SHORT, 0, b.count);
+      gl.drawElementsInstanced(gl.TRIANGLES, b.mesh.n, b.mesh.type, 0, b.count);
       this.stats.draws++;
       this.stats.instances += b.count;
       this.stats.tris += (b.mesh.n / 3) * b.count;

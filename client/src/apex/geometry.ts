@@ -2,7 +2,7 @@
 export interface Mesh {
   /** pos(3) nrm(3) uv(2) */
   verts: Float32Array;
-  index: Uint16Array;
+  index: Uint16Array | Uint32Array;
 }
 
 class Builder {
@@ -41,12 +41,13 @@ export function boxMesh(): Mesh {
   const b = new Builder();
   const faces: [number[], number[], number[]][] = [
     // normalna, oś u, oś v
-    [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
-    [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+    // oś u rośnie w prawo, a v w górę dla patrzącego na ścianę z zewnątrz (układ lewoskrętny)
+    [[1, 0, 0], [0, 0, 1], [0, 1, 0]],
+    [[-1, 0, 0], [0, 0, -1], [0, 1, 0]],
     [[0, 1, 0], [1, 0, 0], [0, 0, 1]],
     [[0, -1, 0], [1, 0, 0], [0, 0, -1]],
-    [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
-    [[0, 0, -1], [-1, 0, 0], [0, 1, 0]],
+    [[0, 0, 1], [-1, 0, 0], [0, 1, 0]],
+    [[0, 0, -1], [1, 0, 0], [0, 1, 0]],
   ];
   for (const [n, u, v] of faces) {
     const c = (su: number, sv: number) => [n[0] * 0.5 + u[0] * su * 0.5 + v[0] * sv * 0.5, n[1] * 0.5 + u[1] * su * 0.5 + v[1] * sv * 0.5, n[2] * 0.5 + u[2] * su * 0.5 + v[2] * sv * 0.5];

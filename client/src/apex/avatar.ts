@@ -1,7 +1,13 @@
 // Apex: postać złożona z klocków (jak awatar Predatora). Animacje chodu, skoku, pływania i emotek liczone na bieżąco,
 // twarz jako naklejka z płótna `drawFace`. Rysowana co klatkę przez renderer (bez własnych obiektów w scenie).
-import type { ActionAnim, Anim, Avatar, ToolDef } from "../../../shared/types.ts";
+import type { Accessory, ActionAnim, AnimDef, Anim, Avatar, CharacterDef, Joint, ToolDef } from "../../../shared/types.ts";
+import { JOINTS } from "../../../shared/types.ts";
+import { samplePose } from "../../../shared/anim.ts";
+import { loadGlb, type GlbModel } from "./glb.ts";
 import { drawFace } from "../engine/face.ts";
+import { clothCanvas } from "../engine/clothes.ts";
+import { findItem } from "../../../shared/catalog.ts";
+import { Wear } from "./wear.ts";
 import { apply3, mul3, rotX, rotY, rotZ, type V3 } from "./math.ts";
 import { rgb, type ApexRenderer } from "./renderer.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
@@ -13,7 +19,10 @@ const smooth = (t: number) => t * t * (3 - 2 * t);
 type Rgb = [number, number, number];
 const ID3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
-interface Limb { x: number; y: number; rx: number; rz: number }
+interface Limb { x: number; y: number; rx: number; ry: number; rz: number }
+const DEG = Math.PI / 180;
+const euler = (x: number, y: number, z: number) => mul3(rotY(y), mul3(rotX(x), rotZ(z)));
+let glbUid = 0;
 
 export class ApexAvatar {
   x = 0; y = 0; z = 0; ry = 0;
@@ -25,13 +34,25 @@ export class ApexAvatar {
   private look!: Avatar;
   private colors: { head: Rgb; torso: Rgb; arms: Rgb; legs: Rgb } = { head: [1, 1, 1], torso: [1, 1, 1], arms: [1, 1, 1], legs: [1, 1, 1] };
   private face: WebGLTexture | null = null;
+  private wear: Wear | null = null;
+  /** koszulka i spodnie jako tekstury (null = sam kolor) */
+  private cloth: { torso: WebGLTexture | null; arms: WebGLTexture | null; legs: WebGLTexture | null } = { torso: null, arms: null, legs: null };
   private flashUntil = 0;
   private limbs: Record<"la" | "ra" | "ll" | "rl", Limb> = {
-    la: { x: 1.5, y: 4, rx: 0, rz: 0 },
-    ra: { x: -1.5, y: 4, rx: 0, rz: 0 },
-    ll: { x: 0.5, y: 2, rx: 0, rz: 0 },
-    rl: { x: -0.5, y: 2, rx: 0, rz: 0 },
+    la: { x: 1.5, y: 4, rx: 0, ry: 0, rz: 0 },
+    ra: { x: -1.5, y: 4, rx: 0, ry: 0, rz: 0 },
+    ll: { x: 0.5, y: 2, rx: 0, ry: 0, rz: 0 },
+    rl: { x: -0.5, y: 2, rx: 0, ry: 0, rz: 0 },
   };
+  /** własna animacja z edytora animacji */
+  private custom: { anim: AnimDef; t: number; joints: Set<Joint>; usesY: boolean } | null = null;
+  private headRot = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  private torsoRot: number[] | null = null;
+  private accessories: Accessory[] = [];
+  /** model .glb postaci ze Studia */
+  private modelDef: CharacterDef["model"] | null = null;
+  private model: { uid: number; glb: GlbModel; tex: (WebGLTexture | null)[] } | null = null;
+  private modelToken = 0;
   private bodyY = 0;
   private bodyRot = 0;
   private bodyRx = 0;
@@ -51,10 +72,78 @@ export class ApexAvatar {
     c.width = c.height = 128;
     drawFace(c.getContext("2d")!, a.face);
     this.face = this.r.makeTexture(c);
+    for (const t of Object.values(this.cloth)) if (t) this.r.deleteTexture(t);
+    const shirt = findItem(a.shirt ?? "none")?.cloth;
+    const pants = findItem(a.pants ?? "none")?.cloth;
+    this.cloth = {
+      torso: shirt ? this.r.makeTexture(clothCanvas("shirt", shirt, a.arms)) : null,
+      arms: shirt ? this.r.makeTexture(clothCanvas("sleeve", shirt, a.arms)) : null,
+      legs: pants ? this.r.makeTexture(clothCanvas("leg", pants, a.legs)) : null,
+    };
+    this.wear = new Wear(a);
   }
 
   get avatar() {
     return this.look;
+  }
+
+  /** dodatki doczepione do części ciała (postacie ze Studia) */
+  setAccessories(list: Accessory[]) {
+    this.accessories = list;
+  }
+
+  /** model 3D postaci (null = zwykłe klockowe ciało) */
+  setModel(def: CharacterDef["model"] | null) {
+    if (def && this.modelDef && this.modelDef.data === def.data) {
+      this.modelDef = def;
+      return;
+    }
+    this.modelDef = def;
+    const token = ++this.modelToken;
+    this.freeModel();
+    if (!def) return;
+    loadGlb(def.data)
+      .then((glb) => {
+        if (token !== this.modelToken) return;
+        const uid = ++glbUid;
+        const tex = glb.prims.map((p, i) => {
+          this.r.registerMesh(`glb:${uid}:${i}`, p.mesh);
+          return p.image ? this.r.makeTexture(p.image) : null;
+        });
+        this.model = { uid, glb, tex };
+      })
+      .catch((e) => console.warn("Nie udało się wczytać modelu postaci", e));
+  }
+
+  private freeModel() {
+    const m = this.model;
+    if (!m) return;
+    this.r.deleteMeshes(`glb:${m.uid}:`);
+    for (const t of m.tex) if (t) this.r.deleteTexture(t);
+    this.model = null;
+  }
+
+  /** wygląd postaci ze Studia: kolory, skala, dodatki i model 3D */
+  setCharacter(base: Avatar, c: CharacterDef | null) {
+    this.setLook(c?.look ?? base);
+    this.scale = c?.scale ?? 1;
+    this.setAccessories(c?.accessories ?? []);
+    this.setModel(c?.model ?? null);
+  }
+
+  /** animacja z edytora animacji (null = koniec) */
+  playCustom(anim: AnimDef | null) {
+    if (!anim) {
+      this.custom = null;
+      return;
+    }
+    const joints = new Set<Joint>();
+    let usesY = false;
+    for (const k of anim.keyframes) {
+      for (const j of JOINTS) if (k.pose.joints[j]) joints.add(j);
+      if (k.pose.y) usesY = true;
+    }
+    this.custom = { anim, t: 0, joints, usesY };
   }
 
   flash() {
@@ -76,7 +165,7 @@ export class ApexAvatar {
     const s = this.scale;
     const root = mul3(rotY(ry + this.bodyRot), rotX(this.bodyRx));
     const l = this.limbs.ra;
-    const lr = mul3(rotX(l.rx), rotZ(l.rz));
+    const lr = euler(l.rx, l.ry, l.rz);
     const v = apply3(lr, [0, -2, -0.1]);
     const p: V3 = [(l.x + v[0]) * s, (l.y + v[1] + this.bodyY) * s, v[2] * s];
     const wp: V3 = [this.x + root[0] * p[0] + root[1] * p[1] + root[2] * p[2], this.y + root[3] * p[0] + root[4] * p[1] + root[5] * p[2], this.z + root[6] * p[0] + root[7] * p[1] + root[8] * p[2]];
@@ -100,6 +189,10 @@ export class ApexAvatar {
   dispose() {
     if (this.face) this.r.deleteTexture(this.face);
     this.face = null;
+    for (const t of Object.values(this.cloth)) if (t) this.r.deleteTexture(t);
+    this.cloth = { torso: null, arms: null, legs: null };
+    this.modelToken++;
+    this.freeModel();
   }
 
   update(dt: number) {
@@ -161,6 +254,26 @@ export class ApexAvatar {
       L.la.rz += (0 - L.la.rz) * Math.min(1, dt * 10);
       L.ra.rz += (0 - L.ra.rz) * Math.min(1, dt * 10);
     }
+    // animacja z edytora animacji: kąty części ciała wprost z pozy (stopnie)
+    const cu = this.custom;
+    let pose = null as ReturnType<typeof samplePose> | null;
+    if (cu) {
+      cu.t += dt;
+      pose = samplePose(cu.anim, cu.t);
+      if (!cu.anim.loop && cu.t >= cu.anim.duration) this.custom = null;
+    }
+    for (const [j, k] of [["leftArm", "la"], ["rightArm", "ra"], ["leftLeg", "ll"], ["rightLeg", "rl"]] as const) {
+      const l = L[k];
+      if (cu && pose && cu.joints.has(j)) {
+        const r3 = pose.joints[j] ?? [0, 0, 0];
+        l.rx = r3[0] * DEG; l.ry = r3[1] * DEG; l.rz = r3[2] * DEG;
+      } else l.ry += (0 - l.ry) * Math.min(1, dt * 12);
+    }
+    const hj = cu && pose && cu.joints.has("head") ? (pose.joints.head ?? [0, 0, 0]) : null;
+    this.headRot = hj ? euler(hj[0] * DEG, hj[1] * DEG, hj[2] * DEG) : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    const tj = cu && pose && cu.joints.has("torso") ? (pose.joints.torso ?? [0, 0, 0]) : null;
+    this.torsoRot = tj ? euler(tj[0] * DEG, tj[1] * DEG, tj[2] * DEG) : null;
+    const customY = cu && pose && cu.usesY ? (pose.y ?? 0) : null;
     // trzymanie narzędzia: ręka wyciągnięta do przodu (nie w pozach siedzenia i machania)
     if (this.tool && a !== "seated" && a !== "sit" && a !== "wave" && a !== "drive" && a !== "skate") ease(L.ra, HOLD, 0, 20);
     if (this.action) {
@@ -181,6 +294,7 @@ export class ApexAvatar {
     this.bodyY += (by - this.bodyY) * Math.min(1, dt * 12);
     this.bodyRot += (brot - this.bodyRot) * Math.min(1, dt * 12);
     this.bodyRx += (brx - this.bodyRx) * Math.min(1, dt * 10);
+    if (customY !== null) this.bodyY = customY;
   }
 
   draw() {
@@ -190,22 +304,60 @@ export class ApexAvatar {
     const flash = performance.now() < this.flashUntil;
     const tint = (c: Rgb): Rgb => (flash ? [Math.min(1, c[0] + 0.5), c[1] * 0.5, c[2] * 0.5] : c);
     // obrót całego ciała: najpierw pochylenie (rx), potem obrót w poziomie
-    const root = mul3(rotY(this.ry + this.bodyRot), rotX(this.bodyRx));
+    const root = this.torsoRot ? mul3(rotY(this.ry), this.torsoRot) : mul3(rotY(this.ry + this.bodyRot), rotX(this.bodyRx));
     const place = (lx: number, ly: number, lz: number): V3 => {
       const p: V3 = [lx * s, (ly + this.bodyY) * s, lz * s];
       return [this.x + root[0] * p[0] + root[1] * p[1] + root[2] * p[2], this.y + root[3] * p[0] + root[4] * p[1] + root[5] * p[2], this.z + root[6] * p[0] + root[7] * p[1] + root[8] * p[2]];
     };
     const c = this.colors;
-    r.drawBox("box", root, place(0, 3, 0), [2 * s, 2 * s, s], tint(c.torso));
-    r.drawBox("box", root, place(0, 4.6, 0), [1.2 * s, 1.2 * s, 1.2 * s], tint(c.head));
-    if (this.face) r.drawDecal(this.face, root, place(0, 4.6, -0.61), 1.1 * s, 1.1 * s);
-    for (const [k, col] of [["la", c.arms], ["ra", c.arms], ["ll", c.legs], ["rl", c.legs]] as const) {
+    const C = this.cloth;
+    const hidden = !!(this.modelDef?.hideBody && this.model);
+    const hr = mul3(root, this.headRot);
+    const frames: Record<Joint, { rot: number[]; pos: V3 }> = {
+      head: { rot: hr, pos: place(0, 4.6, 0) },
+      torso: { rot: root, pos: place(0, 3, 0) },
+      leftArm: { rot: root, pos: [0, 0, 0] },
+      rightArm: { rot: root, pos: [0, 0, 0] },
+      leftLeg: { rot: root, pos: [0, 0, 0] },
+      rightLeg: { rot: root, pos: [0, 0, 0] },
+    };
+    if (!hidden) {
+      r.drawBox("box", root, frames.torso.pos, [2 * s, 2 * s, s], tint(C.torso ? [1, 1, 1] : c.torso), 1, 0, C.torso, -2);
+      r.drawBox("box", hr, frames.head.pos, [1.2 * s, 1.2 * s, 1.2 * s], tint(c.head));
+      if (this.face) {
+        const fo = apply3(hr, [0, 0, -0.61 * s]);
+        r.drawDecal(this.face, hr, [frames.head.pos[0] + fo[0], frames.head.pos[1] + fo[1], frames.head.pos[2] + fo[2]], 1.1 * s, 1.1 * s);
+      }
+    }
+    for (const [k, col, j] of [["la", c.arms, "leftArm"], ["ra", c.arms, "rightArm"], ["ll", c.legs, "leftLeg"], ["rl", c.legs, "rightLeg"]] as const) {
       const l = this.limbs[k];
-      const lr = mul3(rotX(l.rx), rotZ(l.rz));
+      const lr = euler(l.rx, l.ry, l.rz);
       const rot = mul3(root, lr);
       // środek kończyny: staw + obrót * (0, -1, 0)
       const off: V3 = [lr[1] * -1, lr[4] * -1, lr[7] * -1];
-      r.drawBox("box", rot, place(l.x + off[0], l.y + off[1], off[2]), [s, 2 * s, s], tint(col));
+      const ct = k === "la" || k === "ra" ? C.arms : C.legs;
+      const pos = place(l.x + off[0], l.y + off[1], off[2]);
+      frames[j] = { rot, pos };
+      if (!hidden) r.drawBox("box", rot, pos, [s, 2 * s, s], tint(ct ? [1, 1, 1] : col), 1, 0, ct, -3);
+    }
+    if (!hidden) {
+      this.wear?.draw(r, { headRot: hr, headPos: frames.head.pos, torsoRot: root, torsoPos: frames.torso.pos, s, tint, time: this.t });
+      for (const a of this.accessories) {
+        const f = frames[a.joint];
+        const lp = apply3(f.rot, [a.x * s, a.y * s, a.z * s]);
+        r.drawBox(a.shape, mul3(f.rot, euler(a.rx * DEG, a.ry * DEG, a.rz * DEG)), [f.pos[0] + lp[0], f.pos[1] + lp[1], f.pos[2] + lp[2]], [a.sx * s, a.sy * s, a.sz * s], tint(rgb(a.color)), 1, a.material === "neon" ? 1 : 0);
+      }
+    }
+    const md = this.modelDef, mdl = this.model;
+    if (md && mdl) {
+      // model .glb: doczepiony do tułowia, przesunięty / obrócony / przeskalowany wg ustawień postaci
+      const mr = mul3(root, rotY(md.ry * DEG));
+      const base = place(md.x, md.y, md.z);
+      const k = md.scale * s;
+      mdl.glb.prims.forEach((p, i) => {
+        const o = apply3(mr, [p.pos[0] * k, p.pos[1] * k, p.pos[2] * k]);
+        r.drawBox(`glb:${mdl.uid}:${i}`, mul3(mr, p.rot), [base[0] + o[0], base[1] + o[1], base[2] + o[2]], [p.scale[0] * k, p.scale[1] * k, p.scale[2] * k], tint(p.color), p.alpha, 0, mdl.tex[i], -4);
+      });
     }
     if (this.tool) {
       const f = this.toolFrame(this.ry);

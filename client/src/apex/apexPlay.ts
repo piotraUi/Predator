@@ -84,6 +84,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const spinning = new Map<string, number>();
   const charsById = new Map(init.world.characters.map((c) => [c.id, c]));
   const npcs = new Map<string, ApexAvatar>();
+  const npcAnim = new Map<string, string>();
   const labels = new Map<string, HTMLElement>();
   const pickups = new Map<string, Part>();
   const isNpc = (p: Part) => p.kind === "npc" && p.transparency < 0.999;
@@ -95,8 +96,14 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       rend.removePart(p.id);
       let n = npcs.get(p.id);
       const ch = p.characterId ? charsById.get(p.characterId) : undefined;
-      if (!n) npcs.set(p.id, (n = new ApexAvatar(rend, ch?.look ?? DEFAULT_AVATAR)));
-      n.scale = ch?.scale ?? 1;
+      if (!n) {
+        npcs.set(p.id, (n = new ApexAvatar(rend, ch?.look ?? DEFAULT_AVATAR)));
+        n.setCharacter(ch?.look ?? DEFAULT_AVATAR, ch ?? null);
+      }
+      if ((p.animId ?? "") !== (npcAnim.get(p.id) ?? "")) {
+        npcAnim.set(p.id, p.animId ?? "");
+        n.playCustom(p.animId ? (init.world.animations.find((a) => a.id === p.animId) ?? null) : null);
+      }
       n.x = p.x; n.y = p.y - p.sy / 2; n.z = p.z;
       n.ry = (p.ry * Math.PI) / 180;
     } else if (npcs.has(p.id)) {
@@ -152,8 +159,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const charFor = (id: string | null) => charsById.get(id ?? "") ?? charsById.get(init.world.playerCharacter ?? "") ?? null;
   const applyLook = (av: ApexAvatar, base: Avatar, charId: string | null) => {
     const c = charFor(charId);
-    av.setLook(c?.look ?? base);
-    av.scale = c?.scale ?? 1;
+    av.setCharacter(base, c);
   };
   applyLook(local, me.avatar, mePlayer?.character ?? null);
   let ry = Math.hypot(init.spawn.x, init.spawn.z) > 1 ? Math.atan2(init.spawn.x, init.spawn.z) : 0;
@@ -252,6 +258,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     applyLook(av, p.avatar as Avatar, p.character);
     av.x = p.x; av.y = p.y; av.z = p.z; av.ry = p.ry;
     av.setTool(p.tool ? (toolsById.get(p.tool) ?? null) : null);
+    if (p.animation) av.playCustom(init.world.animations.find((a) => a.id === p.animation) ?? null);
     const hpFill = h("div", { class: "hp-fill" });
     const hpBar = h("div", { class: "apex-hp hidden" }, hpFill);
     const tag = h("div", { class: "apex-tag" }, h("span", null, p.username), hpBar);
@@ -624,6 +631,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (m.sid === init.you) return applyLook(local, me.avatar, m.character);
     const rm = remotes.get(m.sid);
     if (rm) applyLook(rm.av, rm.av.avatar, m.character);
+  });
+  // animacje z edytora animacji włączone przez skrypt (gracz i inni)
+  r.onMessage("panim", (m: { sid: string; anim: string | null }) => {
+    const av = m.sid === init.you ? local : remotes.get(m.sid)?.av;
+    av?.playCustom(m.anim ? (init.world.animations.find((a) => a.id === m.anim) ?? null) : null);
   });
   r.onMessage("gui", (m: { open: string[]; text: Record<string, string> }) => guiLayer.setState(m));
   r.onMessage("exit", () => leave());
