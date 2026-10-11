@@ -417,3 +417,9 @@ npm run dev        # serwer na :2567 + klient z hot-reload na :5173
 npm test           # testy (Lua, fizyka, raycast, animacje, pliki .pgame, filtr czatu)
 npm run typecheck
 ```
+
+## Trailer na starcie i pobieranie aplikacji
+
+- **Trailer Predatora** (`server/assets/trailer.mp4`, 720p) pokazuje się na pełnym ekranie raz: nowemu graczowi (na stronie i w aplikacji) oraz każdemu po wgraniu nowego trailera. Przycisk „Pomiń”; gdy przeglądarka blokuje dźwięk, film gra bez niego i prosi o dotknięcie. Potem startuje zwykły Predator.
+- **Strona internetowa**: na Androidzie pokazuje pasek z pobraniem APK, na Windows - z instalatorem aplikacji na komputer, na iOS i reszcie nic (pasek można ukryć na tydzień). W samych aplikacjach paska nie ma.
+- **Panel admina → Aplikacje**: wgrywanie i podmiana trailera (.mp4), APK (.apk) i instalatora (.exe) z paskiem postępu. Pliki leżą w `data/downloads`; adresy publiczne: `/download/predator.apk`, `/download/predator-setup.exe`, `/media/trailer.mp4`, informacje: `/api/app-info`. Jeśli przed serwerem stoi proxy (nginx / Caddy), musi pozwalać na duże żądania (kilkaset MB).

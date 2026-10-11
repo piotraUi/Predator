@@ -5,6 +5,7 @@ import { authScreen } from "./ui/auth.ts";
 import { startLiveNotifications } from "./ui/liveNotify.ts";
 import { autoUpdate, confirmAppStarted } from "./appUpdate.ts";
 import { h, logo, toast } from "./ui/dom.ts";
+import { showDownloadBanner, showTrailerOnce } from "./ui/intro.ts";
 import { desktop, launchFile, type OpenedFile } from "./files.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
 
@@ -200,6 +201,15 @@ async function boot() {
   }
   watchConnection();
   startLiveNotifications(go);
+  // trailer Predatora: raz dla nowego gracza i po zmianie trailera; potem normalny Predator
+  loading.el.remove();
+  try {
+    await showTrailerOnce();
+  } catch {
+    /* trailer nie może blokować gry */
+  }
+  root.append(loading.el);
+  void showDownloadBanner();
   try {
     // aplikacja: najpierw sprawdzamy, czy serwer odpowiada (domyślnie serwer Predator)
     if (needsServerAddress) {

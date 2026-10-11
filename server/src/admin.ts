@@ -11,6 +11,7 @@ import path from "node:path";
 import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings, worldMod } from "./moderation.ts";
 import { deleteServiceAccount, gemini, geminiFastModel, geminiModel, geminiReady, geminiStatus, responseText, saveServiceAccount } from "./gemini.ts";
 import { assistantStats } from "./assistant.ts";
+import { mountMediaAdmin } from "./downloads.ts";
 import { BACKUP_DIR, BACKUP_NAME_RE, backupNow, checkUpdates, isGitRepo, listBackups, runUpdate, supervised, updateState } from "./maintenance.ts";
 
 export const admin = express.Router();
@@ -31,6 +32,7 @@ const log = (req: express.Request, action: string, target = "", details = "") =>
   const a = (req as unknown as AuthedRequest).user;
   adminLog.add(a.id, a.username, action, target, details);
 };
+mountMediaAdmin(admin, log);
 const userOut = (u: ReturnType<typeof users.byId> & object) => ({
   id: u.id,
   username: u.username,

@@ -36,7 +36,7 @@ function inputModal(title: string, label: string, opts: { type?: string; value?:
 }
 
 export function adminPanel(el: HTMLElement) {
-  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Moderacja", "AI", "Serwer", "Historia"] as const;
+  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Moderacja", "AI", "Aplikacje", "Serwer", "Historia"] as const;
   let tab: (typeof tabs)[number] = "Start";
   const tabBar = h("div", { class: "shop-tabs adm-tabs" });
   const body = h("div", { class: "adm-body" });
@@ -53,6 +53,7 @@ export function adminPanel(el: HTMLElement) {
     if (tab === "Start") statsTab(body);
     else if (tab === "Zgłoszenia") reportsTab(body);
     else if (tab === "Historia") logTab(body);
+    else if (tab === "Aplikacje") appsTab(body);
     else if (tab === "Serwer") serverTab(body);
     else if (tab === "Moderacja") moderationTab(body);
     else if (tab === "AI") aiTab(body);
@@ -658,6 +659,86 @@ async function moderationTab(el: HTMLElement) {
       ),
     ),
   );
+}
+
+/** trailer startowy, APK i instalator Windows: wgrywanie (z paskiem postępu), podmiana i usuwanie */
+function appsTab(el: HTMLElement) {
+  type Info = { size: number; at: number; id: string; custom: boolean } | null;
+  const KINDS = [
+    { kind: "trailer", icon: "🎬", name: "Trailer startowy (.mp4)", note: "Nowy gracz widzi go raz po wejściu, a gracze po wgraniu nowego pliku - też raz. Bez wgranego pliku działa trailer wbudowany w serwer.", accept: ".mp4,video/mp4" },
+    { kind: "apk", icon: "📱", name: "Aplikacja na Androida (.apk)", note: "Telefony z Androidem dostają na stronie przycisk pobierania tego pliku.", accept: ".apk" },
+    { kind: "setup", icon: "🖥", name: "Instalator na Windows (.exe)", note: "Komputery z Windows dostają na stronie przycisk pobierania instalatora. iOS nie dostaje nic.", accept: ".exe" },
+  ] as const;
+  const box = h("div", { class: "adm-box" });
+  el.append(box);
+  const size = (b: number) => (b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " KB");
+  const call = async (method: string, kind: string, body?: File, onProgress?: (p: number) => void) =>
+    new Promise<void>((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open(method, `${getServerUrl()}/api/admin/media/${kind}`);
+      if (getToken()) x.setRequestHeader("authorization", "Bearer " + getToken());
+      if (body) x.setRequestHeader("x-file-name", encodeURIComponent(body.name));
+      x.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+      x.onload = () => {
+        if (x.status >= 200 && x.status < 300) return resolve();
+        let msg = "Błąd " + x.status;
+        try {
+          msg = JSON.parse(x.responseText).error ?? msg;
+        } catch {
+          /* brak */
+        }
+        reject(new Error(x.status === 413 ? "Plik jest za duży (limit serwera lub serwera pośredniczącego)" : msg));
+      };
+      x.onerror = () => reject(new Error("Brak połączenia z serwerem"));
+      x.send(body ?? null);
+    });
+  const draw = async () => {
+    let info: Record<string, Info> | null = null;
+    try {
+      const r = await fetch(`${getServerUrl()}/api/admin/media`, { headers: getToken() ? { authorization: "Bearer " + getToken() } : {} });
+      info = await r.json();
+    } catch {
+      /* brak */
+    }
+    box.replaceChildren(
+      h("h3", null, "📦 Aplikacje i trailer"),
+      h("p", { class: "muted small" }, "Pliki leżą na serwerze w data/downloads. Wgranie nowego pliku od razu zastępuje stary."),
+      ...KINDS.map((k) => {
+        const cur = info?.[k.kind] ?? null;
+        const file = h("input", { type: "file", accept: k.accept, class: "hidden" }) as HTMLInputElement;
+        const status = h("span", { class: "muted small" }, cur ? `${cur.custom ? "wgrany" : "wbudowany"} · ${size(cur.size)} · ${new Date(cur.at).toLocaleString("pl-PL")}` : "nie wgrano");
+        const bar = h("progress", { max: "1", value: "0", class: "hidden", style: "width:100%" }) as HTMLProgressElement;
+        file.addEventListener("change", async () => {
+          const f = file.files?.[0];
+          if (!f) return;
+          bar.classList.remove("hidden");
+          try {
+            await call("PUT", k.kind, f, (p) => (bar.value = p));
+            toast("Wgrano: " + f.name, "good");
+          } catch (e) {
+            toast((e as Error).message, "error");
+          }
+          draw();
+        });
+        return h(
+          "div",
+          { class: "adm-row", style: "flex-direction:column;align-items:stretch;gap:6px" },
+          h("div", null, h("b", null, `${k.icon} ${k.name}`), " · ", status),
+          h("span", { class: "muted small" }, k.note),
+          h(
+            "div",
+            { class: "row" },
+            file,
+            h("button", { class: "btn small primary", onClick: () => file.click() }, cur?.custom ? "Podmień plik" : "Wgraj plik"),
+            cur?.custom ? h("button", { class: "btn small danger", onClick: async () => ((await call("DELETE", k.kind).then(() => true, (e) => (toast(e.message, "error"), false))) && draw()) }, "Usuń") : null,
+            k.kind !== "trailer" && cur ? h("a", { class: "btn small", href: `${getServerUrl()}/download/${k.kind === "apk" ? "predator.apk" : "predator-setup.exe"}` }, "Pobierz") : null,
+          ),
+          bar,
+        );
+      }),
+    );
+  };
+  draw();
 }
 
 function serverTab(el: HTMLElement) {

@@ -24,6 +24,7 @@ import { users, worlds } from "./db.ts";
 import { StudioRoom } from "./rooms/StudioRoom.ts";
 import { startBackups } from "./maintenance.ts";
 import { appUpdateRouter } from "./appUpdate.ts";
+import { downloadsRouter } from "./downloads.ts";
 import { WorldRoom } from "./rooms/WorldRoom.ts";
 import { GAME_CREATORS, giveGamesToCreator } from "./creators.ts";
 import { setupPredatorAccount } from "./predatorAccount.ts";
@@ -34,6 +35,7 @@ app.use(compression());
 // aplikacje na telefon / exe łączą się z innego adresu, więc pozwalamy na CORS
 app.use(cors());
 app.use("/api/admin", admin);
+app.use(downloadsRouter());
 app.use("/api/ai", assistantRouter);
 app.use("/api", api);
 app.use("/api", social);
