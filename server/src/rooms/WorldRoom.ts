@@ -50,6 +50,8 @@ export class WorldRoom extends Room {
   onCreate(options: { worldId?: number; privateCode?: string; placeId?: string; lobby?: { name?: unknown; code?: unknown; max?: unknown; target?: unknown } }) {
     const world = worlds.byId(Number(options.worldId));
     if (!world) throw new Error("Nie ma takiej gry");
+    // gra HTML to strona w ramce - nie ma serwera gry
+    if (world.kind === "html") throw new Error("To gra HTML - otwiera się jako strona, nie w serwerze gry");
     this.world = world;
     if (options.lobby) {
       const l = options.lobby;

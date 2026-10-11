@@ -221,8 +221,24 @@ const angle = (v: unknown) => {
 const str = (v: unknown, max: number, def: string) => (typeof v === "string" ? v.slice(0, max) : def);
 
 /** Czyści dane świata przesłane przez klienta - nie ufamy niczemu z zewnątrz. */
+/** maksymalny rozmiar gry HTML (znaki) - obrazki i dźwięki mogą być w środku jako data: */
+export const MAX_HTML_CHARS = 3_000_000;
+
+/** gra HTML: tylko kod strony i opis, reszta pusta */
+function sanitizeHtmlWorld(w: Record<string, unknown>): WorldData {
+  const base = sanitizeWorld({ ...w, mode: "3d", html: undefined, blocks: undefined, terrain: undefined, parts: [], scripts: [], places: [], guis: [], tools: [], characters: [], animations: [], products: [] });
+  return {
+    ...base,
+    mode: "html",
+    html: typeof w.html === "string" ? w.html.slice(0, MAX_HTML_CHARS) : "",
+    // gry HTML nie mają odznak ze skryptów, sklepu ani innych funkcji silnika
+    badges: [],
+  };
+}
+
 export function sanitizeWorld(input: unknown): WorldData {
   const w = (input ?? {}) as Record<string, unknown>;
+  if (w.mode === "html") return sanitizeHtmlWorld(w);
   const places = w.mode === "2d" ? undefined : sanitizePlaces(w.places);
   const placeIds = new Set((places ?? []).map((p) => p.id));
   const rawParts = Array.isArray(w.parts) ? w.parts.slice(0, MAX_PARTS) : [];

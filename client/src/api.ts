@@ -159,8 +159,11 @@ export const api = {
   worldInfo: (id: number) => req<WorldInfo>("GET", `/worlds/${id}/info`),
   vote: (id: number, value: number) => req<WorldInfo>("POST", `/worlds/${id}/vote`, { value }),
   myWorlds: () => req<WorldInfo[]>("GET", "/worlds/mine"),
-  createWorld: (name: string, mode: "3d" | "2d" | "2dtop" | "blocks" = "3d") => req<WorldInfo>("POST", "/worlds", { name, mode }),
+  createWorld: (name: string, mode: "3d" | "2d" | "2dtop" | "blocks" | "html" = "3d") => req<WorldInfo>("POST", "/worlds", { name, mode }),
   getWorld: (id: number) => req<{ info: WorldInfo; data: WorldData }>("GET", "/worlds/" + id),
+  /** gra HTML: kod strony do pokazania w ramce */
+  htmlGame: (id: number) => req<{ id: number; name: string; html: string; ownerName: string }>("GET", `/worlds/${id}/html`),
+  htmlVisit: (id: number) => req<{ ok: true }>("POST", `/worlds/${id}/visit`),
   saveWorld: (
     id: number,
     body: Partial<{ name: string; description: string; maxPlayers: number; published: boolean; data: WorldData; thumbnail: string }>,

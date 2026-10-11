@@ -182,8 +182,11 @@ export interface WorldData {
   music?: string;
   /** światło: jasność, mgła i latarka gracza */
   light?: WorldLight;
-  /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste */
-  mode?: "3d" | "2d";
+  /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste;
+   *  "html" = gra HTML (strona w ramce, nie gra Predatora) - kod w polu html */
+  mode?: "3d" | "2d" | "html";
+  /** gra HTML: cała gra jako jeden plik HTML (CSS, JS i obrazki w środku) */
+  html?: string;
   world2d?: World2D;
   /** GUI na ekranie gracza (2D i 3D) */
   guis?: GuiDef[];
@@ -328,6 +331,8 @@ export interface WorldInfo {
   dislikes: number;
   /** kategoria gry (id z GENRES) */
   genre?: string;
+  /** "html" = gra HTML (strona internetowa w ramce, nie gra Predatora) */
+  kind?: "html";
   /** gra, którą współtworzę (nie jestem właścicielem) */
   coEditor?: boolean;
   /** głos zalogowanego gracza: 1, -1 albo 0 */

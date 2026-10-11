@@ -1,4 +1,5 @@
 // Studio bez serwera: nowa gra, otwarcie pliku .pgame albo szablon.
+import { HTML_STARTER } from "../../../shared/htmlGame.ts";
 import { demoBlocks } from "../../../shared/demos/blocks.ts";
 import { GAME_EXT, parseGameFile, type GameMeta } from "../../../shared/gamefile.ts";
 import type { WorldData } from "../../../shared/types.ts";
@@ -15,6 +16,7 @@ type Go = (screen: string, params?: Record<string, unknown>) => void;
 const TEMPLATES: { icon: string; name: string; description: string; make: () => WorldData }[] = [
   { icon: "⬜", name: "Pusta gra", description: "Podłoże i spawn - zacznij od zera", make: emptyWorld },
   { icon: "🎮", name: "Gra 2D", description: "Platformówka: gracz, ziemia, monety, kolce", make: () => ({ ...emptyWorld(), parts: [], mode: "2d", world2d: emptyWorld2D() }) },
+  { icon: "🌐", name: "Gra HTML", description: "Własna strona z grą w ramce (HTML, CSS, JS) - to nie jest gra Predatora", make: () => ({ ...emptyWorld(), parts: [], mode: "html", html: HTML_STARTER }) },
   { icon: "⛏️", name: "Świat z bloków", description: "Jak Minecraft: kopanie, crafting, noc z potworami", make: () => demoBlocks(Math.floor(Math.random() * 1_000_000)) },
   { icon: "🏙️", name: "Predator City", description: "Miasto do spotkań z ludźmi, prace, kawiarnia, disco", make: demoCity },
   { icon: "⚔️", name: "Arena", description: "Walka na miecze i pistolety", make: demoArena },

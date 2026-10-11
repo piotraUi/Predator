@@ -19,6 +19,7 @@ import { ask, h, isCompact, isTouch, logo, modal, toast } from "../ui/dom.ts";
 import { badgeEditor } from "../studio/badgeEditor.ts";
 import { genreSelect, productEditor } from "../studio/productEditor.ts";
 import { openGuide, shouldShowGuide } from "../studio/toolbox.ts";
+import { docTab, themeButton, useStudioTheme } from "../studioTheme.ts";
 import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
 import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
 import { Collab2D, type Change2D } from "./collab2d.ts";
@@ -391,6 +392,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       h("button", { class: "tb-btn", onClick: () => openGameSettings(), title: "Nazwa, fizyka, dźwięki, odznaki, publikacja" }, "⚙", h("span", null, "Gra")),
       h("button", { class: "tb-btn", onClick: () => openSettings() }, "🎚", h("span", null, "Ustawienia")),
       h("button", { class: "tb-btn", onClick: () => openGuide("2d"), title: "Jak zrobić grę - przewodnik" }, "❓", h("span", null, "Pomoc")),
+      themeButton(),
     );
 
     // ---------- panele ----------
@@ -562,7 +564,10 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       ];
       modal("Skróty w Studio 2D", h("table", { class: "shortcuts" }, rows.map(([k, v]) => h("tr", null, h("td", null, h("kbd", null, k)), h("td", null, v)))));
     }
-    el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
+    // wygląd Roblox: karta gry nad widokiem (w oryginalnym wyglądzie niewidoczna)
+    const doc = docTab(() => meta.name, () => dirty, () => (toolbar.querySelector(".tb-btn") as HTMLElement | null)?.click());
+    cleanups.push(useStudioTheme());
+    el.append(toolbar, doc.el, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
 
     // ---------- listy ----------
     function thumbOf(o: Obj2D): Node {

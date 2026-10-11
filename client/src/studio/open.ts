@@ -11,9 +11,14 @@ export function studioOpenScreen(root: HTMLElement, params: { worldId?: number; 
   root.append(loading);
   let disposed = false;
   let inner: (() => void) | null = null;
-  const mount = async (is2d: boolean, loaded?: { info: WorldInfo; data: WorldData }) => {
+  const mount = async (mode: WorldData["mode"], loaded?: { info: WorldInfo; data: WorldData }) => {
     try {
-      const screen = is2d ? (await import("../studio2d/studio2d.ts")).studio2dScreen : (await import("./studio.ts")).studioScreen;
+      const screen =
+        mode === "html"
+          ? (await import("../studioHtml/studioHtml.ts")).studioHtmlScreen
+          : mode === "2d"
+            ? (await import("../studio2d/studio2d.ts")).studio2dScreen
+            : (await import("./studio.ts")).studioScreen;
       if (disposed) return;
       loading.remove();
       inner = screen(root, { ...params, loaded }, go);
@@ -22,12 +27,12 @@ export function studioOpenScreen(root: HTMLElement, params: { worldId?: number; 
       go("home", { tab: "create" });
     }
   };
-  if (params.file) mount(params.file.data.mode === "2d");
+  if (params.file) mount(params.file.data.mode);
   else
     api
       .getWorld(params.worldId!)
       .then((r) => {
-        if (!disposed) mount(r.data.mode === "2d", r);
+        if (!disposed) mount(r.data.mode, r);
       })
       .catch((e) => {
         toast(e.message, "error");

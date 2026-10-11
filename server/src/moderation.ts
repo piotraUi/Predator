@@ -8,6 +8,7 @@
 // Gdy AI nie odpowiada, działa dalej zwykły filtr słów - gra nie staje.
 import crypto from "node:crypto";
 import type { WorldData } from "../../shared/types.ts";
+import { htmlContent } from "../../shared/htmlGame.ts";
 import { alerts, db, worlds } from "./db.ts";
 import { mutes } from "./social.ts";
 import { decodePng, makeSheet, type Rgba } from "./pngSheet.ts";
@@ -587,6 +588,29 @@ function scriptStrings(source: string): string[] {
   return out.filter((s) => /\s/.test(s.trim()));
 }
 
+/** zasady dla przeglądu kodu gry HTML (dodatkowo do ogólnych zasad treści) */
+const HTML_CODE_Q =
+  "Poniżej jest fragment kodu strony (gra HTML) bez obrazków. Czy gra jest odpowiednia dla dzieci i bezpieczna? Zablokuj (ok=false), gdy kod: wyświetla albo zawiera treści niedozwolone (też ukryte, zakodowane, pisane z błędami albo rozbite na części); udaje logowanie, podszywa się pod Predatora albo inną stronę i prosi o hasło, dane osobowe, numer karty lub kod z SMS; próbuje oszukać gracza (fałszywe nagrody, \"wygrałeś\", pobierz plik); przekierowuje, otwiera inne strony albo próbuje wyjść z ramki; kopie kryptowaluty, śledzi gracza albo wysyła dane; ukrywa działanie (zaciemniony kod, eval z zakodowanego tekstu). Zwykłe gry, animacje, canvas, dźwięk i interakcje są w porządku - nie dopatruj się zagrożeń w zwykłym kodzie.";
+
+/** przegląd kodu gry HTML przez AI: kawałki po kolei, wynik dla każdego */
+export async function checkHtmlCode(chunks: string[]): Promise<Verdict[]> {
+  const out: Verdict[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const hash = "h:" + sha(chunks[i]);
+    const c = cacheGet(hash);
+    if (c) {
+      out.push({ ok: !!c.ok, reason: c.reason });
+      continue;
+    }
+    const res = await chat(`1. ${HTML_CODE_Q}\n\nKod (część ${i + 1} z ${chunks.length}):\n${chunks[i]}`, 60_000, "low", 700 + Math.ceil(chunks[i].length / 2));
+    const r = res.results?.[0];
+    const v: Verdict = res.blocked ? { ok: false, reason: "kod odrzucony przez filtr bezpieczeństwa AI" } : r && r.ok === false ? { ok: false, reason: String(r.reason ?? "niebezpieczny kod").slice(0, 200) } : OK;
+    cacheSet(hash, v);
+    out.push(v);
+  }
+  return out;
+}
+
 /** wszystko, co w grze zobaczą albo usłyszą gracze */
 export function worldContent(name: string, description: string, data: WorldData, thumbnail: string | null) {
   const texts: { where: string; text: string }[] = [{ where: "nazwa i opis", text: `${name}\n${description}` }];
@@ -599,7 +623,18 @@ export function worldContent(name: string, description: string, data: WorldData,
   }
   const images: { where: string; url: string }[] = [];
   const sounds: { where: string; url: string }[] = [];
+  let code: string[] = [];
+  let problems: string[] = [];
   if (thumbnail) images.push({ where: "miniaturka", url: thumbnail });
+  // gra HTML: napisy ze strony, obrazki i dźwięki z pliku oraz sam kod
+  if (data.mode === "html") {
+    const h = htmlContent(data.html ?? "");
+    h.texts.forEach((t) => texts.push({ where: "napisy w grze HTML", text: t }));
+    h.images.forEach((u, i) => images.push({ where: `obrazek ${i + 1} w grze HTML`, url: u }));
+    h.sounds.forEach((u, i) => sounds.push({ where: `dźwięk ${i + 1} w grze HTML`, url: u }));
+    code = h.code;
+    problems = h.problems;
+  }
   for (const s of data.sounds ?? []) sounds.push({ where: `dźwięk "${s.name}"`, url: s.url });
   // GUI: napisy i obrazki na ekranie gracza; nazwy miejsc gier 3D
   for (const g of data.guis ?? []) {
@@ -618,7 +653,7 @@ export function worldContent(name: string, description: string, data: WorldData,
     for (const l of w.levels) texts.push({ where: "nazwa poziomu", text: l.name });
     for (const c of w.characters) texts.push({ where: "postać", text: c.name });
   }
-  return { texts, images, sounds };
+  return { texts, images, sounds, code, problems };
 }
 
 /** sprawdza całą grę; zwraca listę problemów (pusta = gra w porządku) */
@@ -626,11 +661,17 @@ export async function scanWorld(worldId: number): Promise<{ where: string; reaso
   const w = worlds.byId(worldId);
   if (!w) return [];
   const c = worldContent(w.name, w.description, JSON.parse(w.data) as WorldData, worlds.thumbnail(worldId));
-  const problems: { where: string; reason: string }[] = [];
+  const problems: { where: string; reason: string }[] = c.problems.map((reason) => ({ where: "kod gry HTML", reason }));
+  // pewny problem w kodzie (pole na hasło, kopanie kryptowalut...) - AI nic nie zmieni, więc go nie pytamy
+  if (problems.length) return problems;
   const tv = await checkTexts(c.texts.map((t) => t.text));
   tv.forEach((v, i) => !v.ok && problems.push({ where: c.texts[i].where, reason: v.reason }));
   const iv = await checkImages(c.images.map((x) => x.url));
   iv.forEach((v, i) => !v.ok && problems.push({ where: c.images[i].where, reason: v.reason }));
+  if (c.code.length) {
+    const cv = await checkHtmlCode(c.code);
+    cv.forEach((v) => !v.ok && problems.push({ where: "kod gry HTML", reason: v.reason }));
+  }
   const av = await checkAudio(c.sounds.map((x) => x.url));
   av.forEach((v, i) => !v.ok && problems.push({ where: c.sounds[i].where, reason: v.reason + (v.transcript ? ` („${v.transcript.slice(0, 80)}”)` : "") }));
   return problems;

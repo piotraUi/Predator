@@ -104,6 +104,8 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
     })
     .catch((e: Error) => {
       if (disposed) return;
+      // gra HTML nie ma serwera gry - otwieramy ją jako stronę w ramce
+      if (e.message?.includes("gra HTML") && params.worldId) return go("htmlplay", { worldId: params.worldId, back: params.back });
       toast(e.message?.includes("full") ? "Serwer gry jest pełny" : "Nie udało się dołączyć: " + e.message, "error");
       back();
     });

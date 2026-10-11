@@ -39,6 +39,7 @@ import { CHAR_EXT, parseCharacterFile } from "../../../shared/gamefile.ts";
 import { MAX_ANIMATIONS, MAX_CHARACTERS, MAX_MODEL_CHARS } from "../../../shared/world.ts";
 import { STUDIO_INPUTS, lookRadPerPx, pointerButtons, robloxCamera } from "../engine/camera.ts";
 import { openSettings, settings } from "../settings.ts";
+import { docTab, themeButton, useStudioTheme } from "../studioTheme.ts";
 import { badgeEditor } from "./badgeEditor.ts";
 import { terrainTool } from "./terrainTool.ts";
 import { Collab, type Editor, type RemoteChange } from "./collab.ts";
@@ -173,6 +174,7 @@ export function studioScreen(
   function start(meta: GameMeta, data: WorldData, src: Source, startDirty: boolean) {
     loading.remove();
     let dirty = false;
+    let doc: ReturnType<typeof docTab> | null = null;
     let selected: Part | null = null;
     /** kilka zaznaczonych naraz (Shift + klik, ramka) - "selected" to główny z nich */
     let multi: Part[] = [];
@@ -733,6 +735,7 @@ export function studioScreen(
       dirty = true;
       desktop?.setDirty(true);
       saveBtn.classList.add("unsaved");
+      doc?.update();
     }
 
     // ---------- operacje na klockach ----------
@@ -1564,6 +1567,7 @@ export function studioScreen(
         dirty = false;
         desktop?.setDirty(false);
         saveBtn.classList.remove("unsaved");
+        doc?.update();
         if (!quiet) toast(src.online ? "Zapisano na serwerze ✔" : "Zapisano plik ✔", "good");
         return true;
       } catch (e) {
@@ -1737,7 +1741,28 @@ export function studioScreen(
       h("button", { class: "tb-btn", onClick: () => openGuis(), title: "GUI: menu, okienka, przyciski i napisy na ekranie gracza" }, "🪟", h("span", null, "GUI")),
       h("button", { class: "tb-btn", onClick: () => openGameSettings(), title: "Nazwa, opis, niebo, odznaki, publikacja" }, "⚙", h("span", null, "Gra")),
       h("button", { class: "tb-btn", onClick: () => openGuide("3d"), title: "Jak zrobić grę - przewodnik i skróty" }, "❓", h("span", null, "Pomoc")),
+      themeButton(),
+      // przyciski widoku (tylko w wyglądzie Roblox: panele jak w Roblox Studio)
+      h("button", { class: "tb-btn rb-only", onClick: () => showLeftTab("toolbox"), title: "Zestaw gotowych klocków" }, "🧱", h("span", null, "Zestaw")),
+      h("button", { class: "tb-btn rb-only", onClick: () => showLeftTab("terrain"), title: "Edytor terenu" }, "🏔", h("span", null, "Teren")),
+      h("button", { class: "tb-btn rb-only", onClick: () => showLeftTab("scripts"), title: "Skrypty gry" }, "📜", h("span", null, "Skrypty")),
+      h("button", { class: "tb-btn rb-only", onClick: () => showLeftTab("tools"), title: "Bronie i narzędzia" }, "🗡️", h("span", null, "Bronie")),
+      h("button", { class: "tb-btn rb-only", onClick: () => showLeftTab("chars"), title: "Postacie i animacje" }, "🧍", h("span", null, "Postacie")),
     );
+    // wygląd jak Roblox Studio: przyciski pogrupowane w karty wstążki (HOME / GRA / WIDOK)
+    const RB_ALL = new Set(["Wyjdź", "Zapisz", "Plik", "Testuj"]);
+    const RB_GAME = new Set(["Miejsca", "GUI", "Gra", "Współpraca"]);
+    const RB_VIEW = new Set(["Pomoc", "Wygląd", "Zestaw", "Teren", "Skrypty", "Bronie", "Postacie"]);
+    for (const c of [...toolbar.children] as HTMLElement[]) {
+      const label = c.querySelector(".tb-btn span, :scope > span")?.textContent?.trim() ?? "";
+      const key = (c.textContent ?? "").replace(/[^\p{L}]/gu, "");
+      let g = "home";
+      if (c.tagName === "IMG" || c.classList.contains("tb-mode") || RB_ALL.has(label) || RB_ALL.has(key)) g = "all";
+      else if (RB_GAME.has(label) || c.classList.contains("editors-btn")) g = "game";
+      else if (RB_VIEW.has(label)) g = "view";
+      else if (c.classList.contains("tb-sep")) g = "sep";
+      c.dataset.rb = g;
+    }
 
     // ---------- panele ----------
     const explorer = h("div", { class: "panel-body" });
@@ -1812,6 +1837,16 @@ export function studioScreen(
     const leftPages = h("div", { class: "ltab-pages" });
     const leftPanel = h("aside", { class: "studio-panel left" }, leftTabs, leftPages);
     function showLeftTab(id: string) {
+      // w wyglądzie Roblox lista obiektów jest po prawej (Eksplorator)
+      if (id === "objects" && document.documentElement.dataset.studioTheme === "roblox") {
+        if (!leftPages.firstChild) return showLeftTab("toolbox");
+        if (isCompact()) {
+          leftPanel.classList.remove("open");
+          rightPanel.classList.add("open");
+          syncMobileTabs();
+        }
+        return;
+      }
       const t = LEFT_TABS.find((x) => x.id === id) ?? LEFT_TABS[0];
       if (t.id === "terrain" && curPlace !== MAIN_PLACE) return toast("Teren jest tylko w głównym miejscu - przełącz miejsce na pasku", "info");
       if (t.id !== "terrain") terrainPanel.deactivate();
@@ -1950,7 +1985,40 @@ export function studioScreen(
       modal("Skróty w Studio 3D", h("table", { class: "shortcuts" }, rows.map(([k, v]) => h("tr", null, h("td", null, h("kbd", null, k)), h("td", null, v)))));
     }
     viewport.append(hintBar, fabBar, speedTip, marquee, statusBar);
-    el.append(toolbar, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
+    // karty wstążki (wygląd Roblox) i karta gry nad widokiem
+    const RB_TABS: [string, string][] = [["home", "HOME"], ["game", "GRA"], ["view", "WIDOK"]];
+    el.dataset.rb = "home";
+    const rbTabs = h(
+      "div",
+      { class: "rb-tabs" },
+      h("button", { class: "rb-tab file", onClick: (e: Event) => toggleMenu(fileMenu, e) }, "PLIK"),
+      RB_TABS.map(([id, label]) =>
+        h("button", { class: "rb-tab" + (id === "home" ? " on" : ""), "data-rb-tab": id, onClick: () => ((el.dataset.rb = id), rbTabs.querySelectorAll("[data-rb-tab]").forEach((b) => b.classList.toggle("on", (b as HTMLElement).dataset.rbTab === id))) }, label),
+      ),
+    );
+    const leaveStudio = async () => {
+      if (await confirmLeave()) {
+        desktop?.setDirty(false);
+        exitScreen();
+      }
+    };
+    doc = docTab(() => meta.name, () => dirty, () => void leaveStudio());
+    // Eksplorator nad Właściwościami (jak w Roblox Studio) - w oryginalnym wyglądzie jest w zakładce "Obiekty"
+    const objectsPage = LEFT_TABS.find((t) => t.id === "objects")!.page;
+    const explorerTitle = () => h("div", { class: "panel-title" }, "Obiekty");
+    const explorerBox = h("div", { class: "rb-explorer" });
+    function applyLayout(theme: string) {
+      if (theme === "roblox") {
+        explorerBox.replaceChildren(explorerTitle(), explorerSearch, explorer);
+        rightPanel.insertBefore(explorerBox, rightPanel.firstChild);
+        if (leftTabs.querySelector(".ltab.active")?.getAttribute("data-ltab") === "objects") showLeftTab("toolbox");
+      } else {
+        explorerBox.remove();
+        objectsPage.replaceChildren(h("div", { class: "panel-title" }, "Obiekty w grze"), explorerSearch, explorer);
+      }
+    }
+    cleanups.push(useStudioTheme(applyLayout));
+    el.append(rbTabs, toolbar, doc.el, h("div", { class: "studio-main" }, leftPanel, viewport, rightPanel), mobileTabs);
     engine.resize();
 
     function renderExplorer() {

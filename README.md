@@ -188,6 +188,21 @@ Gra 3D może mieć **świat z bloków**: Twórz → Nowa gra → **⛏️ Świat
 - **Lua:** `getBlock`, `setBlock`, `blockAt`, `getSurface`, `giveItem`, `takeItem`, `countItem`, `onBlockBreak`, `onBlockPlace`, `setTime`, `getTime`, `isNight`, `spawnMob`, `explode`.
 - **Klawisze:** 1-9 i kółko myszy zmieniają przedmiot, V przełącza pierwszą i trzecią osobę, Q wyrzuca przedmiot.
 
+## Gry HTML (strona w ramce)
+
+Oprócz gier Predatora można publikować **gry HTML**: własną stronę internetową z grą. Twórz → Nowa gra → **🌐 Gra HTML** (albo „Studio bez serwera” → Gra HTML).
+
+- **Studio HTML:** kod po lewej, podgląd w ramce po prawej (odświeża się sam), „Wczytaj” bierze gotowy plik `.html`, „Pobierz” zapisuje grę jako `.html`. Są też miniaturka, kategoria i publikacja. Pod kodem są podpowiedzi, co w ramce nie zadziała.
+- **Jeden plik:** cała gra musi być w jednym pliku HTML (CSS i JS w środku, obrazki i dźwięki jako `data:`). Zasoby z internetu (`https://...`), `fetch` i `WebSocket` są zablokowane. Gry HTML nie mają multiplayera Predatora, odznak ani sklepu.
+- **Oznaczenie:** na kartach i na stronie gry jest plakietka **🌐 HTML**, a w grze pasek „To strona internetowa w ramce, a nie gra Predatora. Nie wpisuj w niej haseł”. Gracz może grę zgłosić (⚑).
+- **Bezpieczeństwo:** gra działa w ramce `sandbox` bez dostępu do konta, tokenu i danych Predatora, z polityką CSP (nic się nie ładuje ani nie wysyła). Pole na hasło, kopanie kryptowalut i zaciemniony kod są zabronione.
+- **Moderacja AI** sprawdza opublikowaną grę HTML: napisy ze strony i ze skryptów, obrazki i dźwięki z pliku oraz sam kod (podszywanie się pod logowanie, wyłudzenia, przekierowania, ukryte treści). Gra z problemem jest ukrywana, a twórca dostaje powiadomienie z powodem. Admin może ją zatwierdzić w Panelu admina → Moderacja.
+- Wejścia liczą się jako wizyty (raz na 10 minut od gracza), a twórca dostaje za nie monety jak za gry Predatora.
+
+## Wygląd Studia
+
+Studio ma dwa wyglądy (przycisk **🎨 Wygląd** na pasku albo Ustawienia): **oryginalny Predator** i **jak Roblox Studio** (szare, z kartami wstążki PLIK / HOME / GRA / WIDOK, kartą gry nad widokiem oraz Eksploratorem i Właściwościami po prawej). Działa w Studio 3D, 2D i HTML i zapamiętuje się na urządzeniu.
+
 ## Gry 2D
 
 Oprócz gier 3D w Predatorze można robić **platformówki 2D** z obrazków (pixel art). Przy tworzeniu gry wybierz **Gra 2D**.

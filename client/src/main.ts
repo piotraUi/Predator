@@ -16,6 +16,7 @@ const screens: Record<string, () => Promise<Screen>> = {
   auth: async () => authScreen as Screen,
   home: async () => (await import("./ui/home.ts")).homeScreen as Screen,
   play: async () => (await import("./game/launch.ts")).launchScreen as Screen,
+  htmlplay: async () => (await import("./game/htmlPlay.ts")).htmlPlayScreen as Screen,
   studio: async () => (await import("./studio/open.ts")).studioOpenScreen as Screen,
   offline: async () => (await import("./ui/offline.ts")).offlineScreen as Screen,
 };
@@ -76,7 +77,7 @@ const go: Go = async (name, params = {}) => {
   cleanup?.();
   cleanup = null;
   // bez logowania: Studio z pliku, test offline i ekran startowy trybu offline
-  const offlineOk = name === "offline" || (name === "studio" && "file" in params) || (name === "play" && "offline" in params);
+  const offlineOk = name === "offline" || (name === "studio" && "file" in params) || (name === "play" && "offline" in params) || (name === "htmlplay" && "offline" in params);
   if (name !== "auth" && !session.user && !offlineOk) name = "auth";
   let screen: Screen;
   const slow = setTimeout(() => {

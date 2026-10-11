@@ -1,4 +1,5 @@
 import { demoBlocks } from "../../shared/demos/blocks.ts";
+import { HTML_STARTER } from "../../shared/htmlGame.ts";
 import { giveGamesToCreator } from "./creators.ts";
 import { emptyWorld2D, topDownWorld2D } from "../../shared/world2d.ts";
 import express, { type Response } from "express";
@@ -49,6 +50,7 @@ function worldInfo(w: WorldListRow): WorldInfo {
     likes: w.likes,
     dislikes: w.dislikes,
     ...(w.genre ? { genre: w.genre } : {}),
+    ...(w.kind === "html" ? { kind: "html" as const } : {}),
   };
 }
 
@@ -205,6 +207,35 @@ api.get("/worlds", requireAuth, (req, res) => {
   res.json(list);
 });
 
+/**
+ * Gra HTML: kod strony (opublikowanej albo własnej / współtworzonej). Moderacja ukrywa grę, jeśli kod jest zły,
+ * a ukryta gra nie jest opublikowana - więc tu jej nie dostaną inni gracze.
+ */
+api.get("/worlds/:id/html", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const w = worlds.byId(Number(req.params.id));
+  if (!w || w.kind !== "html") return fail(res, 404, "Nie ma takiej gry HTML");
+  if (!w.published && !canEdit(w, me.id)) return fail(res, 404, "Nie ma takiej gry HTML");
+  const data = sanitizeWorld(JSON.parse(w.data));
+  res.json({ id: w.id, name: w.name, html: data.html ?? "", ownerName: users.byId(w.owner_id)?.username ?? "?" });
+});
+
+/** wejście do gry HTML: wizyta w statystykach i monety dla twórcy (raz na 10 minut od jednego gracza) */
+const lastHtmlVisit = new Map<string, number>();
+api.post("/worlds/:id/visit", requireAuth, (req, res) => {
+  const me = (req as AuthedRequest).user;
+  const w = worlds.byId(Number(req.params.id));
+  if (!w || w.kind !== "html" || (!w.published && !canEdit(w, me.id))) return fail(res, 404, "Nie ma takiej gry HTML");
+  const key = `${me.id}:${w.id}`;
+  const now = Date.now();
+  if (w.owner_id !== me.id && now - (lastHtmlVisit.get(key) ?? 0) > 10 * 60_000) {
+    lastHtmlVisit.set(key, now);
+    worlds.addVisit(w.id);
+    users.addCoins(w.owner_id, config.creatorCoinsPerVisit);
+  }
+  res.json({ ok: true });
+});
+
 /** Strona gry - dla opublikowanych albo własnych */
 api.get("/worlds/:id/info", requireAuth, (req, res) => {
   const me = (req as AuthedRequest).user;
@@ -351,9 +382,11 @@ api.post("/worlds", requireAuth, (req, res) => {
       ? { ...emptyWorld(), parts: [], mode: "2d" as const, world2d: mode === "2dtop" ? topDownWorld2D() : emptyWorld2D() }
       : mode === "blocks"
         ? demoBlocks(Math.floor(Math.random() * 1_000_000))
-        : emptyWorld();
+        : mode === "html"
+          ? { ...emptyWorld(), parts: [], mode: "html" as const, html: HTML_STARTER }
+          : emptyWorld();
   // każda nowa gra ma od razu odznakę za wejście - twórca może ją zmienić w Studio
-  const data = { ...base, badges: base.badges?.length ? base.badges : [welcomeBadge()] };
+  const data = mode === "html" ? sanitizeWorld(base) : { ...base, badges: base.badges?.length ? base.badges : [welcomeBadge()] };
   const w = worlds.create(user.id, name, data, DEFAULT_MAX_PLAYERS);
   res.json(infoById(w.id));
 });

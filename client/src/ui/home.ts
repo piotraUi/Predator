@@ -325,6 +325,8 @@ function gameCard(w: WorldInfo, onClick: () => void, extra?: Node) {
   return h(
     "div",
     { class: "g-card", role: "button", tabIndex: 0, onClick, onKeydown: (e: KeyboardEvent) => e.key === "Enter" && onClick() },
+    // gra HTML to strona w ramce, nie gra Predatora - zawsze oznaczona
+    w.kind === "html" ? h("span", { class: "g-html-tag", title: "Gra HTML - strona internetowa, nie gra Predatora" }, "🌐 HTML") : null,
     thumb(w),
     h("div", { class: "g-title" }, w.name),
     h(
@@ -624,6 +626,9 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
           "Twórca: ",
           h("a", { href: "#", class: "pv-link", onClick: (e: Event) => (e.preventDefault(), ctx.nav({ v: "profile", name: w.ownerName })) }, w.ownerName),
         ),
+        w.kind === "html"
+          ? h("div", { class: "pv-html-note" }, h("span", { class: "html-tag" }, "🌐 Gra HTML"), h("span", { class: "muted small" }, " To strona internetowa otwierana w ramce, a nie gra Predatora. Nie podawaj w niej haseł ani danych osobowych."))
+          : null,
         findGenre(w.genre)
           ? h("button", { class: "pv-genre-tag", onClick: () => ctx.nav({ v: "charts", genre: w.genre }) }, `${findGenre(w.genre)!.icon} ${findGenre(w.genre)!.label}`)
           : null,
@@ -632,7 +637,7 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
           {
             class: "pv-play",
             title: "Graj",
-            onClick: () => ctx.go("play", { worldId: w.id, back: { screen: "home", params: { tab: "game", worldId: w.id } } }),
+            onClick: () => ctx.go(w.kind === "html" ? "htmlplay" : "play", { worldId: w.id, back: { screen: "home", params: { tab: "game", worldId: w.id } } }),
           },
           icon("play", 34),
         ),
@@ -646,9 +651,9 @@ async function gameView(el: HTMLElement, ctx: Ctx, id: number) {
     h(
       "div",
       { class: "pv-stats" },
-      stat("Aktywni", fmt.format(w.playing)),
-      stat("Wizyty", fmt.format(w.visits)),
-      stat("Serwer", `${w.maxPlayers} graczy`),
+      ...(w.kind === "html"
+        ? [stat("Wizyty", fmt.format(w.visits)), stat("Rodzaj", "Gra HTML (strona)")]
+        : [stat("Aktywni", fmt.format(w.playing)), stat("Wizyty", fmt.format(w.visits)), stat("Serwer", `${w.maxPlayers} graczy`)]),
       stat("Aktualizacja", new Date(w.updatedAt).toLocaleDateString("pl-PL")),
     ),
     h("h2", null, "Opis"),
@@ -992,7 +997,7 @@ async function friendsView(el: HTMLElement, ctx: Ctx) {
 async function createView(el: HTMLElement, ctx: Ctx) {
   const newGame = () => {
     const input = h("input", { placeholder: "Nazwa gry", maxLength: 40, value: "Moja gra" });
-    let mode: "3d" | "2d" | "2dtop" | "blocks" = "3d";
+    let mode: "3d" | "2d" | "2dtop" | "blocks" | "html" = "3d";
     const pick = h("div", { class: "mode-pick" });
     const renderPick = () =>
       pick.replaceChildren(
@@ -1002,6 +1007,7 @@ async function createView(el: HTMLElement, ctx: Ctx) {
             ["2d", "🎮", "Gra 2D", "Platformówka z obrazków: skakanie, monety, poziomy"],
             ["2dtop", "🗺️", "Gra 2D z góry", "Widok z góry jak w RPG: chodzenie w 4 strony"],
             ["blocks", "⛏️", "Świat z bloków", "Jak Minecraft: kopanie, crafting, noc z potworami"],
+            ["html", "🌐", "Gra HTML", "Własna strona z grą (HTML, CSS, JS) - pokazuje się w ramce, nie jest grą Predatora"],
           ] as const
         ).map(([m, icon, label, desc]) =>
           h(

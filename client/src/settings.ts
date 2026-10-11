@@ -14,10 +14,12 @@ export interface Settings {
   notifyOnline: boolean;
   /** powiadomienia: znajomy zaczął grać */
   notifyPlaying: boolean;
+  /** wygląd Studia: "predator" = oryginalny, "roblox" = jak w Roblox Studio */
+  studioTheme: "predator" | "roblox";
 }
 
 const KEY = "predator.settings";
-const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true };
+const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator" };
 const listeners = new Set<(s: Settings) => void>();
 
 function load(): Settings {
@@ -92,6 +94,38 @@ function privacySection() {
 }
 
 /** Okno ustawień z suwakiem czułości */
+/** wybór wyglądu Studia (kafelki z podglądem) - w ustawieniach i w Studio */
+export function themePicker(onPick?: () => void) {
+  const box = h("div", { class: "theme-pick" });
+  const render = () =>
+    box.replaceChildren(
+      ...(
+        [
+          ["predator", "Oryginalny Predator", "Ciemny, kolorowy, z dużymi przyciskami"],
+          ["roblox", "Jak Roblox Studio", "Szary, z kartami wstążki, Eksploratorem i Właściwościami po prawej"],
+        ] as const
+      ).map(([id, name, desc]) =>
+        h(
+          "button",
+          {
+            type: "button",
+            class: "theme-card " + id + (settings.studioTheme === id ? " on" : ""),
+            onClick: () => {
+              updateSettings({ studioTheme: id });
+              render();
+              onPick?.();
+            },
+          },
+          h("span", { class: "theme-swatch" }, h("i"), h("i"), h("i")),
+          h("b", null, name),
+          h("span", { class: "muted small" }, desc),
+        ),
+      ),
+    );
+  render();
+  return box;
+}
+
 export function openSettings() {
   const value = h("b", null);
   const slider = h("input", { type: "range", min: "0.1", max: "3", step: "0.05" });
@@ -119,6 +153,8 @@ export function openSettings() {
       h("label", null, h("span", null, "Czułość kamery: ", value), slider),
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", onClick: () => ((slider.value = "1"), show(), updateSettings({ sensitivity: 1 })) }, "Domyślna (1×)")),
       h("label", { class: "check" }, invert, h("span", null, "Odwróć oś Y kamery")),
+      h("div", { class: "prop-group" }, "Wygląd Studia"),
+      themePicker(),
       h("div", { class: "prop-group" }, "Powiadomienia"),
       check("notifyOnline", "Znajomy wszedł do Predatora"),
       check("notifyPlaying", "Znajomy zaczął grać (z przyciskiem Dołącz)"),
