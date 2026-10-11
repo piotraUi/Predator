@@ -971,6 +971,13 @@ export class GameSim {
       awardBadge: (sid, name) => this.t.badge?.(String(sid ?? ""), String(name ?? "")),
       playSound: (target, name) => to(target, "sound", { name: soundName(name) }),
       setMusic: (name, target) => to(target, "music", { name: name ? soundName(name) : "" }),
+      // efekt cząsteczkowy (silnik Apex): effect("fire", x, y, z, ilość) - ogień, dym, iskry, magia, kurz, plusk, błysk
+      effect: (kind, x, y, z, n) => {
+        const k = String(kind ?? "");
+        const num = (v: unknown, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+        if (!["fire", "smoke", "sparks", "magic", "dust", "splash", "flash", "hit"].includes(k)) return this.log(`nie ma efektu „${k}” (fire, smoke, sparks, magic, dust, splash, flash, hit)`, true);
+        this.t.broadcast("fx", { kind: k, x: num(x), y: num(y), z: num(z), n: Math.min(60, Math.max(1, Math.round(num(n, 14)))) });
+      },
       speak: (target, text, lang) =>
         to(target, "speak", { text: filterChat(String(text ?? "")).slice(0, 200), lang: typeof lang === "string" ? lang.slice(0, 10) : "pl-PL" }),
       prompt: (target, id, question, sayText, lang) => {

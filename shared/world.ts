@@ -28,7 +28,7 @@ import type {
   WorldLight,
   WorldSound,
 } from "./types.ts";
-import { PART_TEXTURES } from "./types.ts";
+import { PART_EMITTERS, PART_TEXTURES } from "./types.ts";
 import { findGenre, VEHICLE_TYPES, type VehicleType, JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
 
 export const MAX_PARTS = 5000;
@@ -266,6 +266,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       material: MATERIALS.includes(p.material as (typeof MATERIALS)[number])
         ? (p.material as Part["material"])
         : "plastic",
+      ...(PART_EMITTERS.some((e) => e.id === p.emitter) ? { emitter: p.emitter as Part["emitter"] } : {}),
       ...(typeof p.texture === "string" && PART_TEXTURES.some((t) => t.id === p.texture) ? { texture: p.texture } : {}),
       ...(p.kind === "pickup" && typeof p.toolId === "string" ? { toolId: p.toolId.slice(0, 40) } : {}),
       ...(p.kind === "npc" && typeof p.characterId === "string" ? { characterId: p.characterId.slice(0, 40) } : {}),

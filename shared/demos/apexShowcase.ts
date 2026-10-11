@@ -146,6 +146,11 @@ export function demoApexShowcase(): WorldData {
   P({ name: "Kadłub", group: "lodz", x: boatAt.x, y: 3.1, z: boatAt.z, sx: 5, sy: 1.6, sz: 11, color: "#f4f1de", material: "plastic" });
   P({ name: "Pasek", group: "lodz", x: boatAt.x, y: 3.95, z: boatAt.z, sx: 5.2, sy: 0.3, sz: 11.2, color: "#e07a5f", collide: false });
   P({ name: "Siedzenie łodzi", kind: "seat", vehicle: "boat", group: "lodz", x: boatAt.x, y: 4.1, z: boatAt.z + 1, sx: 2.4, sy: 0.5, sz: 2.4, color: "#3d405b", collide: false });
+  // cząsteczki: ognisko, dym z komina, magiczny kryształ i fontanna
+  P({ name: "Ognisko", shape: "cylinder", x: vx - 22, y: GY + 0.2 + 0.4, z: vz - 14, sx: 3, sy: 0.8, sz: 3, color: "#4a3426", emitter: "fire", collide: false });
+  P({ name: "Dym", x: vx - 30, y: GY + 0.2 + 9.5, z: vz + 14, sx: 1.2, sy: 0.4, sz: 1.2, color: "#555555", emitter: "smoke", collide: false, transparency: 1 });
+  P({ name: "Kryształ", shape: "sphere", x: vx + 20, y: GY + 0.2 + 2.2, z: vz + 12, sx: 2.4, sy: 3.6, sz: 2.4, color: "#b388ff", material: "neon", emitter: "magic", collide: false });
+  P({ name: "Fontanna", shape: "cylinder", x: vx, y: GY + 0.2 + 0.6, z: vz + 22, sx: 4, sy: 1.2, sz: 4, color: "#9fb4c7", emitter: "splash" });
   // kule i pudła z fizyką brył
   const palette = ["#ff6b4a", "#ffd166", "#06d6a0", "#4cc9f0", "#b388ff", "#ff4d8d", "#ffffff"];
   for (let k = 0; k < 24; k++) {

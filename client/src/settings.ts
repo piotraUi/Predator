@@ -18,10 +18,12 @@ export interface Settings {
   studioTheme: "predator" | "roblox";
   /** silnik gier 3D: "babylon" = obecny, "apex" = nasz własny (eksperymentalny) */
   engine: "babylon" | "apex";
+  /** poświata (bloom) w silniku Apex */
+  apexBloom: boolean;
 }
 
 const KEY = "predator.settings";
-const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", engine: "babylon" };
+const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", engine: "babylon", apexBloom: true };
 const listeners = new Set<(s: Settings) => void>();
 
 function load(): Settings {
@@ -136,7 +138,7 @@ export function enginePicker() {
       ...(
         [
           ["babylon", "Babylon (obecny)", "Stabilny silnik, w którym działają wszystkie gry i funkcje."],
-          ["apex", "Apex (eksperymentalny)", "Nasz własny silnik na WebGL2: cienie, fizyka brył, niebo i woda. Gry z pojazdami albo blokami (jeszcze nie w Apex) uruchamiają się w Babylonie."],
+          ["apex", "Apex (eksperymentalny)", "Nasz własny silnik na WebGL2: cienie, poświata, cząsteczki, fizyka brył, pojazdy, tekstury, niebo i woda. Gry ze światem z bloków (jeszcze nie w Apex) uruchamiają się w Babylonie."],
         ] as const
       ).map(([id, name, desc]) =>
         h(
@@ -171,7 +173,7 @@ export function openSettings() {
   const invert = h("input", { type: "checkbox" });
   invert.checked = settings.invertY;
   invert.addEventListener("change", () => updateSettings({ invertY: invert.checked }));
-  const check = (key: "notifyOnline" | "notifyPlaying", label: string) => {
+  const check = (key: "notifyOnline" | "notifyPlaying" | "apexBloom", label: string) => {
     const box = h("input", { type: "checkbox" });
     box.checked = settings[key];
     box.addEventListener("change", () => updateSettings({ [key]: box.checked }));
@@ -187,6 +189,7 @@ export function openSettings() {
       h("label", { class: "check" }, invert, h("span", null, "Odwróć oś Y kamery")),
       h("div", { class: "prop-group" }, "Silnik gier 3D"),
       enginePicker(),
+      check("apexBloom", "Apex: poświata (bloom) wokół neonów i słońca"),
       h("p", { class: "muted", style: "font-size:12px;margin:0" }, "Silnik wybierasz dla siebie. Zmiana działa przy następnym wejściu do gry. Wszyscy gracze w jednej grze mogą używać różnych silników."),
       h("div", { class: "prop-group" }, "Wygląd Studia"),
       themePicker(),

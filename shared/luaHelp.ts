@@ -126,6 +126,7 @@ export const LUA_HELP_2D: [string, string][] = [
   ["getLevel(player)", "nazwa poziomu gracza"],
   ['getPlayersOnLevel("Poziom 1")', "lista graczy na poziomie"],
   ['playSound("nazwa", player)', "zagraj dźwięk (bez player = wszystkim)"],
+  ['effect("fire", x, y, z, ilość)', "efekt cząsteczkowy (silnik Apex): fire, smoke, sparks, magic, dust, splash, flash, hit"],
   ['setAnimation("Drzwi", "Otwarte")', "zmień animację obiektu"],
   ['setText("Napis", "tekst")', "zmień napis"],
   ['hideObject("Most") / showObject("Most")', "schowaj / pokaż obiekt (dla wszystkich)"],

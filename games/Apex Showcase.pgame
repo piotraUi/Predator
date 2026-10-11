@@ -4574,6 +4574,78 @@
    },
    {
     "id": "ax266",
+    "name": "Ognisko",
+    "shape": "cylinder",
+    "kind": "normal",
+    "x": -42,
+    "y": 8.6,
+    "z": 26,
+    "sx": 3,
+    "sy": 0.8,
+    "sz": 3,
+    "ry": 0,
+    "color": "#4a3426",
+    "transparency": 0,
+    "collide": false,
+    "material": "plastic",
+    "emitter": "fire"
+   },
+   {
+    "id": "ax267",
+    "name": "Dym",
+    "shape": "box",
+    "kind": "normal",
+    "x": -50,
+    "y": 17.7,
+    "z": 54,
+    "sx": 1.2,
+    "sy": 0.4,
+    "sz": 1.2,
+    "ry": 0,
+    "color": "#555555",
+    "transparency": 1,
+    "collide": false,
+    "material": "plastic",
+    "emitter": "smoke"
+   },
+   {
+    "id": "ax268",
+    "name": "Kryształ",
+    "shape": "sphere",
+    "kind": "normal",
+    "x": 0,
+    "y": 10.399999999999999,
+    "z": 52,
+    "sx": 2.4,
+    "sy": 3.6,
+    "sz": 2.4,
+    "ry": 0,
+    "color": "#b388ff",
+    "transparency": 0,
+    "collide": false,
+    "material": "neon",
+    "emitter": "magic"
+   },
+   {
+    "id": "ax269",
+    "name": "Fontanna",
+    "shape": "cylinder",
+    "kind": "normal",
+    "x": -20,
+    "y": 8.799999999999999,
+    "z": 62,
+    "sx": 4,
+    "sy": 1.2,
+    "sz": 4,
+    "ry": 0,
+    "color": "#9fb4c7",
+    "transparency": 0,
+    "collide": true,
+    "material": "plastic",
+    "emitter": "splash"
+   },
+   {
+    "id": "ax270",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4592,7 +4664,7 @@
     "bounce": 0.7189824803615921
    },
    {
-    "id": "ax267",
+    "id": "ax271",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4611,7 +4683,7 @@
     "bounce": 0.7606978111551144
    },
    {
-    "id": "ax268",
+    "id": "ax272",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -4630,7 +4702,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax269",
+    "id": "ax273",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4649,7 +4721,7 @@
     "bounce": 0.697326048463583
    },
    {
-    "id": "ax270",
+    "id": "ax274",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4668,7 +4740,7 @@
     "bounce": 0.6616659962572158
    },
    {
-    "id": "ax271",
+    "id": "ax275",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -4687,7 +4759,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax272",
+    "id": "ax276",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4706,7 +4778,7 @@
     "bounce": 0.6743848570156843
    },
    {
-    "id": "ax273",
+    "id": "ax277",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4725,7 +4797,7 @@
     "bounce": 0.5920011968817562
    },
    {
-    "id": "ax274",
+    "id": "ax278",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -4744,7 +4816,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax275",
+    "id": "ax279",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4763,7 +4835,7 @@
     "bounce": 0.7732335542794317
    },
    {
-    "id": "ax276",
+    "id": "ax280",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4782,7 +4854,7 @@
     "bounce": 0.573693444847595
    },
    {
-    "id": "ax277",
+    "id": "ax281",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -4801,7 +4873,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax278",
+    "id": "ax282",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4820,7 +4892,7 @@
     "bounce": 0.6566212665755302
    },
    {
-    "id": "ax279",
+    "id": "ax283",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4839,7 +4911,7 @@
     "bounce": 0.6097189109539614
    },
    {
-    "id": "ax280",
+    "id": "ax284",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -4858,7 +4930,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax281",
+    "id": "ax285",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4877,7 +4949,7 @@
     "bounce": 0.6939130938961171
    },
    {
-    "id": "ax282",
+    "id": "ax286",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4896,7 +4968,7 @@
     "bounce": 0.6988175166887232
    },
    {
-    "id": "ax283",
+    "id": "ax287",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -4915,7 +4987,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax284",
+    "id": "ax288",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4934,7 +5006,7 @@
     "bounce": 0.6182026645517908
    },
    {
-    "id": "ax285",
+    "id": "ax289",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4953,7 +5025,7 @@
     "bounce": 0.7559032316319645
    },
    {
-    "id": "ax286",
+    "id": "ax290",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -4972,7 +5044,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax287",
+    "id": "ax291",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -4991,7 +5063,7 @@
     "bounce": 0.6271654478157871
    },
    {
-    "id": "ax288",
+    "id": "ax292",
     "name": "Kula",
     "shape": "sphere",
     "kind": "normal",
@@ -5010,7 +5082,7 @@
     "bounce": 0.6741277017397806
    },
    {
-    "id": "ax289",
+    "id": "ax293",
     "name": "Skrzynia",
     "shape": "box",
     "kind": "normal",
@@ -5029,7 +5101,7 @@
     "bounce": 0.12
    },
    {
-    "id": "ax290",
+    "id": "ax294",
     "name": "Szczyt",
     "shape": "box",
     "kind": "normal",
@@ -5047,7 +5119,7 @@
     "spin": true
    },
    {
-    "id": "ax291",
+    "id": "ax295",
     "name": "Maszt",
     "shape": "box",
     "kind": "normal",

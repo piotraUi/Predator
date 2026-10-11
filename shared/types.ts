@@ -23,6 +23,15 @@ export const PART_TEXTURES: { id: string; name: string }[] = [
   { id: "hazard", name: "Pasy ostrzegawcze" },
 ];
 
+export const PART_EMITTERS: { id: NonNullable<Part["emitter"]>; name: string }[] = [
+  { id: "fire", name: "Ogień" },
+  { id: "smoke", name: "Dym" },
+  { id: "sparks", name: "Iskry" },
+  { id: "magic", name: "Magia" },
+  { id: "dust", name: "Kurz" },
+  { id: "splash", name: "Fontanna" },
+];
+
 export type VehicleType = "car" | "boat" | "skate";
 export const VEHICLE_TYPES: VehicleType[] = ["car", "boat", "skate"];
 
@@ -48,6 +57,8 @@ export interface Part {
   material?: "plastic" | "neon" | "glass" | "metal";
   /** wzór na ścianach klocka (id z PART_TEXTURES) - pokazuje go silnik Apex */
   texture?: string;
+  /** ciągłe cząsteczki wydobywające się z klocka (silnik Apex) */
+  emitter?: "fire" | "smoke" | "sparks" | "magic" | "dust" | "splash";
   /** Które narzędzie leży na klocku (tylko kind = "pickup") */
   toolId?: string;
   /** Postać NPC stojąca na klocku (tylko kind = "npc") */

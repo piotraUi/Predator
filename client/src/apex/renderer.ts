@@ -69,17 +69,24 @@ uniform sampler2D uTexD; uniform float uUseTex; uniform float uTile;
 uniform vec3 uCam; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSky; uniform vec3 uGround;
 uniform vec3 uFogCol; uniform vec2 uFog; uniform float uTime; uniform float uBevel; uniform float uShadowOn;
 uniform sampler2DShadow uShadow; uniform float uShadowTexel;
+uniform int uNL; uniform vec4 uLP[8]; uniform vec4 uLC[8]; uniform vec4 uLD[8];
+uniform float uNeon;
 out vec4 o;
+const vec2 PD[12] = vec2[](vec2(-0.326,-0.406), vec2(-0.840,-0.074), vec2(-0.696,0.457), vec2(-0.203,0.621), vec2(0.962,-0.195), vec2(0.473,-0.480),
+  vec2(0.519,0.767), vec2(0.185,-0.893), vec2(0.507,0.064), vec2(0.896,0.412), vec2(-0.322,-0.933), vec2(-0.792,-0.598));
+float hash2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 float shadowAt(vec3 n){
   if (uShadowOn < 0.5) return 1.0;
   vec3 p = vL.xyz / vL.w * 0.5 + 0.5;
   if (p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0||p.z>1.0) return 1.0;
   float ndl = max(dot(n,uSun),0.0);
   float bias = 0.0006 + 0.0022 * (1.0 - ndl);
+  // miękkie cienie: 12 próbek rozrzuconych dyskiem, obróconych losowo na piksel
+  float a = hash2(gl_FragCoord.xy) * 6.2832;
+  mat2 R = mat2(cos(a), sin(a), -sin(a), cos(a));
   float s = 0.0;
-  for (int x=-1;x<=1;x++) for (int y=-1;y<=1;y++)
-    s += texture(uShadow, vec3(p.xy + vec2(float(x),float(y))*uShadowTexel, p.z - bias));
-  return s / 9.0;
+  for (int i=0;i<12;i++) s += texture(uShadow, vec3(p.xy + R * PD[i] * uShadowTexel * 2.0, p.z - bias));
+  return s / 12.0;
 }
 void main(){
   vec3 n = normalize(vN);
@@ -95,12 +102,25 @@ void main(){
   vec3 V = normalize(uCam - vW);
   vec3 col;
   if (mat > 0.5 && mat < 1.5) {
-    col = base * 1.15;
+    col = base * uNeon;
   } else {
     float ndl = max(dot(n,uSun),0.0);
     float sh = shadowAt(n);
     vec3 amb = mix(uGround, uSky, n.y*0.5+0.5);
     vec3 lit = amb * 0.62 + uSunCol * ndl * sh * 0.78;
+    // światła punktowe i reflektory (latarka, błyski strzałów)
+    for (int i = 0; i < 8; i++) {
+      if (i >= uNL) break;
+      vec3 dl = uLP[i].xyz - vW;
+      float dist = length(dl);
+      float rng = uLP[i].w;
+      if (dist < rng) {
+        vec3 L = dl / dist;
+        float att = 1.0 - dist / rng; att *= att;
+        float spot = uLC[i].w > -0.5 ? smoothstep(uLC[i].w, uLD[i].w, dot(-L, uLD[i].xyz)) : 1.0;
+        lit += uLC[i].rgb * max(dot(n, L), 0.0) * att * spot;
+      }
+    }
     if (mat > 3.5 && mat < 4.5) {
       float w1 = sin(vW.x*0.9 + uTime*1.3) + sin(vW.z*1.1 - uTime*1.1) + sin((vW.x+vW.z)*0.5 + uTime*0.7);
       base *= 0.92 + 0.08*w1;
@@ -182,6 +202,42 @@ const DECAL_FS = `#version 300 es
 precision mediump float;
 in vec2 vUv; uniform sampler2D uTex; uniform vec4 uTint; out vec4 o;
 void main(){ vec4 c = texture(uTex, vec2(vUv.x, 1.0 - vUv.y)); if (c.a < 0.05) discard; o = c * uTint; }`;
+
+const POST_VS = `#version 300 es
+out vec2 vUv;
+void main(){ vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2)); vUv = p; gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; uniform sampler2D uTex; uniform float uThr; out vec4 o;
+void main(){ vec3 c = texture(uTex, vUv).rgb; float l = max(c.r, max(c.g, c.b)); float k = smoothstep(uThr - 0.25, uThr + 0.45, l); o = vec4(c * k, 1.0); }`;
+const BLUR_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; uniform sampler2D uTex; uniform vec2 uDir; out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb * 0.227027;
+  c += (texture(uTex, vUv + uDir * 1.3846).rgb + texture(uTex, vUv - uDir * 1.3846).rgb) * 0.3162162;
+  c += (texture(uTex, vUv + uDir * 3.2308).rgb + texture(uTex, vUv - uDir * 3.2308).rgb) * 0.0702703;
+  o = vec4(c, 1.0);
+}`;
+const COMPOSE_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; uniform sampler2D uScene; uniform sampler2D uB1; uniform sampler2D uB2; uniform float uAmount; out vec4 o;
+void main(){
+  vec3 c = texture(uScene, vUv).rgb + (texture(uB1, vUv).rgb * 0.75 + texture(uB2, vUv).rgb * 1.0) * uAmount;
+  o = vec4(c, 1.0);
+}`;
+
+interface Target { fbo: WebGLFramebuffer; tex: WebGLTexture; w: number; h: number }
+interface Post {
+  w: number; h: number;
+  /** scena (po rozmyciu MSAA): tekstura HDR */
+  scene: Target;
+  /** wielopróbkowy bufor sceny (null = rysujemy wprost do `scene`) */
+  ms: WebGLFramebuffer | null;
+  msRb: WebGLRenderbuffer[];
+  b1: Target[];
+  b2: Target[];
+}
 
 class Program {
   p: WebGLProgram;
@@ -299,6 +355,16 @@ export interface Look {
 interface GpuGrid { vao: WebGLVertexArrayObject; n: number; big: boolean }
 interface Slot { batch: Batch; index: number; key: string }
 
+export interface DynLight {
+  pos: V3;
+  color: [number, number, number];
+  intensity: number;
+  range: number;
+  /** reflektor: kierunek (znormalizowany) i połowa kąta stożka w radianach */
+  dir?: V3;
+  cone?: number;
+}
+
 export interface ApexStats { draws: number; instances: number; tris: number; ms: number }
 
 export class ApexRenderer {
@@ -341,6 +407,169 @@ export class ApexRenderer {
   /** połowa boku obszaru z cieniami (jednostki świata) */
   extent = 90;
   private pending: (() => void)[] = [];
+  // ---------- poświata (bloom) ----------
+  bloom = true;
+  private post: Post | null = null;
+  private postFailed = false;
+  private postProgs: { bright: Program; blur: Program; compose: Program } | null = null;
+  private emptyVao: WebGLVertexArrayObject | null = null;
+
+  /** czy rysujemy przez bufor HDR z poświatą */
+  postReady() {
+    return this.bloom && !this.postFailed && !!this.post;
+  }
+
+  private makeTarget(w: number, h: number, depth = false): Target | null {
+    const gl = this.gl;
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if (depth) {
+      const rb = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+    }
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return ok ? { fbo, tex, w, h } : null;
+  }
+
+  private freePost() {
+    const gl = this.gl, p = this.post;
+    if (!p) return;
+    for (const t of [p.scene, ...p.b1, ...p.b2]) {
+      gl.deleteFramebuffer(t.fbo);
+      gl.deleteTexture(t.tex);
+    }
+    if (p.ms) gl.deleteFramebuffer(p.ms);
+    for (const rb of p.msRb) gl.deleteRenderbuffer(rb);
+    this.post = null;
+  }
+
+  /** (re)tworzy bufory poświaty dla bieżącego rozmiaru; przy braku obsługi HDR wyłącza poświatę */
+  private ensurePost() {
+    if (!this.bloom || this.postFailed) {
+      if (this.post) this.freePost();
+      return;
+    }
+    const gl = this.gl;
+    if (this.post && this.post.w === this.width && this.post.h === this.height) return;
+    this.freePost();
+    if (!gl.getExtension("EXT_color_buffer_float") && !gl.getExtension("EXT_color_buffer_half_float")) return void (this.postFailed = true);
+    const w = this.width, h = this.height;
+    const hw = Math.max(1, w >> 1), hh = Math.max(1, h >> 1), qw = Math.max(1, w >> 2), qh = Math.max(1, h >> 2);
+    // wielopróbkowa scena (jak antialias kanwy) albo, gdy się nie da, zwykła tekstura z głębią
+    let ms: WebGLFramebuffer | null = null;
+    const msRb: WebGLRenderbuffer[] = [];
+    let scene = this.makeTarget(w, h, false);
+    if (!scene) return void (this.postFailed = true);
+    try {
+      const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) as number);
+      if (samples > 1) {
+        const f = gl.createFramebuffer()!;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+        const c = gl.createRenderbuffer()!, d = gl.createRenderbuffer()!;
+        gl.bindRenderbuffer(gl.RENDERBUFFER, c);
+        gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA16F, w, h);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, c);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, d);
+        gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, d);
+        const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        msRb.push(c, d);
+        if (ok) ms = f;
+        else gl.deleteFramebuffer(f);
+      }
+    } catch {
+      ms = null;
+    }
+    if (!ms) {
+      // bez MSAA: scena wprost do tekstury, potrzebna własna głębia
+      gl.deleteFramebuffer(scene.fbo);
+      gl.deleteTexture(scene.tex);
+      scene = this.makeTarget(w, h, true);
+      if (!scene) return void (this.postFailed = true);
+    }
+    const b1 = [this.makeTarget(hw, hh), this.makeTarget(hw, hh)];
+    const b2 = [this.makeTarget(qw, qh), this.makeTarget(qw, qh)];
+    if (b1.some((t) => !t) || b2.some((t) => !t)) return void (this.postFailed = true);
+    this.post = { w, h, scene, ms, msRb, b1: b1 as Target[], b2: b2 as Target[] };
+    if (!this.postProgs)
+      this.postProgs = { bright: new Program(gl, POST_VS, BRIGHT_FS), blur: new Program(gl, POST_VS, BLUR_FS), compose: new Program(gl, POST_VS, COMPOSE_FS) };
+    if (!this.emptyVao) this.emptyVao = gl.createVertexArray()!;
+  }
+
+  private fullscreen(prog: Program, target: Target | null, w: number, h: number, bind: (p: Program) => void) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(prog.p);
+    bind(prog);
+    gl.bindVertexArray(this.emptyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    this.stats.draws++;
+  }
+
+  /** poświata: jasne miejsca sceny (neon, słońce, odblaski) rozmyte i dodane do obrazu */
+  private applyBloom() {
+    const gl = this.gl, p = this.post!, pr = this.postProgs!;
+    if (p.ms) {
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, p.ms);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, p.scene.fbo);
+      gl.blitFramebuffer(0, 0, p.w, p.h, 0, 0, p.w, p.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    }
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.disable(gl.BLEND);
+    const tex = (unit: number, t: WebGLTexture) => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, t);
+    };
+    const [a, b] = p.b1, [c, d] = p.b2;
+    this.fullscreen(pr.bright, a, a.w, a.h, (pg) => {
+      tex(0, p.scene.tex);
+      gl.uniform1i(pg.loc("uTex"), 0);
+      gl.uniform1f(pg.loc("uThr"), 1.4);
+    });
+    const blur = (src: Target, dst: Target, dx: number, dy: number) =>
+      this.fullscreen(pr.blur, dst, dst.w, dst.h, (pg) => {
+        tex(0, src.tex);
+        gl.uniform1i(pg.loc("uTex"), 0);
+        gl.uniform2f(pg.loc("uDir"), dx / src.w, dy / src.h);
+      });
+    blur(a, b, 1, 0);
+    blur(b, a, 0, 1);
+    // ćwierć rozdzielczości: szersza poświata (a -> c przez zwykłe skalowanie liniowe)
+    this.fullscreen(pr.blur, c, c.w, c.h, (pg) => {
+      tex(0, a.tex);
+      gl.uniform1i(pg.loc("uTex"), 0);
+      gl.uniform2f(pg.loc("uDir"), 0, 0);
+    });
+    blur(c, d, 1.5, 0);
+    blur(d, c, 0, 1.5);
+    this.fullscreen(pr.compose, null, this.width, this.height, (pg) => {
+      tex(0, p.scene.tex);
+      tex(1, a.tex);
+      tex(2, c.tex);
+      gl.uniform1i(pg.loc("uScene"), 0);
+      gl.uniform1i(pg.loc("uB1"), 1);
+      gl.uniform1i(pg.loc("uB2"), 2);
+      gl.uniform1f(pg.loc("uAmount"), 0.6);
+    });
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindVertexArray(null);
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+  }
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { antialias: true, alpha: false, powerPreference: "high-performance" });
@@ -683,6 +912,30 @@ export class ApexRenderer {
   }
   private skyLight = 1;
 
+  // ---------- światła dynamiczne ----------
+
+  private lights: DynLight[] = [];
+  /** światło tylko na tę klatkę (do 8): punktowe albo reflektor (dir + cone) */
+  addLight(l: DynLight) {
+    if (this.lights.length < 8) this.lights.push(l);
+  }
+  private lightData = { p: new Float32Array(32), c: new Float32Array(32), d: new Float32Array(32) };
+  private uploadLights(p: Program) {
+    const gl = this.gl, ld = this.lightData;
+    ld.p.fill(0); ld.c.fill(0); ld.d.fill(0);
+    this.lights.forEach((l, i) => {
+      ld.p.set([l.pos[0], l.pos[1], l.pos[2], l.range], i * 4);
+      const k = l.intensity;
+      const spot = l.dir !== undefined && l.cone !== undefined;
+      ld.c.set([l.color[0] * k, l.color[1] * k, l.color[2] * k, spot ? Math.cos(l.cone!) : -1], i * 4);
+      if (spot) ld.d.set([l.dir![0], l.dir![1], l.dir![2], Math.cos(l.cone! * 0.55)], i * 4);
+    });
+    gl.uniform1i(p.loc("uNL"), this.lights.length);
+    gl.uniform4fv(p.loc("uLP[0]"), ld.p);
+    gl.uniform4fv(p.loc("uLC[0]"), ld.c);
+    gl.uniform4fv(p.loc("uLD[0]"), ld.d);
+  }
+
   setLight(brightness: number, fog: number) {
     this.brightness = brightness;
     if (fog > 0) {
@@ -726,6 +979,7 @@ export class ApexRenderer {
     const t0 = performance.now();
     const gl = this.gl;
     this.stats = { draws: 0, instances: 0, tris: 0, ms: 0 };
+    this.ensurePost();
     perspective(look.fov, this.width / this.height, look.near ?? 0.2, look.far ?? 2000, this.proj);
     lookAt(look.eye, look.target, [0, 1, 0], this.view);
     multiply(this.proj, this.view, this.vp);
@@ -769,8 +1023,10 @@ export class ApexRenderer {
     }
 
     // --- scena ---
+    const pst = this.bloom && !this.postFailed ? this.post : null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, pst ? (pst.ms ?? pst.scene.fbo) : null);
     gl.viewport(0, 0, this.width, this.height);
-    const fc = sky.fog;
+    const fc = [sky.fog[0] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[1] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[2] * (0.12 + 0.88 * Math.min(1, light))];
     gl.clearColor(fc[0], fc[1], fc[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.depthMask(true);
@@ -782,9 +1038,12 @@ export class ApexRenderer {
     gl.useProgram(sp.p);
     gl.uniformMatrix4fv(sp.loc("uInvVP"), false, this.invVp);
     gl.uniform3fv(sp.loc("uCam"), look.eye);
-    gl.uniform3fv(sp.loc("uTop"), sky.top);
-    gl.uniform3fv(sp.loc("uHor"), sky.hor);
-    gl.uniform3fv(sp.loc("uBot"), sky.bot);
+    // ciemne światy (horror): niebo i mgła ciemnieją razem z jasnością
+    const dim = 0.12 + 0.88 * Math.min(1, light);
+    const sc3 = (c: number[]) => [c[0] * dim, c[1] * dim, c[2] * dim];
+    gl.uniform3fv(sp.loc("uTop"), sc3(sky.top));
+    gl.uniform3fv(sp.loc("uHor"), sc3(sky.hor));
+    gl.uniform3fv(sp.loc("uBot"), sc3(sky.bot));
     gl.uniform3fv(sp.loc("uSun"), sun);
     gl.uniform4fv(sp.loc("uSunDisc"), sky.sunDisc);
     gl.uniform1f(sp.loc("uStars"), sky.stars);
@@ -805,7 +1064,7 @@ export class ApexRenderer {
     gl.uniform3f(p.loc("uSunCol"), sc[0] * light, sc[1] * light, sc[2] * light);
     gl.uniform3f(p.loc("uSky"), sc[0] * light, sc[1] * light, sc[2] * light);
     gl.uniform3f(p.loc("uGround"), sky.ground[0] * light, sky.ground[1] * light, sky.ground[2] * light);
-    gl.uniform3fv(p.loc("uFogCol"), sky.fog);
+    gl.uniform3fv(p.loc("uFogCol"), fc);
     gl.uniform2f(p.loc("uFog"), this.fogStart, this.fogEnd);
     gl.uniform1f(p.loc("uTime"), this.time);
     gl.uniform1f(p.loc("uShadowOn"), this.shadows && light > 0.1 ? 1 : 0);
@@ -816,6 +1075,8 @@ export class ApexRenderer {
     gl.uniform1f(p.loc("uBevel"), 0);
     gl.uniform1i(p.loc("uTexD"), 2);
     gl.uniform1f(p.loc("uUseTex"), 0);
+    gl.uniform1f(p.loc("uNeon"), this.postReady() ? 1.9 : 1.15);
+    this.uploadLights(p);
     if (this.terrain) this.drawTerrain(this.terrain);
     this.drawBatches(this.staticBatches, false, p);
     this.drawBatches(this.frameBatches, false, p);
@@ -851,9 +1112,12 @@ export class ApexRenderer {
     gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(null);
 
+    if (pst) this.applyBloom();
+
     // czyścimy rzeczy tylko-na-klatkę
     for (const b of this.frameBatches.values()) b.count = 0;
     this.decals.length = 0;
+    this.lights.length = 0;
     this.stats.ms = performance.now() - t0;
     void this.pending;
   }
@@ -913,6 +1177,7 @@ export class ApexRenderer {
   }
 
   dispose() {
+    this.freePost();
     this.gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 }

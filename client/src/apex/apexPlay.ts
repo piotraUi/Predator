@@ -20,6 +20,7 @@ import { session } from "../state.ts";
 import { GuiOverlay } from "../ui/guiOverlay.ts";
 import { h, toast } from "../ui/dom.ts";
 import { ApexAvatar } from "./avatar.ts";
+import { Particles, type FxKind } from "./particles.ts";
 import { Hotbar } from "../game/hotbar.ts";
 import { openRoomsWindow } from "../game/rooms.ts";
 import { MAIN_PLACE } from "../../../shared/places.ts";
@@ -75,6 +76,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const me = session.user ?? { id: 0, username: "Gracz", coins: 0, avatar: DEFAULT_AVATAR, inventory: [] };
 
   const rend = new ApexRenderer(canvas);
+  rend.bloom = settings.apexBloom;
+  const fx = new Particles();
   const input = new Input(wrap, (k) => (k === "ps" ? "✕ skok, prawa gałka kamera, Options menu" : "A skok, prawa gałka kamera, Menu = menu"));
   input.padDpadMoves = false;
 
@@ -90,6 +93,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const isNpc = (p: Part) => p.kind === "npc" && p.transparency < 0.999;
   const refreshPart = (p: Part) => {
     rend.updatePart(p, rot(p));
+    fx.setEmitter(p.id, p.emitter ?? null, [p.x, p.y, p.z], [p.sx, p.sy, p.sz]);
     if (p.spin) spinning.set(p.id, p.ry);
     else spinning.delete(p.id);
     if (isNpc(p)) {
@@ -148,6 +152,16 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const setSkybox = (id: string | null | undefined) => rend.setSky(skyColor, findSkybox(id));
   setSkybox(init.world.skybox);
   rend.setLight(light.brightness, light.fog);
+  // mruganie latarki: samo z siebie co jakiś czas (light.flicker) albo na polecenie skryptu
+  let nextFlicker = performance.now() + 8000 + Math.random() * 12000;
+  let flickerUntil = 0;
+  const flashlightK = (now: number) => {
+    if (light.flicker && now > nextFlicker) {
+      flickerUntil = now + 400 + Math.random() * 900;
+      nextFlicker = now + 7000 + Math.random() * 16000;
+    }
+    return now < flickerUntil ? (Math.random() < 0.45 ? 0.03 : 0.35 + Math.random() * 0.6) : 1;
+  };
   const gravity = init.world.gravity;
 
   // ---------- gracz ----------
@@ -477,8 +491,14 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
 
   // ---------- narzędzia: smugi strzałów i używanie ----------
   const tracers: { from: V3; to: V3; color: string; until: number }[] = [];
+  /** błyski strzałów: krótkie światło w lufie i w miejscu trafienia */
+  const flashes: { pos: V3; until: number; color: [number, number, number] }[] = [];
   const addTracer = (from: V3, to: V3, color = "#ffe066") => {
     tracers.push({ from, to, color, until: performance.now() + 110 });
+    fx.burst("flash", from, 2);
+    fx.burst("hit", to, 7);
+    const c = rgb(color);
+    flashes.push({ pos: from, until: performance.now() + 90, color: c }, { pos: to, until: performance.now() + 70, color: c });
   };
   /** punkt, w który celujemy: pierwsze trafienie promienia w świat albo w innego gracza */
   function aimPoint(dir: V3, range: number): V3 {
@@ -583,6 +603,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       collisions.set(p);
     }
   });
+  r.onMessage("fx", (m: { kind: FxKind; x: number; y: number; z: number; n: number }) => fx.burst(m.kind, [m.x, m.y, m.z], m.n));
+  r.onMessage("flicker", (secs: number) => (flickerUntil = performance.now() + Math.min(10, Math.max(0.1, Number(secs) || 1)) * 1000));
   r.onMessage("seat", (m: { sid: string; id: string | null }) => {
     if (m.sid === init.you) {
       if (!m.id) return leaveSeat(false);
@@ -807,6 +829,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
           }
           if (res.landedOn?.kind === "bounce" && !dead) d.vb.vy = BOUNCE_POWER;
         }
+        // kurz spod kół i plusk za łódką
+        if (Math.abs(d.speed) > 12 && (ride.type === "car" || ride.type === "boat") && (ride.type === "boat" || d.vb.onGround) && Math.random() < dt * 40) {
+          const [bx, bz] = forward(d.heading);
+          fx.burst(ride.type === "boat" ? "splash" : "dust", [d.vb.x - bx * 4, d.vb.y + 0.4, d.vb.z - bz * 4], 1);
+        }
         body.x = d.vb.x; body.y = d.vb.y + ride.lift; body.z = d.vb.z;
         body.onGround = d.vb.onGround;
         ry = d.heading;
@@ -968,6 +995,22 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       rend.drawBox("sphere", [1, 0, 0, 0, 1, 0, 0, 0, 1], tr.to, [0.6, 0.6, 0.6], col, 0.85, MAT.neon);
     }
     crosshair.classList.toggle("hidden", !fp);
+    // latarka (światło gry): reflektor tam, gdzie patrzy kamera, i słaba poświata wokół gracza
+    if (light.flashlight) {
+      const k = flashlightK(now);
+      const hd: V3 = [body.x, body.y + 4.4, body.z];
+      const dd: V3 = [-dir[0], -dir[1] * 0.6, -dir[2]];
+      const dl = Math.hypot(dd[0], dd[1], dd[2]) || 1;
+      rend.addLight({ pos: hd, color: [1, 0.95, 0.8], intensity: 2.2 * k, range: 95, dir: [dd[0] / dl, dd[1] / dl, dd[2] / dl], cone: 0.62 });
+      rend.addLight({ pos: hd, color: [1, 0.95, 0.8], intensity: 0.5 * k, range: 20 });
+    }
+    for (let i = flashes.length - 1; i >= 0; i--) {
+      const f = flashes[i];
+      if (now > f.until) { flashes.splice(i, 1); continue; }
+      rend.addLight({ pos: f.pos, color: f.color, intensity: 2.5, range: 22 });
+    }
+    fx.update(dt);
+    fx.draw(rend);
     local.draw();
     for (const rm of remotes.values()) rm.av.draw();
     for (const n of npcs.values()) n.draw();

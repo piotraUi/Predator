@@ -17,7 +17,7 @@ import {
 } from "@babylonjs/core";
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
 import type { AnimDef, CharacterDef, Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
-import { MAX_PLAYERS_LIMIT, PART_TEXTURES } from "../../../shared/types.ts";
+import { MAX_PLAYERS_LIMIT, PART_EMITTERS, PART_TEXTURES } from "../../../shared/types.ts";
 import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
 import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
 import { openGuiEditor } from "./guiEditor.ts";
@@ -2134,6 +2134,16 @@ export function studioScreen(
           ),
         ),
         field(
+          "Cząsteczki (Apex)",
+          h(
+            "select",
+            { onChange: (e: Event) => editMany(() => parts.forEach((x) => { const v = (e.target as HTMLSelectElement).value; if (v) x.emitter = v as Part["emitter"]; else delete x.emitter; })) },
+            [...(same("emitter") ? [] : [["#", "(różne)"]]), ["", "Brak"], ...PART_EMITTERS.map((t) => [t.id, t.name])].map(([v, l]) =>
+              h("option", { value: v === "#" ? "" : v, selected: same("emitter") ? (parts[0].emitter ?? "") === v : v === "#", disabled: v === "#" }, l),
+            ),
+          ),
+        ),
+        field(
           "Przezroczystość",
           h("input", { type: "range", min: "0", max: "1", step: "0.05", value: String(parts[0].transparency), onChange: (e: Event) => editMany(() => parts.forEach((x) => (x.transparency = Number((e.target as HTMLInputElement).value)))) }),
         ),
@@ -2319,6 +2329,12 @@ export function studioScreen(
           "Wzór (Apex)",
           select_(p.texture ?? "", [["", "Brak"], ...PART_TEXTURES.map((t): [string, string] => [t.id, t.name])], (v) =>
             upd(() => (v ? (p.texture = v) : delete p.texture)),
+          ),
+        ),
+        field(
+          "Cząsteczki (Apex)",
+          select_(p.emitter ?? "", [["", "Brak"], ...PART_EMITTERS.map((t): [string, string] => [t.id, t.name])], (v) =>
+            upd(() => (v ? (p.emitter = v as Part["emitter"]) : delete p.emitter)),
           ),
         ),
         h("div", { class: "prop-group" }, "Pozycja"),
