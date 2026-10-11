@@ -1015,6 +1015,8 @@ export class GameSim {
         const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(-200, Math.min(200, v)) : 0);
         for (const part of this.partsById.values()) if (part.name === String(name ?? "")) this.rigid.push(part.id, n(vx), n(vy), n(vz));
       },
+      // obrót klocka / NPC wokół osi Y w stopniach (np. potwór patrzy w stronę, w którą idzie)
+      setRotation: (name, deg) => this.updatePartsByName(String(name ?? ""), () => ({ ry: deg })),
       setLabel: (name, text) => this.updatePartsByName(String(name ?? ""), () => ({ label: String(text ?? "") })),
       // płynne przesunięcie klocka do x, y, z w podanym czasie (np. cukierek jadący po taśmie)
       tweenPart: (name, x, y, z, secs) =>
@@ -1083,6 +1085,8 @@ export class GameSim {
       }
       const t = finite(props.transparency, 0, 1);
       if (t !== undefined) clean.transparency = t;
+      const ryv = finite(props.ry, -3600, 3600);
+      if (ryv !== undefined) clean.ry = ryv;
       if (typeof props.collide === "boolean") clean.collide = props.collide;
       if (typeof props.animId === "string") clean.animId = props.animId;
       if (typeof props.label === "string") clean.label = filterChat(props.label.slice(0, MAX_LABEL));

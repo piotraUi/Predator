@@ -45,6 +45,7 @@ export const LUA_HELP: [string, string][] = [
   ['-- skrypt GRACZA (🎮): fireServer("nazwa", a) · onServerEvent("nazwa", function(a) end) · onKey("E", function() end) · showText("Cześć", 3) · localSay("tekst") · myPos() · setLightLocal(0.5, 200) · playSoundLocal("dźwięk")', "skrypty działające u gracza (wybierz 🎮 Gracz przy skrypcie w Studiu) - tylko efekty i klawisze, świat zmienia serwer"],
   ['setPhysics("Kula", true, 0.6)', "fizyka bryły: klocek spada, odbija się (0-1) i można go popychać (maks. 100 takich klocków)"],
   ['pushPart("Kula", 0, 40, 30)', "kopnij klocek z fizyką (prędkość x, y, z)"],
+  ['setRotation("Nazwa", 90)', "obróć klocek / NPC wokół osi pionowej (stopnie) - np. żeby patrzył w stronę ruchu"],
   ['setLabel("Nazwa", "Kup: 50 💰")', "napis nad klockiem (pusty tekst = bez napisu)"],
   ["kill(player)", "zabij gracza"],
   ["teleport(player, x, y, z)", "teleportuj gracza"],
