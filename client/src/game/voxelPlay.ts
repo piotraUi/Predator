@@ -8,12 +8,12 @@ import type { BlockWorldDef } from "../../../shared/types.ts";
 import type { GameConnection } from "./connection.ts";
 import type { PadState } from "../engine/gamepad.ts";
 import { AvatarModel } from "../engine/avatar.ts";
-import { itemIcon, tileColor, VoxelView, PLACEABLE } from "../engine/voxelView.ts";
+import { tileColor, VoxelView } from "../engine/voxelView.ts";
+import { Sfx } from "./voxelSfx.ts";
+import { createVoxelUi } from "./voxelUi.ts";
 import { h, isTouch, modal, toast } from "../ui/dom.ts";
 import type { WorldView } from "../engine/world.ts";
 
-type Slot = [string, number] | null;
-const HOTBAR = 9;
 const REACH = 5;
 
 interface MobView {
@@ -47,68 +47,6 @@ export interface VoxelCtx {
   shadows: ConstructorParameters<typeof AvatarModel>[2];
 }
 
-/** dźwięki z szumu i tonów (bez plików) */
-class Sfx {
-  private ac: AudioContext | null = null;
-  private ctx() {
-    if (!this.ac) {
-      try {
-        this.ac = new AudioContext();
-      } catch {
-        return null;
-      }
-    }
-    if (this.ac.state === "suspended") void this.ac.resume();
-    return this.ac;
-  }
-  noise(dur: number, freq: number, vol: number, q = 1) {
-    const ac = this.ctx();
-    if (!ac) return;
-    const n = Math.floor(ac.sampleRate * dur);
-    const buf = ac.createBuffer(1, n, ac.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
-    const src = ac.createBufferSource();
-    src.buffer = buf;
-    const f = ac.createBiquadFilter();
-    f.type = "bandpass";
-    f.frequency.value = freq;
-    f.Q.value = q;
-    const g = ac.createGain();
-    g.gain.value = vol;
-    src.connect(f).connect(g).connect(ac.destination);
-    src.start();
-  }
-  tone(freq: number, dur: number, vol: number, type: OscillatorType = "square") {
-    const ac = this.ctx();
-    if (!ac) return;
-    const o = ac.createOscillator();
-    o.type = type;
-    o.frequency.value = freq;
-    const g = ac.createGain();
-    g.gain.setValueAtTime(vol, ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
-    o.connect(g).connect(ac.destination);
-    o.start();
-    o.stop(ac.currentTime + dur);
-  }
-  dig(id: number) {
-    const def = block(id);
-    const stone = def?.pick;
-    this.noise(0.12, stone ? 1800 : id === 7 ? 3000 : 700, 0.35, stone ? 3 : 1);
-  }
-  play(name: string) {
-    if (name === "place") this.noise(0.09, 500, 0.4);
-    else if (name === "craft") (this.tone(660, 0.08, 0.06), setTimeout(() => this.tone(880, 0.1, 0.06), 70));
-    else if (name === "fire") this.noise(0.4, 400, 0.25, 0.5);
-    else if (name === "eat") for (let i = 0; i < 3; i++) setTimeout(() => this.noise(0.08, 1200, 0.3, 2), i * 120);
-    else if (name === "boom") (this.noise(1.2, 120, 1.2, 0.4), this.noise(0.5, 600, 0.5, 0.5));
-    else if (name === "hiss") this.noise(1.5, 4000, 0.15, 0.3);
-    else if (name === "hit") this.noise(0.1, 900, 0.5, 2);
-    else if (name === "hurt") this.tone(180, 0.15, 0.08, "sawtooth");
-  }
-}
-
 export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
   const { scene, camera, wrap, conn: r, body } = ctx;
   const w = new VoxelWorld(cfg);
@@ -117,12 +55,10 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
   const S = w.S;
   const sfx = new Sfx();
   const creative = cfg.mode === "creative";
-  let slots: Slot[] = new Array(36).fill(null);
-  let sel = 0;
   const cleanups: (() => void)[] = [];
-  /** okno ekwipunku (otwarte = funkcje zamknięcia i odświeżenia) - przed rejestracją wiadomości, bo połączenie oddaje je od razu */
-  let invClose: (() => void) | null = null;
-  let renderInv: (() => void) | null = null;
+  let progress = 0;
+  let progressKey = "";
+  const ui = createVoxelUi({ wrap, conn: r, creative, onSelect: () => (progress = 0) });
   wrap.classList.add("voxel-mode");
 
   // ---------- celownik, ramka bloku i pęknięcia ----------
@@ -147,40 +83,6 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
   crack.material = crackMat;
   crack.isPickable = false;
   crack.setEnabled(false);
-
-  // ---------- pasek przedmiotów ----------
-  const bar = h("div", { class: "vox-hotbar" });
-  const nameTip = h("div", { class: "vox-name" });
-  wrap.append(bar, nameTip);
-  let tipTimer = 0;
-  const showName = () => {
-    const s = slots[sel];
-    nameTip.textContent = s ? item(s[0])?.name ?? s[0] : "";
-    nameTip.classList.toggle("on", !!s);
-    clearTimeout(tipTimer);
-    tipTimer = window.setTimeout(() => nameTip.classList.remove("on"), 1500);
-  };
-  const renderBar = () => {
-    bar.replaceChildren(
-      ...slots.slice(0, HOTBAR).map((s, i) =>
-        h(
-          "button",
-          { class: "vox-slot" + (i === sel ? " on" : ""), onClick: () => select(i) },
-          s ? h("img", { src: itemIcon(s[0]), alt: s[0], draggable: false }) : null,
-          s && s[1] > 1 ? h("span", { class: "vox-count" }, String(s[1])) : null,
-        ),
-      ),
-      h("button", { class: "vox-slot vox-bag", title: "Ekwipunek (E)", onClick: () => openInventory() }, "🎒"),
-    );
-  };
-  const select = (i: number) => {
-    sel = ((i % HOTBAR) + HOTBAR) % HOTBAR;
-    r.send("vs", sel);
-    renderBar();
-    showName();
-    progress = 0;
-  };
-  renderBar();
 
   // ---------- przyciski na telefon ----------
   let touchMine = false;
@@ -248,18 +150,18 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
     if (ev.target !== canvas) return;
     ev.preventDefault();
     ev.stopPropagation();
-    select(sel + (ev.deltaY > 0 ? 1 : -1));
+    ui.select(ui.sel + (ev.deltaY > 0 ? 1 : -1));
   };
   wrap.addEventListener("wheel", onWheel, { capture: true, passive: false });
   const onKey = (ev: KeyboardEvent) => {
     const t = ev.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-    if (/^Digit[1-9]$/.test(ev.code)) select(Number(ev.code.slice(5)) - 1);
-    else if (ev.code === "KeyE") invClose ? invClose() : openInventory();
+    if (/^Digit[1-9]$/.test(ev.code)) ui.select(Number(ev.code.slice(5)) - 1);
+    else if (ev.code === "KeyE") ui.toggleInventory();
     else if (ev.code === "KeyV" || ev.code === "F5") {
       ev.preventDefault();
       ctx.toggleView();
-    } else if (ev.code === "KeyQ" && slots[sel]) r.send("vd", sel);
+    } else if (ev.code === "KeyQ" && ui.slots[ui.sel]) r.send("vd", ui.sel);
   };
   window.addEventListener("keydown", onKey);
   cleanups.push(() => {
@@ -274,8 +176,6 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
   // ---------- celowanie ----------
   type Target = NonNullable<ReturnType<VoxelWorld["raycast"]>>;
   let target: Target | null = null;
-  let progress = 0;
-  let progressKey = "";
   const eye = () => new Vector3(body.x, body.y + 4.4, body.z);
   /** promień od kamery przez środek ekranu */
   const aim = () => {
@@ -296,10 +196,7 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
     return Vector3.Distance(eye(), new Vector3(cx, cy, cz)) <= (REACH + 1) * S ? hit : null;
   };
 
-  const heldItem = () => {
-    const s = slots[sel];
-    return s ? item(s[0]) : undefined;
-  };
+  const heldItem = () => ui.held();
   const pickTier = () => {
     const it = heldItem();
     return it?.kind === "pickaxe" ? (it.tier ?? 0) : 0;
@@ -320,11 +217,7 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
     w.set(x, y, z, it.block);
     r.send("vp", { x, y, z });
     sfx.play("place");
-    if (!creative && slots[sel]) {
-      slots[sel]![1]--;
-      if (slots[sel]![1] <= 0) slots[sel] = null;
-      renderBar();
-    }
+    ui.consumeHeld();
   }
 
   // ---------- moby ----------
@@ -476,11 +369,6 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
       w.set(x, y, z, id);
     }
   });
-  r.onMessage("vi", (m: { s: Slot[]; sel: number }) => {
-    slots = m.s;
-    renderBar();
-    renderInv?.();
-  });
   r.onMessage("vmsg", (text: string) => toast(text, "info"));
   r.onMessage("vsnd", (name: string) => sfx.play(name));
   // dzień i noc
@@ -508,102 +396,15 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
   };
   applySky();
 
-  // ---------- ekwipunek i crafting ----------
-  function openInventory() {
-    if (invClose) return;
-    let picked: number | null = null;
-    const body = h("div", { class: "vox-inv" });
-    const slotEl = (i: number) => {
-      const s = slots[i];
-      return h(
-        "button",
-        {
-          class: "vox-slot" + (picked === i ? " picked" : "") + (i === sel ? " on" : ""),
-          "data-pad": "1",
-          title: s ? `${item(s[0])?.name ?? s[0]} ×${s[1]}` : "",
-          onClick: () => {
-            if (picked === null) picked = s ? i : null;
-            else {
-              if (picked !== i) r.send("vsw", { a: picked, b: i });
-              picked = null;
-            }
-            renderInv?.();
-          },
-        },
-        s ? h("img", { src: itemIcon(s[0]), alt: s[0], draggable: false }) : null,
-        s && s[1] > 1 ? h("span", { class: "vox-count" }, String(s[1])) : null,
-      );
-    };
-    const have = (key: string) => slots.reduce((n, s) => n + (s?.[0] === key ? s[1] : 0), 0);
-    const recipeRow = (rc: Recipe) => {
-      const ok = rc.in.every(([k, n]) => have(k) >= n);
-      const out = item(rc.out[0]);
-      return h(
-        "div",
-        { class: "vox-recipe" + (ok ? "" : " missing") },
-        h("img", { src: itemIcon(rc.out[0]), alt: "" }),
-        h("div", { class: "vox-r-main" }, h("b", null, `${out?.name ?? rc.out[0]}${rc.out[1] > 1 ? " ×" + rc.out[1] : ""}`), h("span", { class: "muted small" }, rc.in.map(([k, n]) => `${n}× ${item(k)?.name ?? k}`).join(" + ") + (rc.station === "table" ? " · 🪵 stół" : rc.station === "furnace" ? " · 🔥 piec" : ""))),
-        h("button", { class: "btn small" + (ok ? " primary" : ""), "data-pad": "1", disabled: !ok, onClick: () => r.send("vc", { id: rc.id, n: 1 }) }, "Zrób"),
-      );
-    };
-    renderInv = () => {
-      const grid = h("div", { class: "vox-grid" }, ...Array.from({ length: 27 }, (_, i) => slotEl(HOTBAR + i)));
-      const hot = h("div", { class: "vox-grid hot" }, ...Array.from({ length: HOTBAR }, (_, i) => slotEl(i)));
-      const tools = h(
-        "div",
-        { class: "row" },
-        h("span", { class: "muted small" }, picked !== null ? "Kliknij inne miejsce, żeby przenieść" : "Kliknij przedmiot, potem miejsce"),
-        picked !== null ? h("button", { class: "btn small danger", onClick: () => (r.send("vd", picked), (picked = null)) }, "🗑 Wyrzuć") : null,
-      );
-      let side: HTMLElement;
-      if (creative) {
-        side = h(
-          "div",
-          { class: "vox-palette" },
-          h("div", { class: "prop-group" }, `Wszystkie przedmioty - kliknij, żeby dać do miejsca ${sel + 1} paska`),
-          h(
-            "div",
-            { class: "vox-grid pal" },
-            ...[...PLACEABLE, "wood_pickaxe", "diamond_pickaxe", "diamond_sword", "apple", "cooked_porkchop", "coal", "iron_ingot", "gold_ingot", "diamond", "stick", "gunpowder"].map((k) =>
-              h("button", { class: "vox-slot", "data-pad": "1", title: item(k)?.name ?? k, onClick: () => r.send("vg", { slot: sel, key: k }) }, h("img", { src: itemIcon(k), alt: k })),
-            ),
-          ),
-        );
-      } else {
-        const list = [...RECIPES].sort((a, b) => Number(b.in.every(([k, n]) => have(k) >= n)) - Number(a.in.every(([k, n]) => have(k) >= n)));
-        side = h("div", { class: "vox-crafting" }, h("div", { class: "prop-group" }, "🔨 Crafting"), ...list.map(recipeRow));
-      }
-      body.replaceChildren(h("div", { class: "vox-inv-left" }, h("div", { class: "prop-group" }, "🎒 Plecak"), grid, h("div", { class: "prop-group" }, "Pasek"), hot, tools), side);
-    };
-    renderInv();
-    const close = modal(creative ? "🎒 Ekwipunek (tryb kreatywny)" : "🎒 Ekwipunek i crafting", body);
-    const bg = body.closest(".modal-bg");
-    bg?.classList.add("vox-modal");
-    invClose = () => {
-      close();
-      invClose = null;
-      renderInv = null;
-    };
-    // zamknięcie krzyżykiem / kliknięciem obok
-    const obs = new MutationObserver(() => {
-      if (!bg?.isConnected) {
-        invClose = null;
-        renderInv = null;
-        obs.disconnect();
-      }
-    });
-    obs.observe(document.body, { childList: true });
-  }
-
   // ---------- pad ----------
   let padMine = false;
   const pad = (p: PadState) => {
     padMine = p.down.rt;
     if (p.pressed.rt) attackMob();
     if (p.pressed.lt) use();
-    if (p.pressed.rb) select(sel + 1);
-    if (p.pressed.lb) select(sel - 1);
-    if (p.pressed.y) invClose ? invClose() : openInventory();
+    if (p.pressed.rb) ui.select(ui.sel + 1);
+    if (p.pressed.lb) ui.select(ui.sel - 1);
+    if (p.pressed.y) ui.toggleInventory();
   };
 
   // ---------- co klatkę ----------
@@ -721,7 +522,7 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
     update,
     pad,
     get inventoryOpen() {
-      return !!invClose;
+      return ui.inventoryOpen;
     },
     spawn: () => w.spawn(),
     /** stan do testów */
@@ -731,7 +532,7 @@ export function setupVoxels(cfg: BlockWorldDef, ctx: VoxelCtx) {
     hurt: () => sfx.play("hurt"),
     dispose() {
       cleanups.forEach((f) => f());
-      invClose?.();
+      ui.dispose();
       view.dispose();
       for (const id of [...mobs.keys()]) removeMob(id);
       wrap.classList.remove("voxel-mode");

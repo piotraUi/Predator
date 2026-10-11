@@ -27,6 +27,7 @@ import { gameShop } from "../game/gameShop.ts";
 import { VoiceChat } from "../game/voice.ts";
 import { openGameReport, playersPanel } from "../game/playersPanel.ts";
 import { PadMenuNav } from "../engine/gamepad.ts";
+import { setupVoxelsApex, type ApexVoxels } from "./voxelApex.ts";
 import { openRoomsWindow } from "../game/rooms.ts";
 import { MAIN_PLACE } from "../../../shared/places.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
@@ -45,7 +46,6 @@ const SEND_EVERY = 1 / 15;
 export function apexUnsupported(init: InitMsg): string | null {
   const w = init.world;
   if (typeof WebGL2RenderingContext === "undefined") return "ta przeglądarka nie ma WebGL2";
-  if (w.blocks) return "to świat z blokami (Minecraft)";
   return null;
 }
 
@@ -195,12 +195,15 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   let touching = new Set<string>();
   let jumpWasDown = false;
   let sendTimer = 0;
-  const spawnPoint = () => ({ x: init.spawn.x, y: init.spawn.y, z: init.spawn.z });
+  let vox: ApexVoxels | null = null;
+  let shakeAmt = 0;
+  const spawnPoint = () => (vox ? vox.spawn() : { x: init.spawn.x, y: init.spawn.y, z: init.spawn.z });
 
   // ---------- kamera ----------
   let alpha = Math.atan2(init.spawn.z, init.spawn.x);
   let beta = 1.25;
-  let wantRadius = 12.5;
+  // świat z bloków: jak w Minecrafcie zaczynamy w pierwszej osobie
+  let wantRadius = init.world.blocks ? 1 : 12.5;
   let radius = wantRadius;
   const eye: V3 = [0, 0, 0];
   const target: V3 = [0, 0, 0];
@@ -219,7 +222,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (e.pointerType === "mouse" && e.button !== 2 && e.button !== 0) return;
     taps.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, button: e.button });
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    canvas.setPointerCapture(e.pointerId);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* wskaźnik już nieaktywny */
+    }
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinch = Math.hypot(a.x - b.x, a.y - b.y);
@@ -391,6 +398,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     hpFillEl.style.width = k * 100 + "%";
     hpFillEl.style.background = k > 0.5 ? "#2ecc71" : k > 0.25 ? "#f1c40f" : "#e74c3c";
     hpText.textContent = String(Math.round(hp));
+    if (hp < lastHp) vox?.hurt();
     if (hp < lastHp && hp > 0) {
       local.flash();
       hurt.classList.remove("on");
@@ -477,6 +485,22 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     canvas.classList.toggle("aiming", def?.type === "ranged");
   });
   hotbar.set(toolDefs(init.inventory));
+  // świat z bloków (Minecraft): rysowanie, kopanie, stawianie, ekwipunek, moby
+  if (init.world.blocks) {
+    vox = setupVoxelsApex(init.world.blocks, {
+      rend, canvas, wrap, conn: r, body,
+      eye: () => eye,
+      forward: () => { const d = camDir(); return [-d[0], -d[1], -d[2]]; },
+      firstPerson: () => firstPerson(),
+      dead: () => dead,
+      toggleView: () => (wantRadius = firstPerson() ? 12 : 1),
+      setSky: (hex) => ((skyColor = hex), setSkybox(null)),
+      setLight: (b, fog) => ((light.brightness = b), (light.fog = fog), rend.setLight(b, fog)),
+      shake: (k) => (shakeAmt = Math.max(shakeAmt, k)),
+    });
+    collisions.voxels = vox.world;
+    cleanups.push(() => vox?.dispose());
+  }
   // ---------- siedzenia i pojazdy ----------
   const myPose = (): Pose => ({ x: body.x, y: body.y, z: body.z, ry });
   const exitBtn = h("button", { class: "exit-seat hidden", onClick: () => leaveSeat(true) }, "⬆ Wysiądź");
@@ -561,7 +585,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   topbar.insertBefore(shop.button, topbar.querySelector(".hud-title"));
   cleanups.push(() => shop.dispose());
   if (localStorage.getItem("predator.debug"))
-    (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, trySit };
+    (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, trySit, get vox() { return vox; } };
   const audio = new GameAudio(init.world.sounds, init.world.music);
   cleanups.push(() => audio.dispose());
   const showPrompt = promptBox(wrap, (id, text) => r.send("answer", { id, text }), (t, l) => audio.speak(t, l));
@@ -677,7 +701,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       e.preventDefault();
       chat.focus();
     } else if (e.code === "KeyR") die();
-    else if (/^Digit[1-9]$/.test(e.code)) hotbar.toggle(Number(e.code.slice(5)) - 1);
+    else if (/^Digit[1-9]$/.test(e.code)) !vox && hotbar.toggle(Number(e.code.slice(5)) - 1);
     else if (e.code === "Digit0" || e.code === "Backquote") hotbar.select(null);
     else if (e.key === "Escape") menu.classList.toggle("hidden");
     else if (e.key === "F9" && init.info.isOwner) consoleBox.classList.toggle("hidden");
@@ -934,10 +958,13 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
         input.moveX = input.moveY = 0;
         input.jump = false;
       } else {
-        if (pad.down.rt && !myRide) useTool();
-        if (pad.pressed.x) myRide ? leaveSeat(true) : trySit();
-        if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
-        if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
+        if (vox) vox.pad(pad);
+        else {
+          if (pad.down.rt && !myRide) useTool();
+          if (pad.pressed.x) myRide ? leaveSeat(true) : trySit();
+          if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
+          if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
+        }
         if (pad.pressed.rs) wantRadius = fp ? 12 : 1;
       }
     }
@@ -1070,6 +1097,12 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       autoAlpha = alpha;
     } else autoAlpha = null;
 
+    vox?.update(dt, swimming);
+    if (shakeAmt > 0.001) {
+      alpha += (Math.random() - 0.5) * shakeAmt * 0.05;
+      beta += (Math.random() - 0.5) * shakeAmt * 0.05;
+      shakeAmt *= Math.max(0, 1 - dt * 5);
+    }
     // kamera
     radius += (Math.min(radius, wantRadius) - radius);
     const head: V3 = [body.x, body.y + 4.6, body.z];
@@ -1077,10 +1110,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (fp) {
       const down = Math.max(0, dir[1]);
       const lean = 0.4 + down * 0.75;
-      target[0] = body.x + fwdX * lean;
-      target[1] = body.y + 4.7 - down * 0.3;
-      target[2] = body.z + fwdZ * lean;
-      eye[0] = target[0]; eye[1] = target[1]; eye[2] = target[2];
+      // oczy przed twarzą; patrzymy od oka w kierunku kamery (dir wskazuje od celu do oka)
+      eye[0] = body.x + fwdX * lean;
+      eye[1] = body.y + 4.7 - down * 0.3;
+      eye[2] = body.z + fwdZ * lean;
+      target[0] = eye[0] - dir[0]; target[1] = eye[1] - dir[1]; target[2] = eye[2] - dir[2];
       local.visible = false;
     } else {
       local.visible = true;
@@ -1177,6 +1211,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     }
     fx.update(dt);
     fx.draw(rend);
+    vox?.draw();
     local.draw();
     for (const rm of remotes.values()) rm.av.draw();
     for (const n of npcs.values()) n.draw();

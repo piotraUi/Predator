@@ -5,6 +5,7 @@ import { TERRAIN_MATERIALS, type TerrainGrid } from "../../../shared/terrain.ts"
 import type { Part, PartShape } from "../../../shared/types.ts";
 import { boxMesh, cylinderMesh, frustumMesh, hemiMesh, sphereMesh, torusMesh, wedgeMesh, type Mesh } from "./geometry.ts";
 import { partTextureCanvas } from "../engine/partTextures.ts";
+import type { VoxBucket, VoxGeo } from "../engine/voxelAtlas.ts";
 import { invert, lookAt, multiply, ortho, perspective, type Mat4, type V3 } from "./math.ts";
 
 void SKYBOXES;
@@ -202,6 +203,27 @@ const DECAL_FS = `#version 300 es
 precision mediump float;
 in vec2 vUv; uniform sampler2D uTex; uniform vec4 uTint; out vec4 o;
 void main(){ vec4 c = texture(uTex, vec2(vUv.x, 1.0 - vUv.y)); if (c.a < 0.05) discard; o = c * uTint; }`;
+
+const VOX_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=2) in vec2 aUv;
+layout(location=3) in vec4 aCol;
+uniform mat4 uVP;
+out vec2 vUv; out vec4 vCol; out vec3 vW;
+void main(){ vUv = aUv; vCol = aCol; vW = aPos; gl_Position = uVP * vec4(aPos, 1.0); }`;
+const VOX_FS = `#version 300 es
+precision highp float;
+in vec2 vUv; in vec4 vCol; in vec3 vW;
+uniform sampler2D uAtlas; uniform float uBright; uniform float uCut; uniform float uAlpha; uniform float uGlow;
+uniform vec3 uCam; uniform vec3 uFogCol; uniform vec2 uFog;
+out vec4 o;
+void main(){
+  vec4 t = texture(uAtlas, vUv);
+  if (uCut > 0.5 && t.a < 0.5) discard;
+  vec3 c = t.rgb * vCol.rgb * (uGlow > 0.5 ? uGlow : uBright);
+  float f = clamp((length(uCam - vW) - uFog.x) / max(uFog.y - uFog.x, 1.0), 0.0, 1.0);
+  o = vec4(mix(c, uFogCol, f * f), uAlpha);
+}`;
 
 const POST_VS = `#version 300 es
 out vec2 vUv;
@@ -407,6 +429,115 @@ export class ApexRenderer {
   /** połowa boku obszaru z cieniami (jednostki świata) */
   extent = 90;
   private pending: (() => void)[] = [];
+  // ---------- świat z bloków ----------
+  private voxProg: Program | null = null;
+  private voxAtlas: WebGLTexture | null = null;
+  private voxChunks = new Map<string, { bucket: VoxBucket; vao: WebGLVertexArrayObject; vb: WebGLBuffer; ib: WebGLBuffer; n: number; big: boolean }[]>();
+  private voxBright = 1;
+
+  /** atlas tekstur bloków (piksele RGBA, rysowany bez filtrowania - pixel-art) */
+  setVoxelAtlas(pixels: Uint8ClampedArray, w: number, h: number) {
+    const gl = this.gl;
+    if (this.voxAtlas) gl.deleteTexture(this.voxAtlas);
+    const t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.voxAtlas = t;
+    if (!this.voxProg) this.voxProg = new Program(gl, VOX_VS, VOX_FS);
+  }
+
+  /** zastępuje siatki jednego kawałka świata */
+  setVoxelChunk(key: string, geos: Record<VoxBucket, VoxGeo>) {
+    this.removeVoxelChunk(key);
+    const gl = this.gl;
+    const list: { bucket: VoxBucket; vao: WebGLVertexArrayObject; vb: WebGLBuffer; ib: WebGLBuffer; n: number; big: boolean }[] = [];
+    for (const bucket of Object.keys(geos) as VoxBucket[]) {
+      const g = geos[bucket];
+      if (!g.idx.length) continue;
+      const count = g.pos.length / 3;
+      const data = new Float32Array(count * 12);
+      for (let i = 0; i < count; i++) {
+        data.set([g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2], g.nor[i * 3], g.nor[i * 3 + 1], g.nor[i * 3 + 2], g.uv[i * 2], g.uv[i * 2 + 1], g.col[i * 4], g.col[i * 4 + 1], g.col[i * 4 + 2], g.col[i * 4 + 3]], i * 12);
+      }
+      const vao = gl.createVertexArray()!;
+      gl.bindVertexArray(vao);
+      const vb = gl.createBuffer()!;
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      for (const [loc, size, off] of [[0, 3, 0], [2, 2, 24], [3, 4, 32]] as const) {
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 48, off);
+      }
+      const big = count > 65535;
+      const ib = gl.createBuffer()!;
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, big ? new Uint32Array(g.idx) : new Uint16Array(g.idx), gl.STATIC_DRAW);
+      gl.bindVertexArray(null);
+      list.push({ bucket, vao, vb, ib, n: g.idx.length, big });
+    }
+    this.voxChunks.set(key, list);
+  }
+
+  removeVoxelChunk(key: string) {
+    const gl = this.gl;
+    for (const c of this.voxChunks.get(key) ?? []) {
+      gl.deleteVertexArray(c.vao);
+      gl.deleteBuffer(c.vb);
+      gl.deleteBuffer(c.ib);
+    }
+    this.voxChunks.delete(key);
+  }
+
+  clearVoxels() {
+    for (const k of [...this.voxChunks.keys()]) this.removeVoxelChunk(k);
+    if (this.voxAtlas) this.gl.deleteTexture(this.voxAtlas);
+    this.voxAtlas = null;
+  }
+
+  /** jasność dnia dla bloków (dzień / noc); bloki świecące zostają jasne */
+  setVoxelBrightness(b: number) {
+    this.voxBright = b;
+  }
+
+  private drawVoxels(buckets: VoxBucket[], eye: V3, fogCol: number[]) {
+    const gl = this.gl, p = this.voxProg;
+    if (!p || !this.voxAtlas || !this.voxChunks.size) return;
+    gl.useProgram(p.p);
+    gl.uniformMatrix4fv(p.loc("uVP"), false, this.vp);
+    gl.uniform3fv(p.loc("uCam"), eye);
+    gl.uniform3fv(p.loc("uFogCol"), fogCol);
+    gl.uniform2f(p.loc("uFog"), this.fogStart, this.fogEnd);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.voxAtlas);
+    gl.uniform1i(p.loc("uAtlas"), 3);
+    gl.activeTexture(gl.TEXTURE0);
+    // siatki bloków mają trójkąty w kolejności Babylona (przeciwnej niż bryły Apex)
+    gl.frontFace(gl.CCW);
+    for (const bucket of buckets) {
+      gl.uniform1f(p.loc("uBright"), this.voxBright);
+      gl.uniform1f(p.loc("uCut"), bucket === "cutout" ? 1 : 0);
+      gl.uniform1f(p.loc("uAlpha"), bucket === "water" ? 0.72 : 1);
+      gl.uniform1f(p.loc("uGlow"), bucket === "glow" ? (this.postReady() ? 2.2 : 1.1) : 0);
+      if (bucket === "cutout" || bucket === "water") gl.disable(gl.CULL_FACE);
+      else gl.enable(gl.CULL_FACE);
+      for (const chunk of this.voxChunks.values())
+        for (const c of chunk) {
+          if (c.bucket !== bucket) continue;
+          gl.bindVertexArray(c.vao);
+          gl.drawElements(gl.TRIANGLES, c.n, c.big ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+          this.stats.draws++;
+          this.stats.tris += c.n / 3;
+        }
+    }
+    gl.frontFace(gl.CW);
+    gl.enable(gl.CULL_FACE);
+    gl.bindVertexArray(null);
+  }
+
   // ---------- poświata (bloom) ----------
   bloom = true;
   private post: Post | null = null;
@@ -1080,6 +1211,8 @@ export class ApexRenderer {
     if (this.terrain) this.drawTerrain(this.terrain);
     this.drawBatches(this.staticBatches, false, p);
     this.drawBatches(this.frameBatches, false, p);
+    this.drawVoxels(["opaque", "cutout", "glow"], look.eye, fc);
+    gl.useProgram(p.p);
     // przezroczyste
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -1090,6 +1223,13 @@ export class ApexRenderer {
     if (this.water) this.drawTerrain(this.water);
     this.drawBatches(this.staticBatches, true, p);
     this.drawBatches(this.frameBatches, true, p);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    this.drawVoxels(["water"], look.eye, fc);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+    gl.useProgram(p.p);
     // naklejki (twarze)
     if (this.decals.length) {
       const dp = this.decalProg;
@@ -1177,6 +1317,7 @@ export class ApexRenderer {
   }
 
   dispose() {
+    this.clearVoxels();
     this.freePost();
     this.gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
