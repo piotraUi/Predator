@@ -5,6 +5,7 @@ import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import type { WorldData } from "../../../shared/types.ts";
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
+import { settings } from "../settings.ts";
 import { session } from "../state.ts";
 import { h, toast } from "../ui/dom.ts";
 import { showBadge, type BadgeMsg } from "../ui/badgePopup.ts";
@@ -83,10 +84,38 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
             wrap.remove();
             inner = play2dScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode, worldId: params.worldId }, go);
           } else {
-            const { playScreen } = await import("./play.ts");
+            // silnik Apex (eksperymentalny): gdy gra czegoś jeszcze nie obsługuje, wchodzimy w Babylonie
+            let apex: typeof import("../apex/apexPlay.ts") | null = null;
+            if (settings.engine === "apex") {
+              try {
+                apex = await import("../apex/apexPlay.ts");
+                const why = apex.apexUnsupported(init as never);
+                if (why) {
+                  toast(`Apex: ${why} - uruchamiam w silniku Babylon`, "info");
+                  apex = null;
+                }
+              } catch {
+                apex = null;
+              }
+            }
             if (disposed) return;
-            wrap.remove();
-            inner = playScreen(root, { ...params, conn: c, init: init as never }, go);
+            if (apex) {
+              try {
+                wrap.remove();
+                inner = apex.apexPlayScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode, worldId: params.worldId }, go);
+              } catch (e) {
+                // brak WebGL2 albo błąd shaderów - wracamy do Babylona
+                toast("Apex nie wystartował (" + (e as Error).message + ") - uruchamiam w silniku Babylon", "error");
+                root.append(wrap);
+                apex = null;
+              }
+            }
+            if (!apex) {
+              const { playScreen } = await import("./play.ts");
+              if (disposed) return;
+              wrap.remove();
+              inner = playScreen(root, { ...params, conn: c, init: init as never }, go);
+            }
           }
           clearTimeout(timeout);
         } catch (e) {

@@ -1676,3 +1676,15 @@ html[data-studio-theme="roblox"] .studio-mtabs { background: #1b1b1b; }
 }
 .pv-html-note { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: #0f2a3a; color: #bfe6ff; }
 .pv-html-note .muted { color: #9fc4de; }
+
+/* ---------- Apex (silnik WebGL2) ---------- */
+.apex-tags { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
+.apex-tag { position: absolute; left: 0; top: 0; padding: 3px 9px; border-radius: 7px; background: rgba(0, 0, 0, 0.38); color: #fff; font: 600 14px/1.2 system-ui, sans-serif; white-space: nowrap; text-shadow: 0 1px 2px #000; will-change: transform; }
+.apex-tag.part { background: rgba(0, 0, 0, 0.5); font-size: 15px; }
+.apex-tag .apex-hp { margin: 4px auto 0; width: 60px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.55); overflow: hidden; }
+.apex-tag .apex-hp.hidden { display: none; }
+.apex-tag .apex-hp > div { height: 100%; }
+.apex-bubble { position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); max-width: 220px; padding: 5px 10px; border-radius: 10px; background: #fff; color: #111; font-weight: 500; white-space: normal; text-align: center; text-shadow: none; }
+.apex-debug { position: absolute; left: 10px; bottom: 10px; z-index: 12; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); color: #9f9; font: 12px/1.5 ui-monospace, monospace; white-space: pre; pointer-events: none; }
+.theme-card.engine-babylon { background: linear-gradient(135deg, #3b5bdb, #1c2d6b); color: #fff; }
+.theme-card.engine-apex { background: linear-gradient(135deg, #f76707, #7c1d00); color: #fff; }
