@@ -538,7 +538,7 @@ export class ApexRenderer {
     this.fullscreen(pr.bright, a, a.w, a.h, (pg) => {
       tex(0, p.scene.tex);
       gl.uniform1i(pg.loc("uTex"), 0);
-      gl.uniform1f(pg.loc("uThr"), 1.4);
+      gl.uniform1f(pg.loc("uThr"), 1.75);
     });
     const blur = (src: Target, dst: Target, dx: number, dy: number) =>
       this.fullscreen(pr.blur, dst, dst.w, dst.h, (pg) => {

@@ -7,7 +7,7 @@ import { CollisionWorld, PLAYER_HEIGHT, PLAYER_RADIUS, rayBox, raycastParts, rot
 import { findSkybox } from "../../../shared/skybox.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef } from "../../../shared/types.ts";
-import { DEFAULT_LIGHT } from "../../../shared/types.ts";
+import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES, type Emote } from "../../../shared/types.ts";
 import { Input } from "../engine/input.ts";
 import { chatBox } from "../game/chatBox.ts";
 import { GameAudio } from "../game/audio3d.ts";
@@ -22,6 +22,11 @@ import { h, toast } from "../ui/dom.ts";
 import { ApexAvatar } from "./avatar.ts";
 import { Particles, type FxKind } from "./particles.ts";
 import { Hotbar } from "../game/hotbar.ts";
+import { EMOTE_ALIASES, EMOTE_LABELS } from "../game/emotes.ts";
+import { gameShop } from "../game/gameShop.ts";
+import { VoiceChat } from "../game/voice.ts";
+import { openGameReport, playersPanel } from "../game/playersPanel.ts";
+import { PadMenuNav } from "../engine/gamepad.ts";
 import { openRoomsWindow } from "../game/rooms.ts";
 import { MAIN_PLACE } from "../../../shared/places.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
@@ -78,6 +83,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const rend = new ApexRenderer(canvas);
   rend.bloom = settings.apexBloom;
   const fx = new Particles();
+  const padNav = new PadMenuNav();
   const input = new Input(wrap, (k) => (k === "ps" ? "✕ skok, prawa gałka kamera, Options menu" : "A skok, prawa gałka kamera, Menu = menu"));
   input.padDpadMoves = false;
 
@@ -234,6 +240,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       return;
     }
     if (e.pointerType === "mouse" && e.buttons === 1 && !firstPerson()) return;
+    // przy złapanej myszce kamerę obraca ruch myszki (onLockedMove), więc tu nie dublujemy
+    if (e.pointerType === "mouse" && document.pointerLockElement === canvas) return;
     const deg = e.pointerType === "mouse" ? 0.32 : 0.45;
     look(dx, dy, ((deg * settings.sensitivity) * Math.PI) / 180);
   };
@@ -248,6 +256,47 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     pointers.delete(e.pointerId);
     pinch = 0;
   };
+  // komputer: w pierwszej osobie myszka obraca kamerę od razu (jak w Robloxie); przy pierwszym kliknięciu albo klawiszu
+  // przeglądarka ją łapie (Esc oddaje ją do menu), żeby nie uciekała z okna
+  const touchDevice = matchMedia("(pointer: coarse)").matches;
+  let fpFreed = false;
+  let lastFp = false;
+  const lockMouse = () => {
+    if (!firstPerson() || touchDevice || document.pointerLockElement === canvas) return;
+    fpFreed = false;
+    try {
+      canvas.requestPointerLock?.()?.catch?.(() => {});
+    } catch {
+      /* przeglądarka nie pozwala */
+    }
+  };
+  const onLockDown = () => lockMouse();
+  const onLockKey = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (e.key === "Escape" || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable))) return;
+    if (!fpFreed) lockMouse();
+  };
+  const onLockChange = () => {
+    if (firstPerson() && document.pointerLockElement !== canvas) fpFreed = true;
+    canvas.classList.toggle("fp-mouse", firstPerson() && !touchDevice && !fpFreed);
+  };
+  const onLockedMove = (e: MouseEvent) => {
+    if (document.pointerLockElement !== canvas || !firstPerson()) return;
+    // tuż po złapaniu myszki przeglądarka potrafi wysłać jeden ogromny skok - pomijamy go
+    if (Math.abs(e.movementX) > 250 || Math.abs(e.movementY) > 250) return;
+    look(e.movementX, e.movementY, ((0.32 * settings.sensitivity) * Math.PI) / 180);
+  };
+  canvas.addEventListener("pointerdown", onLockDown);
+  document.addEventListener("mousemove", onLockedMove);
+  window.addEventListener("keydown", onLockKey);
+  document.addEventListener("pointerlockchange", onLockChange);
+  cleanups.push(() => {
+    canvas.removeEventListener("pointerdown", onLockDown);
+    document.removeEventListener("mousemove", onLockedMove);
+    window.removeEventListener("keydown", onLockKey);
+    document.removeEventListener("pointerlockchange", onLockChange);
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
+  });
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     wantRadius = Math.min(128, Math.max(0.5, wantRadius * (e.deltaY > 0 ? 1.12 : 1 / 1.12)));
@@ -312,9 +361,21 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     bubbles.set(m.from, b);
     setTimeout(() => b.remove(), 6000);
   };
+  // emotki: animacje wbudowane (menu 😀 i komenda /e) oraz animacje z edytora animacji
+  const hasEmote = (e: Emote) => (FREE_EMOTES as Emote[]).includes(e) || !!params.offline || me.inventory.includes(e);
+  let emote: Emote | null = null;
+  let emoteAnim: string | null = null;
   const chat = chatBox({
     placeholder: "Napisz wiadomość…",
-    onSend: (t) => r.send("chat", t),
+    onSend: (t) => {
+      const em = /^\/e(?:mote)?\s+(\S+)/i.exec(t);
+      if (em) {
+        const e = EMOTE_ALIASES[em[1].toLowerCase()];
+        if (e && hasEmote(e)) startEmote(e);
+        else if (e) toast("Tę emotkę kupisz w sklepie: Awatar → 💃 Emotki", "info");
+        else toast("Emotki: /e wave, dance, cheer, point, sit", "info");
+      } else r.send("chat", t);
+    },
     onTyping: (typing) => (input.enabled = !typing),
   });
   const localTag = h("div", { class: "apex-tag me" }, h("span", null, me.username));
@@ -361,6 +422,43 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     h("div", { class: "hud-title" }, init.info.name),
     h("div", { class: "hud-coins" }, "🪙 ", coinsEl),
   );
+  // konsola skryptów (tylko twórca gry)
+  const consoleLog = h("div", { class: "console-log" });
+  const consoleBox = h(
+    "div",
+    { class: "console hidden" },
+    h("div", { class: "console-head" }, "Konsola skryptów", h("button", { class: "icon-btn", onClick: () => consoleBox.classList.add("hidden") }, "✕")),
+    consoleLog,
+  );
+  if (init.info.isOwner) topbar.insertBefore(h("button", { class: "hud-btn", onClick: () => consoleBox.classList.toggle("hidden"), title: "Konsola (F9)" }, "🖥"), topbar.querySelector(".hud-title"));
+  const emoteMenu = h(
+    "div",
+    { class: "emote-menu hidden" },
+    EMOTES.filter(hasEmote).map((e) => h("button", { class: "btn small", onClick: () => (startEmote(e), emoteMenu.classList.add("hidden")) }, EMOTE_LABELS[e])),
+    SHOP_EMOTES.some((e) => !hasEmote(e)) ? h("div", { class: "emote-more" }, "Więcej emotek: Awatar → 💃 Emotki") : null,
+    init.world.animations.filter((a) => a.emote).map((a) => h("button", { class: "btn small", onClick: () => (startAnimEmote(a.id), emoteMenu.classList.add("hidden")) }, "✨ " + a.name)),
+  );
+  const startAnimEmote = (id: string) => {
+    if (dead || myRide) return;
+    emote = null;
+    emoteAnim = id;
+    hotbar.select(null);
+    local.playCustom(init.world.animations.find((a) => a.id === id) ?? null);
+    r.send("anim", id);
+  };
+  const stopAnimEmote = () => {
+    if (!emoteAnim) return;
+    emoteAnim = null;
+    local.playCustom(null);
+    r.send("anim", null);
+  };
+  const startEmote = (e: Emote) => {
+    if (!dead && body.onGround && !myRide) {
+      emote = e;
+      hotbar.select(null);
+    }
+  };
+  topbar.insertBefore(h("button", { class: "hud-btn", onClick: () => emoteMenu.classList.toggle("hidden"), title: "Emotki" }, "😀"), topbar.querySelector(".hud-title"));
   const crosshair = h("div", { class: "fp-cross hidden" });
   const lastUse = new Map<string, number>();
   const actionBtn = h("div", { class: "action-btn hidden" }, "⚔️");
@@ -373,6 +471,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const def = id ? (toolsById.get(id) ?? null) : null;
     local.setTool(def);
     r.send("equip", id);
+    if (def) emote = null;
     actionBtn.classList.toggle("hidden", !def || !isTouch());
     if (def) actionBtn.textContent = def.type === "ranged" ? "🎯" : def.type === "melee" ? "⚔️" : "✋";
     canvas.classList.toggle("aiming", def?.type === "ranged");
@@ -436,7 +535,31 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     body.vy = jumpPower * 0.5;
     body.onGround = false;
   }
-  wrap.append(topbar, chat.box, board, menu, hpBox, hurt, debug, crosshair, actionBtn, exitBtn, enterBtn);
+  wrap.append(topbar, chat.box, board, consoleBox, menu, hpBox, hurt, emoteMenu, debug, crosshair, actionBtn, exitBtn, enterBtn);
+  // czat głosowy ze znajomymi, lista graczy (znajomi / zablokuj / zgłoś) i sklep gry
+  if (!params.offline) {
+    const voice = new VoiceChat(r, init.you);
+    voice.volumeFor = (sid) => {
+      const rm = remotes.get(sid);
+      if (!rm) return 1;
+      const d = Math.hypot(rm.tx - body.x, rm.ty - body.y, rm.tz - body.z);
+      return d < 25 ? 1 : Math.max(0.08, 1 - (d - 25) / 140);
+    };
+    voice.onReport = (sid, username) => openGameReport(r, { sid, username }, true);
+    voice.onSpeaking = (sid, on) => {
+      const rm = remotes.get(sid);
+      const t = rm?.tag.firstElementChild as HTMLElement | null;
+      if (rm && t) t.textContent = (on ? "🔊 " : "") + rm.username;
+    };
+    topbar.insertBefore(voice.button, topbar.querySelector(".hud-title"));
+    wrap.append(voice.panel);
+    cleanups.push(() => voice.dispose());
+    const pp = playersPanel(r, () => [...remotes.entries()].map(([sid, rm]) => ({ sid, username: rm.username })));
+    topbar.insertBefore(pp.button, topbar.querySelector(".hud-title"));
+  }
+  const shop = gameShop(r, { offline: !!params.offline, onCoins: (c) => (coinsEl.textContent = String(c)) });
+  topbar.insertBefore(shop.button, topbar.querySelector(".hud-title"));
+  cleanups.push(() => shop.dispose());
   if (localStorage.getItem("predator.debug"))
     (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, trySit };
   const audio = new GameAudio(init.world.sounds, init.world.music);
@@ -547,6 +670,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     r.send("use", msg);
   }
 
+  let shotPending = false;
   const onKey = (e: KeyboardEvent) => {
     if (chat.typing()) return;
     if (e.key === "Enter" || e.key === "/") {
@@ -556,7 +680,12 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     else if (/^Digit[1-9]$/.test(e.code)) hotbar.toggle(Number(e.code.slice(5)) - 1);
     else if (e.code === "Digit0" || e.code === "Backquote") hotbar.select(null);
     else if (e.key === "Escape") menu.classList.toggle("hidden");
-    else if (e.key === "F3") {
+    else if (e.key === "F9" && init.info.isOwner) consoleBox.classList.toggle("hidden");
+    else if (e.key === "F2") {
+      // zrzut ekranu gry do pliku PNG (zapisywany zaraz po narysowaniu klatki)
+      e.preventDefault();
+      shotPending = true;
+    } else if (e.key === "F3") {
       e.preventDefault();
       showDebug = !showDebug;
       debug.style.display = showDebug ? "block" : "none";
@@ -604,6 +733,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     }
   });
   r.onMessage("fx", (m: { kind: FxKind; x: number; y: number; z: number; n: number }) => fx.burst(m.kind, [m.x, m.y, m.z], m.n));
+  r.onMessage("log", (l: { text: string; error: boolean }) => {
+    consoleLog.append(h("div", { class: l.error ? "log-err" : "log-line" }, l.text));
+    consoleLog.scrollTop = consoleLog.scrollHeight;
+    if (l.error) consoleBox.classList.remove("hidden");
+  });
   r.onMessage("flicker", (secs: number) => (flickerUntil = performance.now() + Math.min(10, Math.max(0.1, Number(secs) || 1)) * 1000));
   r.onMessage("seat", (m: { sid: string; id: string | null }) => {
     if (m.sid === init.you) {
@@ -656,8 +790,15 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   });
   // animacje z edytora animacji włączone przez skrypt (gracz i inni)
   r.onMessage("panim", (m: { sid: string; anim: string | null }) => {
-    const av = m.sid === init.you ? local : remotes.get(m.sid)?.av;
-    av?.playCustom(m.anim ? (init.world.animations.find((a) => a.id === m.anim) ?? null) : null);
+    if (m.sid === init.you) {
+      // animację włączoną przez skrypt gracz widzi u siebie; własną emotkę już odtwarza
+      if (m.anim !== emoteAnim) {
+        emoteAnim = null;
+        local.playCustom(m.anim ? (init.world.animations.find((a) => a.id === m.anim) ?? null) : null);
+      }
+      return;
+    }
+    remotes.get(m.sid)?.av.playCustom(m.anim ? (init.world.animations.find((a) => a.id === m.anim) ?? null) : null);
   });
   r.onMessage("gui", (m: { open: string[]; text: Record<string, string> }) => guiLayer.setState(m));
   r.onMessage("exit", () => leave());
@@ -769,6 +910,12 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       input.jump = false;
     }
     const fp = firstPerson();
+    if (fp !== lastFp) {
+      lastFp = fp;
+      fpFreed = false;
+      canvas.classList.toggle("fp-mouse", fp && !touchDevice);
+      if (!fp && document.pointerLockElement === canvas) document.exitPointerLock();
+    }
     // gamepad: prawa gałka obraca kamerę
     if (input.pad?.connected) {
       const sens = dt * 2.6 * settings.sensitivity;
@@ -776,11 +923,23 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       beta = clampBeta(beta - input.pad.ry * sens * 0.8 * (settings.invertY ? -1 : 1), fp);
       const pad = input.pad;
       if (pad.pressed.start) menu.classList.toggle("hidden");
-      if (pad.down.rt && !myRide) useTool();
-      if (pad.pressed.x) myRide ? leaveSeat(true) : trySit();
-      if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
-      if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
-      if (pad.pressed.rs) wantRadius = fp ? 12 : 1;
+      if (pad.pressed.y) emoteMenu.classList.toggle("hidden");
+      // pad steruje menu / oknem / GUI gry (postać stoi): krzyżak i A / B jak w Babylonie
+      const menuOpen = !menu.classList.contains("hidden");
+      const emotesOpen = !emoteMenu.classList.contains("hidden");
+      const dialog = document.querySelector<HTMLElement>(".modal-bg .modal");
+      const root = dialog ?? (menuOpen ? menu : emotesOpen ? emoteMenu : guiLayer.padRoot(false));
+      padNav.update(pad, root, dialog ? () => dialog.closest(".modal-bg")?.remove() : menuOpen ? () => menu.classList.add("hidden") : emotesOpen ? () => emoteMenu.classList.add("hidden") : undefined);
+      if (root) {
+        input.moveX = input.moveY = 0;
+        input.jump = false;
+      } else {
+        if (pad.down.rt && !myRide) useTool();
+        if (pad.pressed.x) myRide ? leaveSeat(true) : trySit();
+        if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
+        if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
+        if (pad.pressed.rs) wantRadius = fp ? 12 : 1;
+      }
     }
     const dir = camDir();
     const fl = Math.hypot(dir[0], dir[2]) || 1;
@@ -885,6 +1044,13 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       ry += d * Math.min(1, dt * 14);
     }
     if (!dead) anim = myRide ? (myRide.type === "skate" ? (drv?.vb.onGround === false ? "jump" : "skate") : myRide.type ? "drive" : "seated") : swimming ? (moving ? "swim" : "tread") : !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
+    // ruch albo skok przerywa emotkę
+    if (!dead) {
+      if (anim !== "idle") {
+        emote = null;
+        stopAnimEmote();
+      } else if (emote) anim = emote;
+    }
     local.x = body.x; local.y = body.y; local.z = body.z; local.ry = ry; local.anim = anim;
     local.update(dt);
     if ((seatScan += dt) > 0.2) {
@@ -1015,6 +1181,14 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     for (const rm of remotes.values()) rm.av.draw();
     for (const n of npcs.values()) n.draw();
     rend.render({ eye, target, fov: ROBLOX_FOV, near: fp ? 0.05 : 0.2, far: 2000 });
+    if (shotPending) {
+      shotPending = false;
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = `${init.info.name || "predator"}-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.png`;
+      a.click();
+      toast("📸 Zapisano zrzut ekranu", "good");
+    }
     placeTags();
   }
 

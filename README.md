@@ -193,9 +193,10 @@ Gra 3D może mieć **świat z bloków**: Twórz → Nowa gra → **⛏️ Świat
 W **Ustawieniach → Silnik gier 3D** wybierasz, na czym uruchamiają się gry 3D (dla siebie, na tym urządzeniu):
 
 - **Babylon** (domyślny) - sprawdzony silnik, obsługuje wszystko.
-- **Apex** - własny silnik Predatora na WebGL2 (`client/src/apex/`): klocki rysowane instancjami, cienie z filtrem PCF, niebo liczone w shaderze, mgła, teren i woda. F3 w grze pokazuje FPS i liczbę wywołań rysowania.
+- **Apex** - własny silnik Predatora na WebGL2 (`client/src/apex/`): klocki rysowane instancjami, miękkie cienie (12 próbek na piksel), niebo liczone w shaderze, mgła, teren i woda, **poświata (bloom)** na buforze HDR (do wyłączenia w Ustawieniach), światła dynamiczne (latarka z gry jako reflektor, błyski strzałów), **tekstury klocków** (Studio → *Wzór (Apex)*: cegły, deski, kamień, bruk, trawa, piasek, ziemia, szachownica, kafelki, blacha, beton, pasy), **cząsteczki** (Studio → *Cząsteczki (Apex)*: ogień, dym, iskry, magia, kurz, fontanna; w Lua `effect("fire", x, y, z, ilość)`; błyski i iskry przy strzałach, kurz spod kół i plusk za łódką). F3 w grze pokazuje FPS i liczbę wywołań rysowania.
+- Apex ma też: narzędzia i bronie (model w ręku, pasek przedmiotów, strzały ze śladem, miecze, podnoszenie z pól), siedzenia i pojazdy (auto, łódź, deskorolka), miejsca z teleportem i pokoje, czapki / plecy / szyję / koszulki / spodnie awatara, postacie ze Studia (dodatki, modele .glb bez animacji szkieletowych, własne animacje i emotki), menu emotek, listę graczy, czat głosowy, sklep w grze, konsolę twórcy (F9), tabelę wyników, zrzut ekranu (F2), blokadę myszy w pierwszej osobie i obsługę pada w menu.
 
-Apex jest na początku drogi. Gdy gra czegoś jeszcze nie umie w Apex (narzędzia, siedzenia i pojazdy, kilka miejsc, światy z blokami, brak WebGL2), uruchamia się sama w Babylonie i pokazuje, dlaczego. Jeszcze bez: tekstur, cząsteczek, kapeluszy i ubrań na awatarze, modeli .glb.
+Apex jest eksperymentalny. Gdy gra czegoś jeszcze nie umie w Apex (światy z blokami, brak WebGL2), uruchamia się sama w Babylonie i pokazuje, dlaczego.
 
 **Fizyka brył** (oba silniki, liczona na serwerze): zaznacz klocek → ⚽ *Fizyka*. Kula toczy się i odbija (sprężystość 0-1), pudło spada i ślizga się, gracze mogą je popychać. Maks. 100 takich klocków w grze. W Lua: `setPhysics("Kula", true, 0.6)` i `pushPart("Kula", 0, 40, 30)`.
 

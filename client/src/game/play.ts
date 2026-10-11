@@ -26,6 +26,7 @@ import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES } from "../../../shared
 import { getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { gameShop } from "./gameShop.ts";
+import { EMOTE_ALIASES, EMOTE_LABELS } from "./emotes.ts";
 import { openGameReport, playersPanel } from "./playersPanel.ts";
 import { safety } from "../safety.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
@@ -67,32 +68,6 @@ export interface InitMsg {
   /** skrypty gracza (Lua działające w przeglądarce) */
   clientScripts?: { name: string; source: string }[];
 }
-
-const EMOTE_LABELS: Record<Emote, string> = {
-  wave: "👋 Machaj",
-  dance: "💃 Tańcz",
-  cheer: "🙌 Wiwatuj",
-  point: "👉 Wskaż",
-  sit: "🪑 Usiądź",
-  flip: "🤸 Salto",
-  spin: "🌀 Bączek",
-  clap: "👏 Oklaski",
-  robotdance: "🤖 Robot",
-  floss: "🕺 Floss",
-  bow: "🙇 Ukłon",
-  jumpjacks: "🤾 Pajacyki",
-  zombie: "🧟 Zombie",
-};
-/** komendy czatu: /e taniec, /e dance ... */
-const EMOTE_ALIASES: Record<string, Emote> = {
-  wave: "wave", machaj: "wave", hej: "wave",
-  dance: "dance", taniec: "dance", tancz: "dance", "tańcz": "dance",
-  cheer: "cheer", wiwat: "cheer", wiwatuj: "cheer",
-  point: "point", wskaz: "point", "wskaż": "point",
-  sit: "sit", siad: "sit", usiadz: "sit", "usiądź": "sit",
-  flip: "flip", salto: "flip", spin: "spin", baczek: "spin", "bączek": "spin", clap: "clap", oklaski: "clap",
-  robot: "robotdance", floss: "floss", bow: "bow", uklon: "bow", "ukłon": "bow", pajacyki: "jumpjacks", zombie: "zombie",
-};
 
 const WALK_SPEED = 16;
 /** w wodzie płynie się wolniej */
