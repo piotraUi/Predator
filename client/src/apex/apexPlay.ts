@@ -2,10 +2,10 @@
 // czatu, GUI i sterowania co silnik Babylon - zmienia się tylko warstwa rysowania. Gry, których Apex jeszcze nie
 // umie (narzędzia, siedzenia, światy z blokami), uruchamiają się w Babylonie (patrz apexUnsupported).
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
-import { CollisionWorld, PLAYER_RADIUS, raycastParts, rotationMatrix, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
+import { CollisionWorld, PLAYER_HEIGHT, PLAYER_RADIUS, rayBox, raycastParts, rotationMatrix, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
 import { findSkybox } from "../../../shared/skybox.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
-import type { Anim, Avatar, ChatMsg, NetPlayer, Part } from "../../../shared/types.ts";
+import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef } from "../../../shared/types.ts";
 import { DEFAULT_LIGHT } from "../../../shared/types.ts";
 import { Input } from "../engine/input.ts";
 import { chatBox } from "../game/chatBox.ts";
@@ -19,9 +19,12 @@ import { session } from "../state.ts";
 import { GuiOverlay } from "../ui/guiOverlay.ts";
 import { h, toast } from "../ui/dom.ts";
 import { ApexAvatar } from "./avatar.ts";
+import { Hotbar } from "../game/hotbar.ts";
+import { cachedToolShape, drawTool } from "./toolModel.ts";
 import { ROBLOX_FOV } from "../engine/camera.ts";
-import { ApexRenderer } from "./renderer.ts";
-import type { V3 } from "./math.ts";
+import { MAT, rgb, ApexRenderer } from "./renderer.ts";
+import { lookRot, rotY, type V3 } from "./math.ts";
+import { isTouch } from "../ui/dom.ts";
 
 const WALK_SPEED = 16;
 const SWIM_SLOW = 0.7;
@@ -35,7 +38,6 @@ export function apexUnsupported(init: InitMsg): string | null {
   const w = init.world;
   if (typeof WebGL2RenderingContext === "undefined") return "ta przeglądarka nie ma WebGL2";
   if (w.blocks) return "to świat z blokami (Minecraft)";
-  if (w.tools?.length) return "gra ma narzędzia (jeszcze nie w Apex)";
   if (w.parts.some((p) => p.kind === "seat")) return "gra ma siedzenia i pojazdy (jeszcze nie w Apex)";
   if ((w.places?.length ?? 0) > 1) return "gra ma kilka miejsc (jeszcze nie w Apex)";
   return null;
@@ -83,6 +85,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const charsById = new Map(init.world.characters.map((c) => [c.id, c]));
   const npcs = new Map<string, ApexAvatar>();
   const labels = new Map<string, HTMLElement>();
+  const pickups = new Map<string, Part>();
   const isNpc = (p: Part) => p.kind === "npc" && p.transparency < 0.999;
   const refreshPart = (p: Part) => {
     rend.updatePart(p, rot(p));
@@ -100,6 +103,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       npcs.get(p.id)?.dispose();
       npcs.delete(p.id);
     }
+    if (p.kind === "pickup" && p.toolId && p.transparency < 0.999) pickups.set(p.id, p);
+    else pickups.delete(p.id);
     if (p.label && p.transparency < 0.999 && p.kind !== "npc") {
       let el = labels.get(p.id);
       if (!el) tagLayer.append((el = h("div", { class: "apex-tag part" })));
@@ -126,6 +131,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const body: Body = { ...init.spawn, vx: 0, vy: 0, vz: 0, onGround: false };
   const mePlayer = init.players.find((p) => p.sid === init.you);
   const local = new ApexAvatar(rend, me.avatar);
+  const toolsById = new Map<string, ToolDef>(init.world.tools.map((t) => [t.id, t]));
+  const toolDefs = (ids: string[]) => ids.map((id) => toolsById.get(id)).filter((t): t is ToolDef => !!t);
   const charFor = (id: string | null) => charsById.get(id ?? "") ?? charsById.get(init.world.playerCharacter ?? "") ?? null;
   const applyLook = (av: ApexAvatar, base: Avatar, charId: string | null) => {
     const c = charFor(charId);
@@ -164,8 +171,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   };
   const pointers = new Map<number, { x: number; y: number }>();
   let pinch = 0;
+  /** tapnięcie (krótkie, bez przesunięcia) = użycie narzędzia w to miejsce ekranu */
+  const taps = new Map<number, { x: number; y: number; t: number; moved: boolean; button: number }>();
   const onDown = (e: PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 2 && e.button !== 0) return;
+    taps.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, button: e.button });
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     canvas.setPointerCapture(e.pointerId);
     if (pointers.size === 2) {
@@ -177,6 +187,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const p = pointers.get(e.pointerId);
     if (!p) return;
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    const tp = taps.get(e.pointerId);
+    if (tp && Math.hypot(e.clientX - tp.x, e.clientY - tp.y) > 8) tp.moved = true;
     p.x = e.clientX; p.y = e.clientY;
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
@@ -190,6 +202,13 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     look(dx, dy, ((deg * settings.sensitivity) * Math.PI) / 180);
   };
   const onUp = (e: PointerEvent) => {
+    const tp = taps.get(e.pointerId);
+    taps.delete(e.pointerId);
+    if (tp && !tp.moved && performance.now() - tp.t < 400 && e.type === "pointerup" && hotbar.current && (e.pointerType !== "mouse" || tp.button === 0)) {
+      const rc = canvas.getBoundingClientRect();
+      if (firstPerson()) useTool();
+      else useTool(e.clientX - rc.left, e.clientY - rc.top);
+    }
     pointers.delete(e.pointerId);
     pinch = 0;
   };
@@ -216,6 +235,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const av = new ApexAvatar(rend, p.avatar as Avatar);
     applyLook(av, p.avatar as Avatar, p.character);
     av.x = p.x; av.y = p.y; av.z = p.z; av.ry = p.ry;
+    av.setTool(p.tool ? (toolsById.get(p.tool) ?? null) : null);
     const hpFill = h("div", { class: "hp-fill" });
     const hpBar = h("div", { class: "apex-hp hidden" }, hpFill);
     const tag = h("div", { class: "apex-tag" }, h("span", null, p.username), hpBar);
@@ -304,7 +324,24 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     h("div", { class: "hud-title" }, init.info.name),
     h("div", { class: "hud-coins" }, "🪙 ", coinsEl),
   );
-  wrap.append(topbar, chat.box, board, menu, hpBox, hurt, debug);
+  const crosshair = h("div", { class: "fp-cross hidden" });
+  const lastUse = new Map<string, number>();
+  const actionBtn = h("div", { class: "action-btn hidden" }, "⚔️");
+  actionBtn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    useTool();
+  });
+  const hotbar = new Hotbar(wrap, (id) => {
+    const def = id ? (toolsById.get(id) ?? null) : null;
+    local.setTool(def);
+    r.send("equip", id);
+    actionBtn.classList.toggle("hidden", !def || !isTouch());
+    if (def) actionBtn.textContent = def.type === "ranged" ? "🎯" : def.type === "melee" ? "⚔️" : "✋";
+    canvas.classList.toggle("aiming", def?.type === "ranged");
+  });
+  hotbar.set(toolDefs(init.inventory));
+  wrap.append(topbar, chat.box, board, menu, hpBox, hurt, debug, crosshair, actionBtn);
   const audio = new GameAudio(init.world.sounds, init.world.music);
   cleanups.push(() => audio.dispose());
   const showPrompt = promptBox(wrap, (id, text) => r.send("answer", { id, text }), (t, l) => audio.speak(t, l));
@@ -336,6 +373,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     dead = true;
     anim = "dead";
     if (!fromServer) r.send("died");
+    hotbar.select(null);
     setHp(0, maxHp);
     setTimeout(() => {
       if (disposed) return;
@@ -353,12 +391,66 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     back();
   }
 
+  // ---------- narzędzia: smugi strzałów i używanie ----------
+  const tracers: { from: V3; to: V3; color: string; until: number }[] = [];
+  const addTracer = (from: V3, to: V3, color = "#ffe066") => {
+    tracers.push({ from, to, color, until: performance.now() + 110 });
+  };
+  /** punkt, w który celujemy: pierwsze trafienie promienia w świat albo w innego gracza */
+  function aimPoint(dir: V3, range: number): V3 {
+    let best = Math.max(range, 50);
+    const w = raycastParts(collisions, eye[0], eye[1], eye[2], dir[0], dir[1], dir[2], 1000);
+    if (w && w.dist < best) best = w.dist;
+    for (const rm of remotes.values()) {
+      if (rm.av.anim === "dead") continue;
+      const t = rayBox(eye[0], eye[1], eye[2], dir[0], dir[1], dir[2], rm.av.x - PLAYER_RADIUS, rm.av.y, rm.av.z - PLAYER_RADIUS, rm.av.x + PLAYER_RADIUS, rm.av.y + PLAYER_HEIGHT, rm.av.z + PLAYER_RADIUS);
+      if (t !== null && t < best) best = t;
+    }
+    return [eye[0] + dir[0] * best, eye[1] + dir[1] * best, eye[2] + dir[2] * best];
+  }
+  /** używa trzymanego narzędzia, celując w punkt ekranu (domyślnie środek) */
+  function useTool(sx = wrap.clientWidth / 2, sy = wrap.clientHeight / 2) {
+    const def = hotbar.current;
+    if (!def || dead) return;
+    const now = performance.now();
+    if (now - (lastUse.get(def.id) ?? 0) < def.cooldown * 1000) return;
+    lastUse.set(def.id, now);
+    hotbar.cooldown(def.id, def.cooldown);
+    const dir = rend.ray(sx / wrap.clientWidth, sy / wrap.clientHeight, eye);
+    const aim = aimPoint(dir, def.range);
+    const face = (dx: number, dz: number) => {
+      if (Math.hypot(dx, dz) > 0.01) ry = Math.atan2(-dx, -dz);
+    };
+    let action: ActionAnim = "use";
+    const msg: Record<string, unknown> = { id: def.id };
+    if (def.type === "ranged") {
+      action = "shoot";
+      face(aim[0] - body.x, aim[2] - body.z);
+      const origin: V3 = local.toolTip(ry) ?? [body.x, body.y + 4.5, body.z];
+      const d: V3 = [aim[0] - origin[0], aim[1] - origin[1], aim[2] - origin[2]];
+      const len = Math.hypot(d[0], d[1], d[2]) || 1;
+      const n: V3 = [d[0] / len, d[1] / len, d[2] / len];
+      Object.assign(msg, { ox: origin[0], oy: origin[1], oz: origin[2], dx: n[0], dy: n[1], dz: n[2] });
+      const reach = Math.min(len, def.range);
+      addTracer(origin, [origin[0] + n[0] * reach, origin[1] + n[1] * reach, origin[2] + n[2] * reach], def.color);
+    } else if (def.type === "melee" || def.type === "custom") {
+      action = "swing";
+      face(aim[0] - body.x, aim[2] - body.z);
+    }
+    msg.ry = ry;
+    local.ry = ry;
+    local.playAction(action);
+    r.send("use", msg);
+  }
+
   const onKey = (e: KeyboardEvent) => {
     if (chat.typing()) return;
     if (e.key === "Enter" || e.key === "/") {
       e.preventDefault();
       chat.focus();
     } else if (e.code === "KeyR") die();
+    else if (/^Digit[1-9]$/.test(e.code)) hotbar.toggle(Number(e.code.slice(5)) - 1);
+    else if (e.code === "Digit0" || e.code === "Backquote") hotbar.select(null);
     else if (e.key === "Escape") menu.classList.toggle("hidden");
     else if (e.key === "F3") {
       e.preventDefault();
@@ -414,6 +506,20 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (!rm) return;
     setRemoteHp(rm, m.hp, m.max);
     if (m.hp > 0) rm.av.flash();
+  });
+  r.onMessage("inv", (ids: string[]) => hotbar.set(toolDefs(ids)));
+  r.onMessage("picked", (id: string) => {
+    const t = toolsById.get(id);
+    if (t) toast(`Podniesiono: ${t.name} (klawisz ${hotbar.indexOf(id) + 1})`, "good");
+  });
+  r.onMessage("eq", (m: { sid: string; tool: string | null }) => {
+    if (m.sid === init.you) return;
+    remotes.get(m.sid)?.av.setTool(m.tool ? (toolsById.get(m.tool) ?? null) : null);
+  });
+  r.onMessage("act", (m: { sid: string; type: ActionAnim; tool: string; from?: number[]; to?: number[] }) => {
+    if (m.sid === init.you) return;
+    remotes.get(m.sid)?.av.playAction(m.type);
+    if (m.from && m.to) addTracer(m.from as V3, m.to as V3, toolsById.get(m.tool)?.color);
   });
   r.onMessage("char", (m: { sid: string; character: string | null }) => {
     if (m.sid === init.you) return applyLook(local, me.avatar, m.character);
@@ -499,6 +605,12 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       const sens = dt * 2.6 * settings.sensitivity;
       alpha -= input.pad.rx * sens;
       beta = clampBeta(beta - input.pad.ry * sens * 0.8 * (settings.invertY ? -1 : 1), fp);
+      const pad = input.pad;
+      if (pad.pressed.start) menu.classList.toggle("hidden");
+      if (pad.down.rt) useTool();
+      if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
+      if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
+      if (pad.pressed.rs) wantRadius = fp ? 12 : 1;
     }
     const dir = camDir();
     const fl = Math.hypot(dir[0], dir[2]) || 1;
@@ -629,6 +741,26 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     }
 
     // rysowanie
+    const now = performance.now();
+    for (const p of pickups.values()) {
+      const def = toolsById.get(p.toolId ?? "");
+      if (!def) continue;
+      const secs = now / 1000;
+      drawTool(rend, cachedToolShape(def), rotY(secs * 1.6), [p.x, p.y + p.sy / 2 + 1.6 + Math.sin(secs * 2.5) * 0.25, p.z], 1.3);
+    }
+    for (let i = tracers.length - 1; i >= 0; i--) {
+      const tr = tracers[i];
+      if (now > tr.until) { tracers.splice(i, 1); continue; }
+      const d: V3 = [tr.to[0] - tr.from[0], tr.to[1] - tr.from[1], tr.to[2] - tr.from[2]];
+      const len = Math.hypot(d[0], d[1], d[2]);
+      if (len < 0.01) continue;
+      const mid: V3 = [(tr.from[0] + tr.to[0]) / 2, (tr.from[1] + tr.to[1]) / 2, (tr.from[2] + tr.to[2]) / 2];
+      const c = rgb(tr.color);
+      const col: [number, number, number] = [Math.min(1, c[0] + 0.3), Math.min(1, c[1] + 0.3), Math.min(1, c[2] + 0.3)];
+      rend.drawBox("box", lookRot(d), mid, [0.14, 0.14, len], col, 0.85, MAT.neon);
+      rend.drawBox("sphere", [1, 0, 0, 0, 1, 0, 0, 0, 1], tr.to, [0.6, 0.6, 0.6], col, 0.85, MAT.neon);
+    }
+    crosshair.classList.toggle("hidden", !fp);
     local.draw();
     for (const rm of remotes.values()) rm.av.draw();
     for (const n of npcs.values()) n.draw();

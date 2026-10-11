@@ -1,9 +1,14 @@
 // Apex: postać złożona z klocków (jak awatar Predatora). Animacje chodu, skoku, pływania i emotek liczone na bieżąco,
 // twarz jako naklejka z płótna `drawFace`. Rysowana co klatkę przez renderer (bez własnych obiektów w scenie).
-import type { Anim, Avatar } from "../../../shared/types.ts";
+import type { ActionAnim, Anim, Avatar, ToolDef } from "../../../shared/types.ts";
 import { drawFace } from "../engine/face.ts";
-import { mul3, rotX, rotY, rotZ, type V3 } from "./math.ts";
+import { apply3, mul3, rotX, rotY, rotZ, type V3 } from "./math.ts";
 import { rgb, type ApexRenderer } from "./renderer.ts";
+import { cachedToolShape, drawTool } from "./toolModel.ts";
+
+const HOLD = Math.PI / 2;
+const ACTION_TIME: Record<ActionAnim, number> = { swing: 0.35, shoot: 0.18, use: 0.6 };
+const smooth = (t: number) => t * t * (3 - 2 * t);
 
 type Rgb = [number, number, number];
 const ID3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -31,7 +36,8 @@ export class ApexAvatar {
   private bodyRot = 0;
   private bodyRx = 0;
   private actionT = 0;
-  private action: "swing" | "shoot" | "use" | null = null;
+  private action: ActionAnim | null = null;
+  private tool: Pick<ToolDef, "model" | "color"> | null = null;
 
   constructor(private r: ApexRenderer, avatar: Avatar) {
     this.setLook(avatar);
@@ -55,9 +61,35 @@ export class ApexAvatar {
     this.flashUntil = performance.now() + 140;
   }
 
-  playAction(type: "swing" | "shoot" | "use") {
+  playAction(type: ActionAnim) {
     this.action = type;
     this.actionT = 0;
+  }
+
+  /** zakłada narzędzie do prawej ręki (null = puste ręce) */
+  setTool(def: Pick<ToolDef, "model" | "color"> | null) {
+    this.tool = def;
+  }
+
+  /** położenie i obrót uchwytu narzędzia w świecie dla obrotu postaci `ry` (do liczenia początku strzału) */
+  private toolFrame(ry: number) {
+    const s = this.scale;
+    const root = mul3(rotY(ry + this.bodyRot), rotX(this.bodyRx));
+    const l = this.limbs.ra;
+    const lr = mul3(rotX(l.rx), rotZ(l.rz));
+    const v = apply3(lr, [0, -2, -0.1]);
+    const p: V3 = [(l.x + v[0]) * s, (l.y + v[1] + this.bodyY) * s, v[2] * s];
+    const wp: V3 = [this.x + root[0] * p[0] + root[1] * p[1] + root[2] * p[2], this.y + root[3] * p[0] + root[4] * p[1] + root[5] * p[2], this.z + root[6] * p[0] + root[7] * p[1] + root[8] * p[2]];
+    return { pos: wp, rot: mul3(root, mul3(lr, rotX(-HOLD))) };
+  }
+
+  /** koniec lufy / ostrza w świecie, gdyby postać stała zwrócona w stronę `ry` (null = brak narzędzia) */
+  toolTip(ry = this.ry): V3 | null {
+    if (!this.tool) return null;
+    const f = this.toolFrame(ry);
+    const shape = cachedToolShape(this.tool);
+    const t = apply3(f.rot, [shape.tip[0] * this.scale, shape.tip[1] * this.scale, shape.tip[2] * this.scale]);
+    return [f.pos[0] + t[0], f.pos[1] + t[1], f.pos[2] + t[2]];
   }
 
   /** punkt nad głową do nazwy gracza */
@@ -119,15 +151,22 @@ export class ApexAvatar {
       L.la.rz += (0 - L.la.rz) * Math.min(1, dt * 10);
       L.ra.rz += (0 - L.ra.rz) * Math.min(1, dt * 10);
     }
+    // trzymanie narzędzia: ręka wyciągnięta do przodu (nie w pozach siedzenia i machania)
+    if (this.tool && a !== "seated" && a !== "sit" && a !== "wave") ease(L.ra, HOLD, 0, 20);
     if (this.action) {
-      this.actionT += dt;
-      const dur = this.action === "swing" ? 0.35 : this.action === "shoot" ? 0.18 : 0.6;
-      const p = Math.min(1, this.actionT / dur);
+      this.actionT += dt / ACTION_TIME[this.action];
+      const p = Math.min(1, this.actionT);
       if (this.action === "swing") {
-        L.ra.rx = Math.PI * 0.6 - Math.sin(p * Math.PI) * 1.8;
-        brot -= Math.sin(p * Math.PI) * 0.35;
-      } else L.ra.rx = Math.PI / 2;
-      if (p >= 1) this.action = null;
+        L.ra.rx = p < 0.35 ? HOLD + smooth(p / 0.35) * 1.3 : HOLD + 1.3 - smooth((p - 0.35) / 0.65) * 1.9;
+        brot += Math.sin(p * Math.PI) * -0.35;
+      } else if (this.action === "shoot") {
+        L.ra.rx = HOLD + (1 - p) * 0.35;
+      } else {
+        const k = Math.sin(p * Math.PI);
+        L.ra.rx = HOLD + k * 0.9;
+        L.ra.rz = k * 0.6;
+      }
+      if (this.actionT >= 1) this.action = null;
     }
     this.bodyY += (by - this.bodyY) * Math.min(1, dt * 12);
     this.bodyRot += (brot - this.bodyRot) * Math.min(1, dt * 12);
@@ -157,6 +196,10 @@ export class ApexAvatar {
       // środek kończyny: staw + obrót * (0, -1, 0)
       const off: V3 = [lr[1] * -1, lr[4] * -1, lr[7] * -1];
       r.drawBox("box", rot, place(l.x + off[0], l.y + off[1], off[2]), [s, 2 * s, s], tint(col));
+    }
+    if (this.tool) {
+      const f = this.toolFrame(this.ry);
+      drawTool(r, cachedToolShape(this.tool), f.rot, f.pos, s, (c) => tint(c));
     }
     void ID3;
   }

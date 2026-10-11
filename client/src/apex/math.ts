@@ -113,3 +113,13 @@ export const rotX = (a: number): number[] => [1, 0, 0, 0, Math.cos(a), -Math.sin
 export const rotY = (a: number): number[] => [Math.cos(a), 0, Math.sin(a), 0, 1, 0, -Math.sin(a), 0, Math.cos(a)];
 export const rotZ = (a: number): number[] => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
 export const apply3 = (m: number[], v: V3): V3 => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
+
+/** obrót, w którym oś Z wskazuje kierunek `d` (np. smuga strzału wzdłuż promienia) */
+export function lookRot(d: V3): number[] {
+  const z = norm(d);
+  let x = cross([0, 1, 0], z);
+  if (Math.hypot(x[0], x[1], x[2]) < 1e-6) x = [1, 0, 0];
+  x = norm(x);
+  const y = cross(z, x);
+  return [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+}

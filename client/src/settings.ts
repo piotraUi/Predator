@@ -136,7 +136,7 @@ export function enginePicker() {
       ...(
         [
           ["babylon", "Babylon (obecny)", "Stabilny silnik, w którym działają wszystkie gry i funkcje."],
-          ["apex", "Apex (eksperymentalny)", "Nasz własny silnik na WebGL2: cienie, fizyka brył, niebo i woda. Gry z narzędziami, pojazdami albo blokami (jeszcze nie w Apex) uruchamiają się w Babylonie."],
+          ["apex", "Apex (eksperymentalny)", "Nasz własny silnik na WebGL2: cienie, fizyka brył, niebo i woda. Gry z pojazdami albo blokami (jeszcze nie w Apex) uruchamiają się w Babylonie."],
         ] as const
       ).map(([id, name, desc]) =>
         h(
