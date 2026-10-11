@@ -127,6 +127,25 @@ export function demoApexShowcase(): WorldData {
   P({ name: "Ściana", x: PG.x - 10, y: GY + 0.2 + 3, z: PG.z + 6, sx: 2, sy: 6, sz: 12, color: "#7c4dff" });
   P({ name: "Ściana", x: PG.x + 10, y: GY + 0.2 + 2, z: PG.z + 10, sx: 2, sy: 4, sz: 14, color: "#00bfa5" });
   P({ name: "Rampa", shape: "wedge", x: PG.x + 2, y: GY + 0.2 + 1.5, z: PG.z + 12, sx: 10, sy: 3, sz: 8, color: "#ffc400" });
+  // pojazdy: auto, deskorolka, krzesło i łódka na jeziorze (E albo dotknięcie siedzenia)
+  const car = (x: number, z: number, color: string) => {
+    const y = GY + 0.2;
+    P({ name: "Karoseria", group: "auto" + x, x, y: y + 1.9, z, sx: 6, sy: 1.8, sz: 12, color, material: "metal" });
+    P({ name: "Kabina", group: "auto" + x, x, y: y + 3.4, z: z + 1, sx: 5, sy: 1.4, sz: 5.5, color: "#bfe3ff", material: "glass", transparency: 0.25, collide: false });
+    for (const [dx, dz] of [[-3.2, -4], [3.2, -4], [-3.2, 4], [3.2, 4]]) P({ name: "Koło", shape: "cylinder", group: "auto" + x, x: x + dx, y: y + 1.1, z: z + dz, sx: 2.2, sy: 1, sz: 2.2, rz: 90, color: "#1b1b1b", collide: false });
+    P({ name: "Reflektor", shape: "sphere", group: "auto" + x, x: x - 2, y: y + 2.3, z: z - 6, sx: 1, sy: 1, sz: 0.6, color: "#fff2b0", material: "neon", collide: false });
+    P({ name: "Reflektor", shape: "sphere", group: "auto" + x, x: x + 2, y: y + 2.3, z: z - 6, sx: 1, sy: 1, sz: 0.6, color: "#fff2b0", material: "neon", collide: false });
+    P({ name: "Fotel kierowcy", kind: "seat", vehicle: "car", group: "auto" + x, x: x - 1, y: y + 3, z: z + 1, sx: 2.4, sy: 0.6, sz: 2.4, color: "#2b2b2b", collide: false });
+  };
+  car(vx - 4, vz - 14, "#e63946");
+  car(vx + 12, vz - 14, "#2a9d8f");
+  P({ name: "Deskorolka", kind: "seat", vehicle: "skate", x: vx - 12, y: GY + 0.2 + 0.4, z: vz + 4, sx: 2.2, sy: 0.4, sz: 6.5, color: "#ffb347" });
+  P({ name: "Krzesło", kind: "seat", x: vx - 20, y: GY + 0.2 + 1.2, z: vz - 6, sx: 2.4, sy: 0.5, sz: 2.4, color: "#8d5524" });
+  P({ name: "Oparcie", x: vx - 20, y: GY + 0.2 + 2.6, z: vz - 7.1, sx: 2.4, sy: 2.4, sz: 0.4, color: "#8d5524" });
+  const boatAt = { x: LAKE.x - 6, z: LAKE.z + 10 };
+  P({ name: "Kadłub", group: "lodz", x: boatAt.x, y: 3.1, z: boatAt.z, sx: 5, sy: 1.6, sz: 11, color: "#f4f1de", material: "plastic" });
+  P({ name: "Pasek", group: "lodz", x: boatAt.x, y: 3.95, z: boatAt.z, sx: 5.2, sy: 0.3, sz: 11.2, color: "#e07a5f", collide: false });
+  P({ name: "Siedzenie łodzi", kind: "seat", vehicle: "boat", group: "lodz", x: boatAt.x, y: 4.1, z: boatAt.z + 1, sx: 2.4, sy: 0.5, sz: 2.4, color: "#3d405b", collide: false });
   // kule i pudła z fizyką brył
   const palette = ["#ff6b4a", "#ffd166", "#06d6a0", "#4cc9f0", "#b388ff", "#ff4d8d", "#ffffff"];
   for (let k = 0; k < 24; k++) {

@@ -2,6 +2,7 @@
 // czatu, GUI i sterowania co silnik Babylon - zmienia się tylko warstwa rysowania. Gry, których Apex jeszcze nie
 // umie (narzędzia, siedzenia, światy z blokami), uruchamiają się w Babylonie (patrz apexUnsupported).
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
+import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride, type RideHost } from "../game/vehicles.ts";
 import { CollisionWorld, PLAYER_HEIGHT, PLAYER_RADIUS, rayBox, raycastParts, rotationMatrix, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
 import { findSkybox } from "../../../shared/skybox.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
@@ -38,7 +39,6 @@ export function apexUnsupported(init: InitMsg): string | null {
   const w = init.world;
   if (typeof WebGL2RenderingContext === "undefined") return "ta przeglądarka nie ma WebGL2";
   if (w.blocks) return "to świat z blokami (Minecraft)";
-  if (w.parts.some((p) => p.kind === "seat")) return "gra ma siedzenia i pojazdy (jeszcze nie w Apex)";
   if ((w.places?.length ?? 0) > 1) return "gra ma kilka miejsc (jeszcze nie w Apex)";
   return null;
 }
@@ -117,6 +117,22 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   };
   for (const p of parts.values()) refreshPart(p);
   const collisions = new CollisionWorld(init.world.parts);
+  const rideHost: RideHost = {
+    begin() {},
+    place(p, x, y, z, ryDeg) {
+      rend.updatePart({ ...p, x, y, z, ry: ryDeg }, rotationMatrix(p.rx ?? 0, ryDeg, p.rz ?? 0));
+    },
+    finish: (p) => refreshPart(p),
+  };
+  const rides = new Rides(rideHost, collisions, parts);
+  let myRide: Ride | null = null;
+  let drv: DriveState | null = null;
+  let nearSeat: Part | null = null;
+  let sitPendingUntil = 0;
+  let sitBlockedUntil = 0;
+  let leftSeatId: string | null = null;
+  let camHoldUntil = 0;
+  let autoAlpha: number | null = null;
   const terrain = TerrainGrid.decode(init.world.terrain);
   collisions.terrain = terrain;
   rend.setTerrain(terrain);
@@ -341,7 +357,67 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     canvas.classList.toggle("aiming", def?.type === "ranged");
   });
   hotbar.set(toolDefs(init.inventory));
-  wrap.append(topbar, chat.box, board, menu, hpBox, hurt, debug, crosshair, actionBtn);
+  // ---------- siedzenia i pojazdy ----------
+  const myPose = (): Pose => ({ x: body.x, y: body.y, z: body.z, ry });
+  const exitBtn = h("button", { class: "exit-seat hidden", onClick: () => leaveSeat(true) }, "⬆ Wysiądź");
+  const enterBtn = h("button", { class: "exit-seat enter hidden", onClick: () => trySit() }, "");
+  function trySit() {
+    const now = performance.now();
+    if (!nearSeat || myRide || dead || now < sitPendingUntil) return;
+    r.send("sit", nearSeat.id);
+    sitPendingUntil = now + 1000;
+  }
+  const onSeatKey = (e: KeyboardEvent) => {
+    if (e.code === "KeyE" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) trySit();
+  };
+  window.addEventListener("keydown", onSeatKey);
+  cleanups.push(() => window.removeEventListener("keydown", onSeatKey));
+  let seatScan = 0;
+  const scanSeats = () => {
+    let best: Part | null = null;
+    let bestD = Infinity;
+    if (!myRide && !dead)
+      for (const p of parts.values()) {
+        if (p.kind !== "seat" || p.transparency >= 0.999 || rides.taken(p.id)) continue;
+        // do pojazdu podchodzi się z boku - zasięg liczymy od całego modelu
+        const reach = Math.max(p.sx, p.sz) / 2 + (p.vehicle && p.vehicle !== "skate" ? 8 : 4);
+        const d = Math.hypot(p.x - body.x, p.z - body.z);
+        if (d < reach && Math.abs(p.y - body.y) < 8 && d < bestD) (best = p), (bestD = d);
+      }
+    if (best !== nearSeat) {
+      nearSeat = best;
+      enterBtn.classList.toggle("hidden", !best);
+      if (best) enterBtn.textContent = best.vehicle === "car" ? "🚗 Wsiądź (E)" : best.vehicle === "boat" ? "🚤 Wsiądź (E)" : best.vehicle === "skate" ? "🛹 Wskocz na deskę (E)" : "🪑 Usiądź (E)";
+    }
+  };
+  /** wstawanie: send = my wstajemy (skok / przycisk); false = serwer już wie (śmierć) */
+  function leaveSeat(send: boolean) {
+    if (!myRide) return;
+    const ride = myRide;
+    if (send) r.send("unsit");
+    rides.end(init.you, myPose());
+    myRide = null;
+    drv = null;
+    exitBtn.classList.add("hidden");
+    sitBlockedUntil = performance.now() + 1500;
+    // wysiadamy obok pojazdu (z lewej strony), a z krzesła lekko podskakujemy
+    leftSeatId = ride.seat.id;
+    const [fx, fz] = forward(ry);
+    if (ride.type && ride.type !== "skate") {
+      body.x += -fz * 3.5;
+      body.z += fx * 3.5;
+      body.y += 1;
+    } else if (!ride.type) {
+      body.x += fx * (ride.seat.sz / 2 + 1.2);
+      body.z += fz * (ride.seat.sz / 2 + 1.2);
+    }
+    body.vx = body.vz = 0;
+    body.vy = jumpPower * 0.5;
+    body.onGround = false;
+  }
+  wrap.append(topbar, chat.box, board, menu, hpBox, hurt, debug, crosshair, actionBtn, exitBtn, enterBtn);
+  if (localStorage.getItem("predator.debug"))
+    (window as unknown as { __play: unknown }).__play = { body, parts, rides, get nearSeat() { return nearSeat; }, get myRide() { return myRide; }, trySit };
   const audio = new GameAudio(init.world.sounds, init.world.music);
   cleanups.push(() => audio.dispose());
   const showPrompt = promptBox(wrap, (id, text) => r.send("answer", { id, text }), (t, l) => audio.speak(t, l));
@@ -372,6 +448,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (dead) return;
     dead = true;
     anim = "dead";
+    if (myRide) leaveSeat(false);
     if (!fromServer) r.send("died");
     hotbar.select(null);
     setHp(0, maxHp);
@@ -411,7 +488,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   /** używa trzymanego narzędzia, celując w punkt ekranu (domyślnie środek) */
   function useTool(sx = wrap.clientWidth / 2, sy = wrap.clientHeight / 2) {
     const def = hotbar.current;
-    if (!def || dead) return;
+    if (!def || dead || myRide) return;
     const now = performance.now();
     if (now - (lastUse.get(def.id) ?? 0) < def.cooldown * 1000) return;
     lastUse.set(def.id, now);
@@ -499,6 +576,28 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       collisions.set(p);
     }
   });
+  r.onMessage("seat", (m: { sid: string; id: string | null }) => {
+    if (m.sid === init.you) {
+      if (!m.id) return leaveSeat(false);
+      sitPendingUntil = 0;
+      const ride = rides.start(init.you, m.id);
+      if (!ride || dead) return;
+      myRide = ride;
+      drv = ride.type ? startDrive(ride) : null;
+      ry = ride.seat.ry * (Math.PI / 180);
+      hotbar.select(null);
+      exitBtn.classList.remove("hidden");
+      exitBtn.textContent = ride.type === "skate" ? "⬆ Zejdź z deski" : ride.type ? "⬆ Wysiądź" : "⬆ Wstań";
+      if (ride.type) toast(ride.type === "skate" ? "🛹 Jedziesz! Skok = ollie" : ride.type === "boat" ? "🚤 W/S - gaz, A/D - skręt" : "🚗 W/S - gaz i hamulec, A/D - skręt, spacja - wysiądź", "info");
+      return;
+    }
+    if (m.id) rides.start(m.sid, m.id);
+    else {
+      const rm = remotes.get(m.sid);
+      rides.end(m.sid, rm ? { x: rm.tx, y: rm.ty, z: rm.tz, ry: rm.tr } : null);
+    }
+  });
+  for (const p of init.players) if (p.seat && p.sid !== init.you) rides.start(p.sid, p.seat);
   r.onMessage("kill", () => die(true));
   r.onMessage("hp", (m: { sid: string; hp: number; max: number }) => {
     if (m.sid === init.you) return setHp(m.hp, m.max);
@@ -607,7 +706,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       beta = clampBeta(beta - input.pad.ry * sens * 0.8 * (settings.invertY ? -1 : 1), fp);
       const pad = input.pad;
       if (pad.pressed.start) menu.classList.toggle("hidden");
-      if (pad.down.rt) useTool();
+      if (pad.down.rt && !myRide) useTool();
+      if (pad.pressed.x) myRide ? leaveSeat(true) : trySit();
       if (pad.pressed.rb || pad.pressed.right) hotbar.cycle(1);
       if (pad.pressed.lb || pad.pressed.left) hotbar.cycle(-1);
       if (pad.pressed.rs) wantRadius = fp ? 12 : 1;
@@ -638,8 +738,34 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const newTouch = new Set<string>();
     const jumpPressed = input.jump && !jumpWasDown;
     jumpWasDown = input.jump;
-    void jumpPressed;
-    for (let i = 0; i < steps; i++) {
+    // skok = wysiadanie (na deskorolce skok to ollie - schodzi się przyciskiem)
+    if (myRide && !dead && jumpPressed && myRide.type !== "skate") leaveSeat(true);
+    if (myRide && !dead) {
+      const ride = myRide;
+      body.vx = body.vy = body.vz = 0;
+      if (!drv) {
+        // krzesło / ławka: siedzimy na wierzchu (także gdy skrypt je przesuwa)
+        const seat = parts.get(ride.seat.id) ?? ride.seat;
+        body.x = seat.x; body.y = seat.y + seat.sy / 2; body.z = seat.z;
+        ry = seat.ry * (Math.PI / 180);
+        body.onGround = true;
+      } else {
+        const d = drv;
+        for (let i = 0; i < steps; i++) {
+          const res = drive(ride, d, { moveX: input.moveX, moveY: input.moveY, jump: input.jump, camFwd: [fwdX, fwdZ] }, dt / steps, gravity, collisions, jumpPower);
+          for (const p of res.touched) {
+            newTouch.add(p.id);
+            if (p.kind === "kill" && !dead) die();
+          }
+          if (res.landedOn?.kind === "bounce" && !dead) d.vb.vy = BOUNCE_POWER;
+        }
+        body.x = d.vb.x; body.y = d.vb.y + ride.lift; body.z = d.vb.z;
+        body.onGround = d.vb.onGround;
+        ry = d.heading;
+        if (d.vb.y < -150 && !dead) die();
+      }
+    }
+    for (let i = 0; i < (myRide ? 0 : steps); i++) {
       const res = stepBody(collisions, body, dt / steps, gravity, swimIn);
       swimming = res.swimming;
       for (const p of res.touched) {
@@ -648,6 +774,16 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       }
       if (res.landedOn?.kind === "bounce" && !dead) body.vy = BOUNCE_POWER;
       groundPartId = res.landedOn?.id ?? null;
+      // siadanie: wystarczy dotknąć siedzenia
+      const now = performance.now();
+      if (leftSeatId && !res.touched.some((p) => p.id === leftSeatId)) leftSeatId = null;
+      if (!dead && now > sitBlockedUntil && now > sitPendingUntil)
+        for (const p of res.touched)
+          if (p.kind === "seat" && p.id !== leftSeatId && !rides.taken(p.id)) {
+            r.send("sit", p.id);
+            sitPendingUntil = now + 1000;
+            break;
+          }
     }
     // gracze nie przenikają przez siebie
     if (!dead) {
@@ -666,16 +802,32 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (body.y < -150 && !dead) die();
 
     // kierunek i animacja
-    if (moving && !dead) {
+    if (moving && !dead && !myRide) {
       const target = Math.atan2(-mx, -mz);
       let d = target - ry;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
       ry += d * Math.min(1, dt * 14);
     }
-    if (!dead) anim = swimming ? (moving ? "swim" : "tread") : !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
+    if (!dead) anim = myRide ? (myRide.type === "skate" ? (drv?.vb.onGround === false ? "jump" : "skate") : myRide.type ? "drive" : "seated") : swimming ? (moving ? "swim" : "tread") : !body.onGround ? (body.vy > 0 ? "jump" : "fall") : moving ? "walk" : "idle";
     local.x = body.x; local.y = body.y; local.z = body.z; local.ry = ry; local.anim = anim;
     local.update(dt);
+    if ((seatScan += dt) > 0.2) {
+      seatScan = 0;
+      scanSeats();
+    }
+    // w samochodzie i łódce kamera sama obraca się za pojazd (chyba że gracz właśnie nią kręci)
+    if (drv && myRide?.type !== "skate" && !fp) {
+      const now = performance.now();
+      if (autoAlpha !== null && Math.abs(alpha - autoAlpha) > 1e-4) camHoldUntil = now + 1500;
+      if (now > camHoldUntil && Math.abs(drv.speed) > 4) {
+        let d = Math.PI / 2 - ry - alpha;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        alpha += d * Math.min(1, dt * 2.5);
+      }
+      autoAlpha = alpha;
+    } else autoAlpha = null;
 
     // kamera
     radius += (Math.min(radius, wantRadius) - radius);
@@ -715,6 +867,13 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       a.update(dt);
     }
     for (const n of npcs.values()) n.update(dt);
+    // pojazdy jadą za kierowcami (my i inni gracze)
+    if (rides.bySid.size)
+      rides.update((sid) => {
+        if (sid === init.you) return myPose();
+        const rm = remotes.get(sid);
+        return rm ? { x: rm.av.x, y: rm.av.y, z: rm.av.z, ry: rm.av.ry } : null;
+      });
     // przesuwane klocki
     for (const [id, tw] of tweens) {
       const p = parts.get(id);

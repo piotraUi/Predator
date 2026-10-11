@@ -29,7 +29,7 @@ import { gameShop } from "./gameShop.ts";
 import { openGameReport, playersPanel } from "./playersPanel.ts";
 import { safety } from "../safety.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
-import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride } from "./vehicles.ts";
+import { babylonRideHost, drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride } from "./vehicles.ts";
 import { openInviteFriends } from "./inviteFriends.ts";
 import { VoiceChat } from "./voice.ts";
 import { chatBox } from "./chatBox.ts";
@@ -457,7 +457,7 @@ export function playScreen(
     }
 
     // ---------- siedzenia i pojazdy ----------
-    const rides = new Rides(world, collisions, parts);
+    const rides = new Rides(babylonRideHost(world), collisions, parts);
     const myPose = (): Pose => ({ x: body.x, y: body.y, z: body.z, ry });
     const exitBtn = h("button", { class: "exit-seat hidden", onClick: () => leaveSeat(true) }, "⬆ Wysiądź");
     /** siedzenie w pobliżu - przycisk "Wsiądź" (albo klawisz E) */

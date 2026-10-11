@@ -131,6 +131,16 @@ export class ApexAvatar {
     } else if (a === "seated" || a === "sit") {
       ease(L.la, -0.5); ease(L.ra, -0.5); ease(L.ll, -Math.PI / 2); ease(L.rl, -Math.PI / 2);
       by = -1.2;
+    } else if (a === "drive") {
+      // za kierownicą: ręce do przodu, nogi jak przy siedzeniu
+      ease(L.la, HOLD * 0.8, -0.12); ease(L.ra, HOLD * 0.8, 0.12); ease(L.ll, -Math.PI / 2); ease(L.rl, -Math.PI / 2);
+      by = -1.2;
+    } else if (a === "skate") {
+      // bokiem na desce, ugięte kolana, ręce na boki do równowagi
+      const w = Math.sin(t * 2) * 0.1;
+      ease(L.la, 0, 1.0 + w, 10); ease(L.ra, 0, -1.0 - w, 10); ease(L.ll, 0.15, 0.22, 12); ease(L.rl, -0.15, -0.22, 12);
+      by = -0.35;
+      brot = Math.PI / 2;
     } else if (a === "wave") {
       ease(L.la, Math.PI * 0.95, 0.35 + Math.sin(t * 9) * 0.35); ease(L.ra, 0); ease(L.ll, 0); ease(L.rl, 0);
     } else if (a === "dance" || a === "robotdance" || a === "floss" || a === "jumpjacks") {
@@ -152,7 +162,7 @@ export class ApexAvatar {
       L.ra.rz += (0 - L.ra.rz) * Math.min(1, dt * 10);
     }
     // trzymanie narzędzia: ręka wyciągnięta do przodu (nie w pozach siedzenia i machania)
-    if (this.tool && a !== "seated" && a !== "sit" && a !== "wave") ease(L.ra, HOLD, 0, 20);
+    if (this.tool && a !== "seated" && a !== "sit" && a !== "wave" && a !== "drive" && a !== "skate") ease(L.ra, HOLD, 0, 20);
     if (this.action) {
       this.actionT += dt / ACTION_TIME[this.action];
       const p = Math.min(1, this.actionT);

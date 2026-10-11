@@ -6,6 +6,42 @@ import type { Part, VehicleType } from "../../../shared/types.ts";
 import { CollisionWorld, stepBody, waterAt, type Body, type StepResult } from "../../../shared/physics.ts";
 import type { WorldView } from "../engine/world.ts";
 
+/** Co silnik robi z klockami pojazdu - Babylon przesuwa meshe, Apex przepisuje instancje. */
+export interface RideHost {
+  /** pojazd zaczyna jechać (klocki przestają być nieruchome) */
+  begin(part: Part): void;
+  /** tylko wygląd: klocek w danym miejscu (ry w stopniach) */
+  place(part: Part, x: number, y: number, z: number, ryDeg: number): void;
+  /** pojazd stanął: part ma już docelowe położenie */
+  finish(part: Part): void;
+}
+
+export function babylonRideHost(world: WorldView): RideHost {
+  return {
+    begin(p) {
+      const mesh = world.meshes.get(p.id);
+      if (!mesh) return;
+      mesh.unfreezeWorldMatrix();
+      // obwiednia musi jechać z pojazdem, inaczej kamera "gubi" auto (znika poza starym miejscem)
+      mesh.doNotSyncBoundingInfo = false;
+    },
+    place(p, x, y, z, ryDeg) {
+      const mesh = world.meshes.get(p.id);
+      if (!mesh) return;
+      mesh.position.set(x, y, z);
+      mesh.rotation.y = ryDeg * (Math.PI / 180);
+    },
+    finish(p) {
+      world.apply(p);
+      const mesh = world.meshes.get(p.id);
+      if (mesh) {
+        mesh.freezeWorldMatrix();
+        mesh.doNotSyncBoundingInfo = true;
+      }
+    },
+  };
+}
+
 export interface Pose {
   x: number;
   y: number;
@@ -35,7 +71,7 @@ export class Rides {
   readonly bySid = new Map<string, Ride>();
 
   constructor(
-    private world: WorldView,
+    private host: RideHost,
     private collisions: CollisionWorld,
     private parts: Map<string, Part>,
   ) {}
@@ -64,12 +100,7 @@ export class Rides {
       for (const o of ride.parts) {
         // jadący pojazd nie blokuje graczy w starym miejscu (i kierowca nie zderza się z własnym autem)
         this.collisions.remove(o.part.id);
-        const mesh = this.world.meshes.get(o.part.id);
-        if (mesh) {
-          mesh.unfreezeWorldMatrix();
-          // obwiednia musi jechać z pojazdem, inaczej kamera "gubi" auto (znika poza starym miejscem)
-          mesh.doNotSyncBoundingInfo = false;
-        }
+        this.host.begin(o.part);
       }
     this.bySid.set(sid, ride);
     return ride;
@@ -84,12 +115,7 @@ export class Rides {
     for (const o of ride.parts) {
       const t = pose ? this.transform(ride, o, pose) : { x: o.part.x, y: o.part.y, z: o.part.z, ry: o.part.ry };
       Object.assign(o.part, t);
-      this.world.apply(o.part);
-      const mesh = this.world.meshes.get(o.part.id);
-      if (mesh) {
-        mesh.freezeWorldMatrix();
-        mesh.doNotSyncBoundingInfo = true;
-      }
+      this.host.finish(o.part);
       this.collisions.set(o.part);
     }
   }
@@ -115,11 +141,8 @@ export class Rides {
       const pose = poseOf(ride.sid);
       if (!pose) continue;
       for (const o of ride.parts) {
-        const mesh = this.world.meshes.get(o.part.id);
-        if (!mesh) continue;
         const t = this.transform(ride, o, pose);
-        mesh.position.set(t.x, t.y, t.z);
-        mesh.rotation.y = t.ry * DEG;
+        this.host.place(o.part, t.x, t.y, t.z, t.ry);
       }
     }
   }
