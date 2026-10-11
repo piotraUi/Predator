@@ -21,6 +21,8 @@ import { GuiOverlay } from "../ui/guiOverlay.ts";
 import { h, toast } from "../ui/dom.ts";
 import { ApexAvatar } from "./avatar.ts";
 import { Hotbar } from "../game/hotbar.ts";
+import { openRoomsWindow } from "../game/rooms.ts";
+import { MAIN_PLACE } from "../../../shared/places.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
 import { ROBLOX_FOV } from "../engine/camera.ts";
 import { MAT, rgb, ApexRenderer } from "./renderer.ts";
@@ -32,14 +34,12 @@ const SWIM_SLOW = 0.7;
 const JUMP_POWER = 50;
 const BOUNCE_POWER = 110;
 const SEND_EVERY = 1 / 15;
-const MAIN_PLACE = "main";
 
 /** powód, dla którego Apex nie uruchomi tej gry (null = da radę) */
 export function apexUnsupported(init: InitMsg): string | null {
   const w = init.world;
   if (typeof WebGL2RenderingContext === "undefined") return "ta przeglądarka nie ma WebGL2";
   if (w.blocks) return "to świat z blokami (Minecraft)";
-  if ((w.places?.length ?? 0) > 1) return "gra ma kilka miejsc (jeszcze nie w Apex)";
   return null;
 }
 
@@ -627,6 +627,42 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   });
   r.onMessage("gui", (m: { open: string[]; text: Record<string, string> }) => guiLayer.setState(m));
   r.onMessage("exit", () => leave());
+  // skrypt albo przycisk GUI przenosi do innego miejsca gry: łączymy się z serwerem tamtego miejsca
+  r.onMessage("place", (m: { id: string; name: string }) => {
+    if (leaving) return;
+    leaving = true;
+    toast(`➡ ${m.name}`, "info");
+    const start = init.world.startPlace ?? MAIN_PLACE;
+    go("play", {
+      ...(params.worldId !== undefined ? { worldId: params.worldId } : {}),
+      ...(params.privateCode ? { privateCode: params.privateCode } : {}),
+      ...(params.offline ? { offline: params.offline } : {}),
+      ...(params.back ? { back: params.back } : {}),
+      ...(m.id !== start ? { place: m.id } : params.offline ? { place: m.id } : {}),
+    });
+  });
+  // pokoje (multiplayer): okno wyboru pokoju i nazwa bieżącego pokoju w tytule
+  let inRoom = false;
+  r.onMessage("rooms", (m: { target?: string; max?: number }) =>
+    openRoomsWindow({
+      worldId: params.worldId,
+      target: m?.target ?? "",
+      max: m?.max,
+      offline: !!params.offline,
+      go,
+      back: inRoom ? params.back : { screen: "play", params: { worldId: params.worldId, ...(params.back ? { back: params.back } : {}) } },
+      leave: () => {
+        leaving = true;
+        r.leave();
+      },
+    }),
+  );
+  r.onMessage("room", (m: { name: string; code?: string }) => {
+    inRoom = true;
+    const title = topbar.querySelector(".hud-title");
+    if (title) title.textContent = `${init.info.name} · 🎮 ${m.name}${m.code ? ` (kod ${m.code})` : ""}`;
+    toast(`🎮 Pokój „${m.name}”` + (m.code ? ` - kod dla znajomych: ${m.code}` : ""), "good");
+  });
   r.onMessage("sky", (c: string) => ((skyColor = c), setSkybox(null)));
   r.onMessage("skybox", (id: string) => setSkybox(id || null));
   r.onMessage("light", (l: { brightness?: number; fog?: number }) => {
