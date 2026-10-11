@@ -23,7 +23,7 @@ const VOICE_MAX = 12;
 const VISIT_MILESTONES: [number, number][] = [
   [1, 10], [10, 25], [50, 50], [100, 100], [500, 250], [1000, 500], [5000, 1000], [10000, 2500],
 ];
-const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto", "answer", "sit", "unsit", "gui", "vb", "vp", "vs", "vsw", "vd", "vg", "vc", "ve", "vh", "vf"];
+const MESSAGES = ["m", "chat", "touch", "equip", "use", "anim", "died", "respawned", "char", "goto", "answer", "cev", "sit", "unsit", "gui", "vb", "vp", "vs", "vsw", "vd", "vg", "vc", "ve", "vh", "vf"];
 
 export class WorldRoom extends Room {
   private world!: WorldRow;

@@ -111,6 +111,24 @@ function onTouch(partName, fn)
   table.insert(list, fn)
 end
 
+-- zdarzenia sieciowe między serwerem a skryptami graczy (klient):
+--   serwer: onClientEvent("nazwa", function(player, ...) end), fireClient(player, "nazwa", ...)
+--   gracz:  onServerEvent("nazwa", function(...) end), fireServer("nazwa", ...), onKey("E", function() end)
+local net = {}
+function onClientEvent(name, fn)
+  local key = tostring(name)
+  net[key] = net[key] or {}
+  table.insert(net[key], fn)
+end
+onServerEvent = onClientEvent
+function onKey(key, fn) onClientEvent("key:" .. string.upper(tostring(key)), fn) end
+function __fireNet(name, a, b, c, d, e, f)
+  local list = net[name]
+  if list then
+    for _, fn in ipairs(list) do spawn(fn, a, b, c, d, e, f) end
+  end
+end
+
 function every(seconds, fn)
   spawn(function()
     while true do
@@ -449,7 +467,7 @@ export class LuaEngine {
   }
 
   /** Wywołuje globalną funkcję Lua z argumentami (tekst lub liczba) z limitem instrukcji. */
-  private call(fn: string, ...args: (string | number)[]): unknown {
+  private call(fn: string, ...args: (string | number | boolean)[]): unknown {
     if (this.closed) return undefined;
     const L = this.L;
     this.hooks = 0;
@@ -460,6 +478,7 @@ export class LuaEngine {
     }
     for (const a of args) {
       if (typeof a === "number") pushNum(L, a);
+      else if (typeof a === "boolean") lua.lua_pushboolean(L, a);
       else lua.lua_pushstring(L, to_luastring(a));
     }
     if (lua.lua_pcall(L, args.length, 1, 0) !== lua.LUA_OK) {
@@ -483,6 +502,11 @@ export class LuaEngine {
     lua.lua_getglobal(L, to_luastring("spawn"));
     lua.lua_insert(L, -2);
     if (lua.lua_pcall(L, 1, 0, 0) !== lua.LUA_OK) this.host.log(this.popString(), true);
+  }
+
+  /** zdarzenie sieciowe (fireServer / fireClient / klawisz) - do 6 argumentów */
+  fireNet(name: string, args: (string | number | boolean)[] = []) {
+    this.call("__fireNet", name, ...args.slice(0, 6));
   }
 
   playerJoined(player: string) {

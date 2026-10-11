@@ -270,6 +270,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       ...(typeof p.animId === "string" && p.animId ? { animId: p.animId.slice(0, 40) } : {}),
       ...(typeof p.group === "string" && p.group ? { group: p.group.slice(0, 40) } : {}),
       ...(p.spin === true ? { spin: true } : {}),
+      ...(p.dynamic === true && p.kind !== "water" && p.kind !== "seat" ? { dynamic: true, bounce: num(p.bounce, 0, 1, 0.3) } : {}),
       ...(p.kind === "seat" && VEHICLE_TYPES.includes(p.vehicle as VehicleType) ? { vehicle: p.vehicle as VehicleType } : {}),
       ...(typeof p.label === "string" && p.label.trim() ? { label: filterChat(p.label.trim().slice(0, MAX_LABEL)) } : {}),
       ...(p.locked === true ? { locked: true } : {}),
@@ -287,6 +288,7 @@ export function sanitizeWorld(input: unknown): WorldData {
       blocks: s.type === "blocks" ? s.blocks : undefined,
       enabled: s.enabled !== false,
       ...(typeof s.place === "string" && (s.place === "*" || placeIds.has(s.place)) ? { place: s.place } : {}),
+      ...(s.side === "client" ? { side: "client" as const } : {}),
     };
   });
   const rawTools = Array.isArray(w.tools) ? w.tools.slice(0, MAX_TOOLS) : [];

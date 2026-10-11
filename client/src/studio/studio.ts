@@ -2336,6 +2336,20 @@ export function studioScreen(
         ),
         h(
           "label",
+          { class: "prop check", title: "Klocek spada, toczy się (kula) albo ślizga (pudło) i da się go popychać. Maks. 100 takich klocków." },
+          h("input", { type: "checkbox", checked: !!p.dynamic, onChange: (e: Event) => upd(() => ((e.target as HTMLInputElement).checked ? ((p.dynamic = true), (p.bounce ??= 0.3)) : (delete p.dynamic, delete p.bounce))) }),
+          h("span", null, "⚽ Fizyka (spada, toczy się, da się popychać)"),
+        ),
+        ...(p.dynamic
+          ? [h(
+              "label",
+              { class: "prop" },
+              h("span", null, "Sprężystość odbić"),
+              h("input", { type: "range", min: "0", max: "1", step: "0.05", value: String(p.bounce ?? 0.3), onInput: (e: Event) => upd(() => (p.bounce = Number((e.target as HTMLInputElement).value))) }),
+            )]
+          : []),
+        h(
+          "label",
           { class: "prop check" },
           h("input", {
             type: "checkbox",
@@ -2415,6 +2429,21 @@ export function studioScreen(
                 "div",
                 { class: "script-item" },
                 h("button", { class: "script-open", onClick: () => editScript(s) }, s.type === "lua" ? "📜 " : "🧩 ", s.name),
+                // serwer (zasady gry) albo gracz (efekty, klawisze, zdarzenia onServerEvent / fireServer)
+                h(
+                  "select",
+                  {
+                    class: "script-place",
+                    title: "Gdzie działa kod: na serwerze (zasady gry) albo w przeglądarce gracza (efekty, klawisze - rozmowa z serwerem przez fireServer / onClientEvent)",
+                    onChange: (e: Event) => {
+                      if ((e.target as HTMLSelectElement).value === "client") s.side = "client";
+                      else delete s.side;
+                      changed();
+                    },
+                  },
+                  h("option", { value: "server", selected: s.side !== "client" }, "🖥 Serwer"),
+                  h("option", { value: "client", selected: s.side === "client" }, "🎮 Gracz"),
+                ),
                 // gra z kilkoma miejscami: gdzie działa skrypt
                 data.places?.length
                   ? h(

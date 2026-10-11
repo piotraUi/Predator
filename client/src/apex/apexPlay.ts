@@ -308,6 +308,25 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const audio = new GameAudio(init.world.sounds, init.world.music);
   cleanups.push(() => audio.dispose());
   const showPrompt = promptBox(wrap, (id, text) => r.send("answer", { id, text }), (t, l) => audio.speak(t, l));
+  void import("../game/clientScripts.ts").then(({ startClientScripts }) =>
+    startClientScripts({
+      conn: r,
+      scripts: init.clientScripts ?? [],
+      container: wrap,
+      myName: me.username,
+      myPos: () => [body.x, body.y, body.z],
+      say: (text) => chat.add({ from: "", text, system: true }),
+      setLight: (b, fog) => {
+        if (b !== undefined) light.brightness = Math.min(1.5, Math.max(0.02, b));
+        if (fog !== undefined) light.fog = Math.min(2000, Math.max(0, fog));
+        rend.setLight(light.brightness, light.fog);
+      },
+      setSky: (c) => ((skyColor = c), setSkybox(null)),
+      setSkybox: (id) => setSkybox(id || null),
+      playSound: (name) => audio.play(name),
+      keysEnabled: () => !chat.typing() && !guiLayer.modal,
+    }).then((cs) => (cs ? (disposed ? cs.dispose() : cleanups.push(() => cs.dispose())) : null)),
+  );
   const guiLayer = new GuiOverlay(wrap, init.world.guis ?? [], (g, e) => r.send("gui", { g, e }));
   guiLayer.setWhere(init.world.currentPlace?.id ?? MAIN_PLACE);
   cleanups.push(() => guiLayer.dispose());
@@ -362,18 +381,29 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       rm.av.anim = a;
     }
   });
+  /** płynne przesunięcia (tweenPart, fizyka brył): klient dochodzi do pozycji z serwera */
+  const tweens = new Map<string, { fx: number; fy: number; fz: number; t0: number; dur: number }>();
+  const shownPos = (p: Part): [number, number, number] => {
+    const tw = tweens.get(p.id);
+    if (!tw) return [p.x, p.y, p.z];
+    const k = Math.min(1, (performance.now() - tw.t0) / 1000 / tw.dur);
+    return [tw.fx + (p.x - tw.fx) * k, tw.fy + (p.y - tw.fy) * k, tw.fz + (p.z - tw.fz) * k];
+  };
   r.onMessage("part", (changes: (Partial<Part> & { id: string; tw?: number })[]) => {
     for (const { tw, ...c } of changes) {
-      void tw;
       const p = parts.get(c.id);
       if (!p) continue;
+      const from = tw && !isNpc(p) ? shownPos(p) : null;
       if (c.id === groundPartId && body.onGround) {
         body.x += (c.x ?? p.x) - p.x;
         body.y += (c.y ?? p.y) - p.y + ((c.sy ?? p.sy) - p.sy) / 2;
         body.z += (c.z ?? p.z) - p.z;
       }
       Object.assign(p, c);
+      if (from && (c.x !== undefined || c.y !== undefined || c.z !== undefined)) tweens.set(p.id, { fx: from[0], fy: from[1], fz: from[2], t0: performance.now(), dur: Math.max(0.03, tw!) });
+      else if (c.x !== undefined || c.y !== undefined || c.z !== undefined) tweens.delete(p.id);
       refreshPart(p);
+      if (tweens.has(p.id)) rend.updatePart({ ...p, x: from![0], y: from![1], z: from![2] }, rot(p));
       collisions.set(p);
     }
   });
@@ -573,6 +603,15 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       a.update(dt);
     }
     for (const n of npcs.values()) n.update(dt);
+    // przesuwane klocki
+    for (const [id, tw] of tweens) {
+      const p = parts.get(id);
+      if (!p) { tweens.delete(id); continue; }
+      const k = Math.min(1, (performance.now() - tw.t0) / 1000 / tw.dur);
+      const [x, y, z] = shownPos(p);
+      rend.updatePart({ ...p, x, y, z }, rot(p));
+      if (k >= 1) tweens.delete(id);
+    }
     // kręcące się klocki
     for (const [id, base] of spinning) {
       const p = parts.get(id);

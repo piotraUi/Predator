@@ -48,6 +48,10 @@ export interface Part {
   locked?: boolean;
   /** miejsce (place) gry 3D, w którym stoi klocek - brak = główne miejsce */
   place?: string;
+  /** fizyka brył: klocek spada, toczy się i da się go popychać (kula się toczy, pudło się ślizga) */
+  dynamic?: boolean;
+  /** sprężystość odbić (0 - 1) dla klocka z fizyką */
+  bounce?: number;
 }
 
 // ---------- Postacie ----------
@@ -152,6 +156,8 @@ export interface WorldScript {
   enabled: boolean;
   /** gry 3D z kilkoma miejscami: gdzie działa skrypt (id miejsca, "*" = wszędzie, brak = główne miejsce) */
   place?: string;
+  /** "client" = skrypt gracza: działa w przeglądarce każdego gracza (efekty, klawisze) i gada z serwerem przez zdarzenia; brak = serwer */
+  side?: "client";
 }
 
 export interface WorldData {

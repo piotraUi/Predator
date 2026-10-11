@@ -15,6 +15,9 @@ import { MAX_LABEL } from "../world.ts";
 import { clientGuiAction, GuiRuntime, guiLuaFunctions, roomLuaFunctions, type RoomInfo } from "../gui.ts";
 import { findPlace, MAIN_PLACE } from "../places.ts";
 import { VoxelGame } from "./voxelSim.ts";
+import { RigidWorld } from "../rigid.ts";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** zmiana klocka wysyłana graczom; tw = płynne przejście do nowej pozycji (sekundy) */
 export type PartChange = Partial<Part> & { tw?: number };
@@ -66,6 +69,9 @@ interface PlayerState extends NetPlayer {
   score: number;
   lastTouch: Map<string, number>;
   lastChat: number;
+  /** limit zdarzeń ze skryptu gracza (okno 1 s) */
+  netWindow: number;
+  netCount: number;
   dead: boolean;
   protectedUntil: number;
   tools: string[];
@@ -100,6 +106,9 @@ export class GameSim {
   private partsById = new Map<string, Part>();
   private toolsById = new Map<string, ToolDef>();
   private collisions: CollisionWorld;
+  /** bryły z fizyką (dynamic) */
+  private rigid: RigidWorld;
+  private lastPos = new Map<string, [number, number, number, number]>();
   private dirtyParts = new Map<string, PartChange>();
   private scoresDirty = false;
   private lua: LuaEngine | null = null;
@@ -125,6 +134,8 @@ export class GameSim {
     for (const tool of data.tools) this.toolsById.set(tool.id, tool);
     this.collisions = new CollisionWorld(data.parts);
     this.collisions.terrain = TerrainGrid.decode(data.terrain);
+    this.rigid = new RigidWorld(this.collisions, data.gravity);
+    for (const p of data.parts) if (p.dynamic) this.rigid.add(p);
     this.dataStore = new PlayerDataStore(t.storage, (text, error) => this.log(text, error));
     this.shop = new GameShop(data.products ?? [], (sid, type, msg) => this.t.send(sid, type, msg));
     this.sky = data.skyColor;
@@ -185,6 +196,8 @@ export class GameSim {
       score: 0,
       lastTouch: new Map(),
       lastChat: 0,
+      netWindow: 0,
+      netCount: 0,
       dead: false,
       protectedUntil: Date.now() + SPAWN_PROTECTION_MS,
       tools: this.starterTools(),
@@ -208,6 +221,8 @@ export class GameSim {
       players: [...this.players.values()].map(this.netPlayer),
       spawn,
       inventory: p.tools,
+      // skrypty gracza (działają w przeglądarce): kod jest jawny jak w LocalScript
+      clientScripts: this.data.scripts.filter((s) => s.enabled && s.side === "client" && s.source.trim()).map((s) => ({ name: s.name, source: s.source })),
     });
     this.gui.enter(sid, this.data.currentPlace?.id ?? MAIN_PLACE);
     this.vox?.join(sid);
@@ -311,6 +326,20 @@ export class GameSim {
         const p = this.players.get(sid);
         if (p) this.standUp(p);
         return;
+      }
+      case "cev": {
+        // zdarzenie ze skryptu gracza: { n: nazwa, a: [argumenty] } - nie ufamy niczemu, limit 30 / s
+        const v = (msg ?? {}) as { n?: unknown; a?: unknown };
+        const p = this.players.get(sid);
+        if (!p || typeof v.n !== "string" || v.n.length > 40) return;
+        const now = Date.now();
+        if (now - p.netWindow > 1000) {
+          p.netWindow = now;
+          p.netCount = 0;
+        }
+        if (++p.netCount > 30) return;
+        const args = (Array.isArray(v.a) ? v.a : []).slice(0, 5).map((x) => (typeof x === "number" && Number.isFinite(x) ? x : typeof x === "boolean" ? x : typeof x === "string" ? x.replace(/[\u0000-\u001f]/g, "").slice(0, 200) : ""));
+        return this.lua?.fireNet(v.n, [sid, ...args]);
       }
       case "answer": {
         // odpowiedź z okienka prompt() skryptu
@@ -738,6 +767,7 @@ export class GameSim {
   tick() {
     this.lua?.tick();
     this.vox?.tick(0.05);
+    this.stepRigid();
     if (this.players.size > 0) {
       const snap = [...this.players.values()].map((p) => [
         p.sid,
@@ -766,6 +796,24 @@ export class GameSim {
     }
   }
 
+  /** fizyka brył: gracze popychają, ruszone klocki idą do klientów jak zmiany skryptów */
+  private stepRigid() {
+    if (this.rigid.bodies.size === 0) return;
+    const now = Date.now();
+    const pushers = [...this.players.values()]
+      .filter((p) => !p.dead)
+      .map((p) => {
+        const prev = this.lastPos.get(p.sid);
+        this.lastPos.set(p.sid, [p.x, p.y, p.z, now]);
+        const dt = prev ? Math.max(0.02, (now - prev[3]) / 1000) : 0;
+        return { x: p.x, y: p.y, z: p.z, vx: prev && dt < 0.5 ? (p.x - prev[0]) / dt : 0, vz: prev && dt < 0.5 ? (p.z - prev[2]) / dt : 0 };
+      });
+    for (const b of this.rigid.step(0.05, pushers)) {
+      this.partMovedAt.set(b.id, now);
+      this.dirtyParts.set(b.id, { ...this.dirtyParts.get(b.id), x: round2(b.x), y: round2(b.y), z: round2(b.z), tw: 0.07 });
+    }
+  }
+
   private chat(msg: ChatMsg) {
     this.t.broadcast("chat", msg);
   }
@@ -777,7 +825,7 @@ export class GameSim {
   // ---------- Skrypty ----------
 
   private startScripts() {
-    const scripts = this.data.scripts.filter((s) => s.enabled && s.source.trim());
+    const scripts = this.data.scripts.filter((s) => s.enabled && s.source.trim() && s.side !== "client");
     if (scripts.length === 0) return;
     const player = (sid: string) => this.players.get(sid);
     const host: ScriptHost = {
@@ -935,6 +983,31 @@ export class GameSim {
       },
       closePrompt: (target) => to(target, "prompt", null),
       // napis nad klockiem (np. cena przycisku): setLabel("Przycisk", "Dropper - 50 💰"), "" = bez napisu
+      // fizyka brył: setPhysics("Kula", true, 0.6) - klocek spada, odbija się i da się go popychać; pushPart("Kula", vx, vy, vz) - kopnięcie
+      // zdarzenia do skryptów graczy: fireClient(player, "nazwa", a, b) - player = nil: wszyscy
+      fireClient: (target, name, a, b, c, d, e) => {
+        const n = String(name ?? "").slice(0, 40);
+        const clean = [a, b, c, d, e].filter((x) => x !== null && x !== undefined).map((x) => (typeof x === "string" ? x.slice(0, 200) : x));
+        to(target, "sev", { n, a: clean });
+      },
+      setPhysics: (name, on, bounce) => {
+        for (const part of this.partsById.values()) {
+          if (part.name !== String(name ?? "")) continue;
+          if (on === false) {
+            delete part.dynamic;
+            this.rigid.remove(part.id);
+          } else {
+            part.dynamic = true;
+            part.bounce = typeof bounce === "number" ? Math.min(1, Math.max(0, bounce)) : (part.bounce ?? 0.3);
+            this.rigid.remove(part.id);
+            if (!this.rigid.add(part)) this.log("za dużo brył z fizyką (maks. 100)", true);
+          }
+        }
+      },
+      pushPart: (name, vx, vy, vz) => {
+        const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(-200, Math.min(200, v)) : 0);
+        for (const part of this.partsById.values()) if (part.name === String(name ?? "")) this.rigid.push(part.id, n(vx), n(vy), n(vz));
+      },
       setLabel: (name, text) => this.updatePartsByName(String(name ?? ""), () => ({ label: String(text ?? "") })),
       // płynne przesunięcie klocka do x, y, z w podanym czasie (np. cukierek jadący po taśmie)
       tweenPart: (name, x, y, z, secs) =>
@@ -1010,6 +1083,7 @@ export class GameSim {
       Object.assign(part, clean);
       if (clean.x !== undefined || clean.y !== undefined || clean.z !== undefined) this.partMovedAt.set(part.id, Date.now());
       this.collisions.set(part);
+      if (part.dynamic && (clean.x !== undefined || clean.y !== undefined || clean.z !== undefined)) this.rigid.teleport(part.id, part.x, part.y, part.z);
       // tw = płynne przejście (sekundy) - klient przesuwa klocek po drodze, serwer od razu zna pozycję końcową
       const tw = finite(props.tw, 0, 600);
       const next: PartChange = { ...this.dirtyParts.get(part.id), ...clean };

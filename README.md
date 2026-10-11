@@ -188,6 +188,19 @@ Gra 3D może mieć **świat z bloków**: Twórz → Nowa gra → **⛏️ Świat
 - **Lua:** `getBlock`, `setBlock`, `blockAt`, `getSurface`, `giveItem`, `takeItem`, `countItem`, `onBlockBreak`, `onBlockPlace`, `setTime`, `getTime`, `isNight`, `spawnMob`, `explode`.
 - **Klawisze:** 1-9 i kółko myszy zmieniają przedmiot, V przełącza pierwszą i trzecią osobę, Q wyrzuca przedmiot.
 
+## Silnik Apex (eksperymentalny) i fizyka brył
+
+W **Ustawieniach → Silnik gier 3D** wybierasz, na czym uruchamiają się gry 3D (dla siebie, na tym urządzeniu):
+
+- **Babylon** (domyślny) - sprawdzony silnik, obsługuje wszystko.
+- **Apex** - własny silnik Predatora na WebGL2 (`client/src/apex/`): klocki rysowane instancjami, cienie z filtrem PCF, niebo liczone w shaderze, mgła, teren i woda. F3 w grze pokazuje FPS i liczbę wywołań rysowania.
+
+Apex jest na początku drogi. Gdy gra czegoś jeszcze nie umie w Apex (narzędzia, siedzenia i pojazdy, kilka miejsc, światy z blokami, brak WebGL2), uruchamia się sama w Babylonie i pokazuje, dlaczego. Jeszcze bez: tekstur, cząsteczek, kapeluszy i ubrań na awatarze, modeli .glb.
+
+**Fizyka brył** (oba silniki, liczona na serwerze): zaznacz klocek → ⚽ *Fizyka*. Kula toczy się i odbija (sprężystość 0-1), pudło spada i ślizga się, gracze mogą je popychać. Maks. 100 takich klocków w grze. W Lua: `setPhysics("Kula", true, 0.6)` i `pushPart("Kula", 0, 40, 30)`.
+
+**Skrypty gracza**: przy skrypcie w Studiu wybierz 🎮 *Gracz*. Taki skrypt działa w przeglądarce gracza (efekty, klawisze) i rozmawia z serwerem przez zdarzenia: gracz `fireServer("kup", "miecz")` ↔ serwer `onClientEvent("kup", function(player, item) ... end)`, serwer `fireClient(player, "witaj", 7)` ↔ gracz `onServerEvent("witaj", function(n) ... end)`. Gracz ma też `onKey("E", fn)`, `showText`, `localSay`, `myPos`, `setLightLocal`, `playSoundLocal`. Skrypt gracza nie zmienia świata - robi to tylko serwer, który sprawdza i ogranicza każde zdarzenie (30 na sekundę, teksty do 200 znaków).
+
 ## Gry HTML (strona w ramce)
 
 Oprócz gier Predatora można publikować **gry HTML**: własną stronę internetową z grą. Twórz → Nowa gra → **🌐 Gra HTML** (albo „Studio bez serwera” → Gra HTML).

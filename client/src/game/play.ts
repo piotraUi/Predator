@@ -64,6 +64,8 @@ export interface InitMsg {
   players: NetPlayer[];
   spawn: { x: number; y: number; z: number };
   inventory: string[];
+  /** skrypty gracza (Lua działające w przeglądarce) */
+  clientScripts?: { name: string; source: string }[];
 }
 
 const EMOTE_LABELS: Record<Emote, string> = {
@@ -672,6 +674,27 @@ export function playScreen(
         glow.intensity = 0.45 * k;
       });
     }
+
+    // skrypty gracza (Lua w przeglądarce): efekty, klawisze i zdarzenia do serwera
+    void import("./clientScripts.ts").then(({ startClientScripts }) =>
+      startClientScripts({
+        conn: r,
+        scripts: init.clientScripts ?? [],
+        container: wrap,
+        myName: me.username,
+        myPos: () => [body.x, body.y, body.z],
+        say: (text) => chat.add({ from: "", text, system: true }),
+        setLight: (b, fog) => {
+          if (b !== undefined) light.brightness = Math.min(1.5, Math.max(0.02, b));
+          if (fog !== undefined) light.fog = Math.min(2000, Math.max(0, fog));
+          world.setLight(light.brightness, light.fog);
+        },
+        setSky: (c) => world.setSky(c),
+        setSkybox: (id) => (id ? world.setSkybox(id) : world.setSky(init.world.skyColor)),
+        playSound: (name) => audio.play(name),
+        keysEnabled: () => !chat.typing() && !guiLayer.modal,
+      }).then((cs) => (cs ? (disposed ? cs.dispose() : cleanups.push(() => cs.dispose())) : null)),
+    );
 
     // okienko z pytaniem od skryptu (prompt) - odpowiedź trafia do onAnswer
     const showPrompt = promptBox(wrap, (id, text) => r.send("answer", { id, text }), (t, l) => audio.speak(t, l));

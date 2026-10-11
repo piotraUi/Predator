@@ -643,3 +643,7 @@ export function raycastParts(
   }
   return best;
 }
+
+/** do fizyki brył (rigid.ts): normalna powierzchni klocka i odległość od terenu */
+export const surfaceNormal = normal;
+export const terrainContact = terrainDist;
