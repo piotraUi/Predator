@@ -43,7 +43,8 @@ void main(){
   vec3 s = max(iMisc.xyz, vec3(1e-3));
   vN = mat3(M) * (aNrm / (s*s));
   vW = w.xyz; vUv = aUv; vCol = iCol; vMat = iMisc.w;
-  vL = uLightVP * w;
+  // przesunięcie wzdłuż normalnej przy liczeniu cienia - mniej plam na ścianach ustawionych bokiem do słońca
+  vL = uLightVP * vec4(w.xyz + normalize(vN) * 0.4, 1.0);
   gl_Position = uVP * w;
 }`;
 
@@ -133,9 +134,13 @@ void main(){
   float t = d.y;
   vec3 c = t > 0.0 ? mix(uHor, uTop, pow(t, 0.55)) : mix(uHor, uBot, pow(-t, 0.45));
   if (uStars > 0.5 && t > -0.05) {
-    vec2 sp = d.xz / (abs(d.y) + 0.35) * 90.0;
-    float s = h21(floor(sp));
-    c += vec3(step(0.985 - uStars*0.0, s) * (0.5 + 0.5*h21(floor(sp)+7.0))) * smoothstep(0.0, 0.2, t);
+    // małe, migoczące gwiazdy: w każdej kratce nieba najwyżej jedna, w losowym miejscu
+    vec2 sp = d.xz / (abs(d.y) + 0.35) * 70.0;
+    vec2 id = floor(sp), f = fract(sp) - 0.5;
+    float r = h21(id);
+    vec2 o = (vec2(h21(id + 3.1), h21(id + 7.7)) - 0.5) * 0.6;
+    float star = step(0.9, r) * smoothstep(0.075, 0.012, length(f - o)) * (0.55 + 0.45 * sin(uTime * 2.5 + r * 60.0));
+    c += vec3(star) * smoothstep(0.0, 0.2, t) * (0.6 + 0.4 * h21(id + 1.7));
   }
   float sd = dot(d, uSun);
   if (uSunDisc.w > 0.5) {
@@ -305,7 +310,8 @@ export class ApexRenderer {
   private fogEnd = 700;
   private fogStart = 250;
   private shadowCenter: V3 = [0, 0, 0];
-  private extent = 90;
+  /** połowa boku obszaru z cieniami (jednostki świata) */
+  extent = 90;
   private pending: (() => void)[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement) {
