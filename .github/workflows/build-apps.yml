@@ -46,6 +46,7 @@ jobs:
         with:
           name: Predator-Windows
           path: desktop/release/*.exe
+          retention-days: 3
 
   android:
     name: Android (.apk)
@@ -79,6 +80,7 @@ jobs:
         with:
           name: Predator-Android
           path: client/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 3
 
   ios:
     name: iOS (.ipa bez podpisu)
@@ -115,3 +117,4 @@ jobs:
         with:
           name: Predator-iOS
           path: client/ios/App/Predator-unsigned.ipa
+          retention-days: 3
