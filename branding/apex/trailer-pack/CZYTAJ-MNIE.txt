@@ -1,0 +1,29 @@
+TRAILER APEX - jak zrobic film na swoim komputerze
+==================================================
+
+Potrzebujesz (jednorazowo):
+  1. Node.js  (https://nodejs.org, wersja LTS)
+  2. ffmpeg   (Windows, w terminalu:  winget install Gyan.FFmpeg  - potem otworz NOWE okno)
+
+Uruchomienie (Windows):
+  Kliknij dwa razy  zrob-trailer.bat
+  (pierwszy raz pobierze Playwright i przegladarke Chromium, ok. 150 MB)
+
+Co sie dzieje:
+  - music.mjs      generuje muzyke (syntezator, bez probek) -> apex-music.wav
+  - render.mjs     rysuje 1590 klatek 1920x1080 silnikiem Apex na karcie graficznej -> folder frames
+  - ffmpeg         sklada klatki + muzyke -> Apex-trailer.mp4 (53 s, 30 kl/s)
+
+Na RTX 4060 render powinien trwac kilka minut. W oknie zobaczysz nazwe karty
+(np. "NVIDIA GeForce RTX 4060 Laptop GPU"). Jesli zobaczysz "SwiftShader", to
+render idzie na procesorze (wolno) - w laptopie z dwiema kartami ustaw dla
+Chrome / node.exe w Ustawieniach Windows -> Grafika "Wysoka wydajnosc".
+
+Opcje:
+  set WORKERS=3   (ile procesow renderuje naraz, domyslnie 2)
+  set HEADED=1    (pokazuje okno przegladarki)
+Przerwany render mozna wznowic - istniejace klatki sa pomijane.
+
+Zmiany w filmie: napisy i czasy sa w harness.ts (repozytorium: branding/apex/trailer),
+po zmianie zbuduj harness.js poleceniem:
+  npx esbuild branding/apex/trailer/harness.ts --bundle --format=iife --outfile=harness.js

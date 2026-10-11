@@ -1,0 +1,61 @@
+<!doctype html><html><meta charset="utf-8"><style>
+html,body{margin:0;width:1920px;height:1080px;background:#000;overflow:hidden;font-family:"Liberation Sans","DejaVu Sans",sans-serif;color:#fff}
+#c{position:absolute;inset:0;width:1920px;height:1080px}
+.ov{position:absolute;inset:0;pointer-events:none}
+#vig{background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%)}
+#shade{background:linear-gradient(to top,rgba(0,0,0,.55),rgba(0,0,0,0) 42%)}
+#bars:before,#bars:after{content:"";position:absolute;left:0;right:0;height:84px;background:#000}
+#bars:before{top:0}#bars:after{bottom:0}
+#flash{background:radial-gradient(circle at 50% 50%,#fff3d6,#ffb347 70%);mix-blend-mode:screen;opacity:0}
+#fade{background:#000;opacity:1}
+.cap{position:absolute;left:120px;bottom:150px;opacity:0;text-shadow:0 4px 24px rgba(0,0,0,.75)}
+.cap h2{margin:0;font-size:84px;line-height:1;letter-spacing:.02em;font-weight:800}
+.cap h2 em{font-style:normal;background:linear-gradient(90deg,#ffb347,#f76707);-webkit-background-clip:text;color:transparent}
+.cap p{margin:14px 0 0;font-size:34px;color:#e9e9ef;font-weight:500}
+#presents{left:0;right:0;bottom:auto;top:430px;text-align:center}
+#presents h2{font-size:40px;letter-spacing:.5em;font-weight:600;color:#ffd9b0}
+#title{position:absolute;left:0;right:0;top:250px;text-align:center;opacity:0}
+#title img{width:230px;height:230px;filter:drop-shadow(0 18px 40px rgba(247,103,7,.65))}
+#title h1{margin:10px 0 0;font-size:230px;letter-spacing:.16em;padding-left:.16em;line-height:1;font-weight:800;background:linear-gradient(180deg,#fff2d6,#ffb347 45%,#f76707);-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 12px 30px rgba(0,0,0,.6))}
+#tagline{position:absolute;left:0;right:0;top:760px;text-align:center;font-size:44px;letter-spacing:.06em;color:#fff;text-shadow:0 4px 24px #000;opacity:0}
+.chips{position:absolute;right:120px;top:150px;display:flex;flex-direction:column;gap:14px;align-items:flex-end}
+.chip{opacity:0;padding:14px 26px;border-radius:14px;font-size:32px;font-weight:700;background:rgba(15,15,20,.62);border:2px solid rgba(255,179,71,.65);backdrop-filter:blur(6px)}
+.chip i{font-style:normal;color:#ffb347;margin-right:10px}
+#stats{position:absolute;left:120px;top:130px;font-size:30px;padding:12px 24px;border-radius:12px;background:rgba(15,15,20,.7);border:1px solid rgba(255,255,255,.18);opacity:0;font-family:"DejaVu Sans Mono",monospace}
+#stats b{color:#ffb347}
+#phys{position:absolute;right:120px;top:150px;opacity:0;text-align:right;text-shadow:0 4px 24px #000}
+#phys .n{font-size:200px;font-weight:800;line-height:.9;color:#ffb347}#phys .l{font-size:30px;letter-spacing:.3em;text-transform:uppercase;color:#fff}
+#codepanel{position:absolute;right:120px;top:150px;width:900px;padding:26px 34px;border-radius:20px;background:rgba(10,10,16,.82);border:2px solid rgba(255,179,71,.55);opacity:0;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+#codepanel .bar{font-size:24px;color:#8d8d98;margin-bottom:12px;letter-spacing:.1em}
+#code{margin:0;font:28px/1.5 "DejaVu Sans Mono",monospace;color:#e6e6ee;white-space:pre}
+.k{color:#ff9a3c}.s{color:#9be37a}.n{color:#7cc4ff}
+#end{position:absolute;inset:0;opacity:0;background:radial-gradient(circle at 50% 50%,rgba(0,0,0,.35),rgba(0,0,0,.72));text-align:center}
+#endlogo{position:absolute;left:0;right:0;top:210px}
+#endlogo img{width:200px;height:200px;filter:drop-shadow(0 18px 40px rgba(247,103,7,.7))}
+#endlogo h1{margin:8px 0 0;font-size:190px;letter-spacing:.16em;padding-left:.16em;font-weight:800;line-height:1;background:linear-gradient(180deg,#fff2d6,#ffb347 45%,#f76707);-webkit-background-clip:text;color:transparent}
+#end .t1{position:absolute;left:0;right:0;top:700px;font-size:50px;font-weight:600}
+#sub2{position:absolute;left:0;right:0;top:790px;font-size:34px;color:#ffd9b0;opacity:0;letter-spacing:.04em}
+#sub2 b{color:#fff;background:rgba(247,103,7,.35);padding:6px 16px;border-radius:10px;border:1px solid rgba(255,179,71,.7)}
+</style><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div class="ov" id="vig"></div>
+<div class="ov" id="shade"></div>
+<div class="ov" id="flash"></div>
+<div id="lines" class="ov">
+  <div class="cap" id="presents"><h2>PREDATOR PRZEDSTAWIA</h2></div>
+  <div id="title"><img src="apex-icon.svg"><h1>APEX</h1></div>
+  <div id="tagline">Silnik Predatora. Szczyt tego, co zbudujesz.</div>
+  <div class="cap" id="c1"><h2>Własny silnik. <em>Od zera.</em></h2><p>Napisany w całości dla Predatora. Żadnych cudzych bibliotek.</p></div>
+  <div class="chips"><div class="chip" id="ch1"><i>▲</i>WebGL2</div><div class="chip" id="ch2"><i>▲</i>Cienie w czasie rzeczywistym</div><div class="chip" id="ch3"><i>▲</i>Niebo, mgła i woda w shaderze</div><div class="chip" id="ch4"><i>▲</i>Setki klocków jednym wywołaniem</div></div>
+  <div id="stats"></div>
+  <div class="cap" id="c2"><h2>Fizyka, którą <em>czujesz</em></h2><p>Kule się toczą i odbijają. Pudła się ślizgają. Gracze je popychają.</p></div>
+  <div id="phys"><div class="n" id="physcount">0</div><div class="l">brył z fizyką</div></div>
+  <div class="cap" id="c3"><h2>Dzień. Zachód. <em>Noc.</em></h2><p>Światło, cienie i niebo zmieniają się na żywo.</p></div>
+  <div class="cap" id="c4"><h2>Wszyscy razem. <em>Jeden świat.</em></h2><p>Multiplayer na serwerze Predatora.</p></div>
+  <div class="cap" id="c5"><h2>Skrypty <em>gracza</em> i serwera</h2><p>Lua po obu stronach. Serwer pilnuje reguł.</p></div>
+  <div id="codepanel"><div class="bar">● ● ●  skrypt.lua</div><pre id="code"></pre></div>
+</div>
+<div class="ov" id="end"><div id="endlogo"><img src="apex-icon.svg"><h1>APEX</h1></div><div class="t1">Już w Predatorze. Eksperymentalnie.</div><div id="sub2">Ustawienia → <b>Silnik gier 3D</b> → <b>Apex</b></div></div>
+<div class="ov" id="bars"></div>
+<div class="ov" id="fade"></div>
+<script src="harness.js"></script></body></html>
