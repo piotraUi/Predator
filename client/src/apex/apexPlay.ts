@@ -5,6 +5,7 @@ import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride, type RideHost } from "../game/vehicles.ts";
 import { CollisionWorld, PLAYER_HEIGHT, PLAYER_RADIUS, rayBox, raycastParts, rotationMatrix, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
 import { WeatherAudio } from "./weatherAudio.ts";
+import { buildGrass, scatterTrees } from "./nature.ts";
 import { findSkybox } from "../../../shared/skybox.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
 import type { ActionAnim, Anim, Atmosphere, WeatherId, Avatar, ChatMsg, NetPlayer, Part, ToolDef } from "../../../shared/types.ts";
@@ -84,10 +85,19 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const me = session.user ?? { id: 0, username: "Gracz", coins: 0, avatar: DEFAULT_AVATAR, inventory: [] };
 
   const rend = new ApexRenderer(canvas);
+  if (localStorage.getItem("apexDebug")) (window as unknown as Record<string, unknown>).__apexRend = rend;
   // jakość grafiki: stały poziom albo automatyczny (dobór do urządzenia i obniżanie, gdy gra zwalnia)
   const detected = detectTier(rend.gl);
   let gov = new QualityGovernor(settings.quality, detected);
-  const applyQuality = () => rend.setQuality(TIERS[gov.tier], settings.apexBloom);
+  const applyQuality = () => {
+    let extra = {};
+    try {
+      extra = JSON.parse(localStorage.getItem("apexQ") ?? "{}");
+    } catch {
+      /* brak */
+    }
+    rend.setQuality({ ...TIERS[gov.tier], ...extra }, settings.apexBloom);
+  };
   applyQuality();
   const fx = new Particles();
   const padNav = new PadMenuNav();
@@ -160,6 +170,27 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const terrain = TerrainGrid.decode(init.world.terrain);
   collisions.terrain = terrain;
   rend.setTerrain(terrain);
+  // przyroda: trawa (kępki w instancjach) i drzewa (zwykłe instancjonowane klocki)
+  if (terrain) {
+    const nat = init.world.nature;
+    if (nat?.grass !== false) rend.setGrass(buildGrass(terrain));
+    if (nat?.trees) {
+      const cells = new Map<string, Part[]>();
+      for (const p of init.world.parts) {
+        if (p.sx > 300 || p.sz > 300) continue;
+        for (let gx = Math.floor((p.x - p.sx / 2 - 3) / 16); gx <= Math.floor((p.x + p.sx / 2 + 3) / 16); gx++)
+          for (let gz = Math.floor((p.z - p.sz / 2 - 3) / 16); gz <= Math.floor((p.z + p.sz / 2 + 3) / 16); gz++) {
+            const k = gx + "," + gz;
+            const a = cells.get(k);
+            if (a) a.push(p);
+            else cells.set(k, [p]);
+          }
+      }
+      const blocked = (x: number, z: number) =>
+        (cells.get(Math.floor(x / 16) + "," + Math.floor(z / 16)) ?? []).some((p) => Math.abs(x - p.x) < p.sx / 2 + 3 && Math.abs(z - p.z) < p.sz / 2 + 3);
+      for (const t of scatterTrees(terrain, nat.trees, blocked)) rend.addPart(t, rotationMatrix(0, 0, 0));
+    }
+  }
   const light = { ...DEFAULT_LIGHT, ...(init.world.light ?? {}) };
   let skyColor = init.world.skyColor;
   const setSkybox = (id: string | null | undefined) => rend.setSky(skyColor, findSkybox(id));

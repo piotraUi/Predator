@@ -27,6 +27,7 @@ import type {
   WorldScript,
   WorldLight,
   Atmosphere,
+  Nature,
   WeatherId,
   WorldSound,
 } from "./types.ts";
@@ -507,8 +508,8 @@ export const MAX_SOUND_CHARS = 4_200_000;
 const SOUND_URL_RE = /^(data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+|\/game-assets\/[A-Za-z0-9_./-]+)$/;
 
 /** dźwięki, muzyka i światło gry 3D */
-export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, "sounds" | "music" | "light" | "atmosphere"> {
-  const out: Pick<WorldData, "sounds" | "music" | "light" | "atmosphere"> = {};
+export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, "sounds" | "music" | "light" | "atmosphere" | "nature"> {
+  const out: Pick<WorldData, "sounds" | "music" | "light" | "atmosphere" | "nature"> = {};
   const sounds: WorldSound[] = [];
   let total = 0;
   for (const raw of Array.isArray(w.sounds) ? w.sounds.slice(0, MAX_SOUNDS) : []) {
@@ -531,6 +532,8 @@ export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, 
   }
   const atm = sanitizeAtmosphere(w.atmosphere);
   if (atm) out.atmosphere = atm;
+  const nat = sanitizeNature(w.nature);
+  if (nat) out.nature = nat;
   return out;
 }
 
@@ -543,5 +546,15 @@ export function sanitizeAtmosphere(raw: unknown): Atmosphere | undefined {
   if (typeof a.cycle === "number" && a.cycle > 0) out.cycle = num(a.cycle, 20, 7200, 600);
   if (typeof a.weather === "string" && (WEATHERS as readonly string[]).includes(a.weather) && a.weather !== "clear") out.weather = a.weather as WeatherId;
   if (typeof a.wind === "number") out.wind = num(a.wind, 0, 1, 0.15);
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** trawa i drzewa: tylko to, co różni się od domyślnych wartości */
+export function sanitizeNature(raw: unknown): Nature | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const a = raw as Record<string, unknown>;
+  const out: Nature = {};
+  if (a.grass === false) out.grass = false;
+  if (typeof a.trees === "number" && a.trees > 0) out.trees = num(a.trees, 0, 1, 0);
   return Object.keys(out).length ? out : undefined;
 }

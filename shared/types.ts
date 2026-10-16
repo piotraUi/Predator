@@ -219,6 +219,8 @@ export interface WorldData {
   light?: WorldLight;
   /** pora dnia, pogoda i wiatr (Apex) */
   atmosphere?: Atmosphere;
+  /** trawa i drzewa na terenie (Apex) */
+  nature?: Nature;
   /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste;
    *  "html" = gra HTML (strona w ramce, nie gra Predatora) - kod w polu html */
   mode?: "3d" | "2d" | "html";
@@ -300,6 +302,13 @@ export interface Atmosphere {
   weather?: WeatherId;
   /** siła wiatru 0-1 (kołysze drzewa i trawę, znosi deszcz) */
   wind?: number;
+}
+/** Przyroda (Apex): trawa na trawiastym terenie i drzewa rozsiane masowo po terenie */
+export interface Nature {
+  /** trawa na terenie (brak = włączona; false = wyłączona) */
+  grass?: boolean;
+  /** gęstość drzew 0-1 (brak/0 = bez drzew) */
+  trees?: number;
 }
 export const DEFAULT_ATMOSPHERE: Required<Atmosphere> = { hour: 12, cycle: 0, weather: "clear", wind: 0.15 };
 export const DEFAULT_LIGHT: WorldLight = { brightness: 1, fog: 0, flashlight: false };

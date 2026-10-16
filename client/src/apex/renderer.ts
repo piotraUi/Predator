@@ -3,6 +3,7 @@
 import { SKYBOXES, type SkyboxDef } from "../../../shared/skybox.ts";
 import type { WeatherId } from "../../../shared/types.ts";
 import { OVERCAST, skyAt } from "./atmosphere.ts";
+import { GRASS_CHUNK } from "./nature.ts";
 import { TERRAIN_MATERIALS, type TerrainGrid } from "../../../shared/terrain.ts";
 import type { Part, PartShape } from "../../../shared/types.ts";
 import { boxMesh, cylinderMesh, frustumMesh, hemiMesh, sphereMesh, torusMesh, wedgeMesh, type Mesh } from "./geometry.ts";
@@ -76,7 +77,22 @@ uniform vec3 uFogCol; uniform vec2 uFog; uniform float uTime; uniform float uBev
 uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadow2; uniform float uShadowTexel; uniform float uCasc;
 uniform int uNL; uniform vec4 uLP[8]; uniform vec4 uLC[8]; uniform vec4 uLD[8];
 uniform float uNeon;
+uniform float uClipY; uniform vec3 uEnvTop; uniform vec3 uEnvHor; uniform sampler2D uRefl; uniform float uReflOn; uniform vec2 uRes;
 out vec4 o;
+// otoczenie odbijane w wodzie, szkle i metalu: niebo, słońce
+vec3 envAt(vec3 R){
+  vec3 c = R.y > 0.0 ? mix(uEnvHor, uEnvTop, pow(R.y, 0.55)) : uEnvHor * 0.55;
+  return c + uSunCol * pow(max(dot(R, uSun), 0.0), 220.0) * 4.0;
+}
+// fale: nachylenie powierzchni z kilku sinusów w różnych kierunkach
+vec2 waveSlope(vec3 w){
+  vec2 s = vec2(0.0);
+  s += vec2(0.8, 0.6) * cos(dot(w.xz, vec2(0.8, 0.6)) * 0.9 + uTime * 1.3) * 0.045;
+  s += vec2(-0.5, 0.86) * cos(dot(w.xz, vec2(-0.5, 0.86)) * 1.7 + uTime * 1.7) * 0.03;
+  s += vec2(0.95, -0.3) * cos(dot(w.xz, vec2(0.95, -0.3)) * 3.1 + uTime * 2.3) * 0.018;
+  s += vec2(-0.2, -0.98) * cos(dot(w.xz, vec2(-0.2, -0.98)) * 5.3 + uTime * 3.1) * 0.01;
+  return s;
+}
 const vec2 PD[12] = vec2[](vec2(-0.326,-0.406), vec2(-0.840,-0.074), vec2(-0.696,0.457), vec2(-0.203,0.621), vec2(0.962,-0.195), vec2(0.473,-0.480),
   vec2(0.519,0.767), vec2(0.185,-0.893), vec2(0.507,0.064), vec2(0.896,0.412), vec2(-0.322,-0.933), vec2(-0.792,-0.598));
 float hash2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -109,6 +125,7 @@ float shadowAt(vec3 n){
   return s;
 }
 void main(){
+  if (vW.y < uClipY) discard;
   vec3 n = normalize(vN);
   if (!gl_FrontFacing) n = -n;
   vec3 base = vCol.rgb;
@@ -141,14 +158,30 @@ void main(){
         lit += uLC[i].rgb * max(dot(n, L), 0.0) * att * spot;
       }
     }
+    float envMix = 0.0; vec3 env = vec3(0.0);
     if (mat > 3.5 && mat < 4.5) {
-      float w1 = sin(vW.x*0.9 + uTime*1.3) + sin(vW.z*1.1 - uTime*1.1) + sin((vW.x+vW.z)*0.5 + uTime*0.7);
-      base *= 0.92 + 0.08*w1;
+      // woda: fale zmieniają normalną, odbicie nieba (albo prawdziwe odbicie otoczenia) rośnie przy małym kącie
+      vec2 sl = waveSlope(vW);
+      n = normalize(vec3(-sl.x, 1.0, -sl.y));
+      float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n,V),0.0), 4.0);
+      vec3 R = reflect(-V, n);
+      env = envAt(R);
+      if (uReflOn > 0.5) env = texture(uRefl, gl_FragCoord.xy / uRes + n.xz * 0.05).rgb;
+      envMix = clamp(fres * 1.1 + 0.1, 0.0, 0.85);
+      alpha = clamp(alpha + fres * 0.35, 0.0, 0.94);
+    } else if (mat > 2.5 && mat < 3.5) {
+      // szkło odbija otoczenie
       float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
-      base = mix(base, uSky, fres*0.5);
-      alpha = clamp(alpha + fres*0.25, 0.0, 0.92);
+      env = envAt(reflect(-V, n));
+      envMix = 0.16 + 0.55 * fres;
+      alpha = clamp(alpha + fres * 0.3, 0.0, 1.0);
+    } else if (mat > 1.5 && mat < 2.5) {
+      float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
+      env = envAt(reflect(-V, n)) * base;
+      envMix = 0.3 + 0.4 * fres;
     }
     col = base * lit;
+    if (envMix > 0.0) col = mix(col, env, envMix);
     if (uBevel > 0.5 && mat < 3.5) {
       vec2 e = min(vUv, 1.0 - vUv);
       float edge = smoothstep(0.0, 0.035, min(e.x,e.y));
@@ -213,6 +246,39 @@ void main(){
   }
   o = vec4(c, 1.0);
 }`;
+
+const GRASS_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec4 aT;
+uniform mat4 uVP; uniform vec3 uCam; uniform float uTime; uniform float uWind; uniform float uRange; uniform float uDensity; uniform vec2 uFog;
+out vec3 vC; out float vF;
+void main(){
+  int blade = gl_VertexID / 3;
+  int k = gl_VertexID - blade * 3;
+  float seed = aT.w;
+  float ang = seed * 6.2832 + float(blade) * 2.094;
+  vec2 dir = vec2(cos(ang), sin(ang));
+  float d = distance(aT.xz, uCam.xz);
+  float fade = 1.0 - smoothstep(uRange * 0.65, uRange, d);
+  float keep = step(fract(seed * 7.31), uDensity);
+  float hgt = (0.5 + 0.8 * fract(seed * 13.7)) * fade * keep;
+  float side = k == 0 ? -1.0 : (k == 1 ? 1.0 : 0.0);
+  float tip = k == 2 ? 1.0 : 0.0;
+  vec3 p = aT.xyz;
+  p.xz += dir * side * 0.17 * keep;
+  p.y += tip * hgt;
+  float sw = sin(uTime * 1.8 + aT.x * 0.35 + aT.z * 0.27 + seed * 6.0);
+  p.xz += vec2(0.55 * sw + 0.3, 0.25 * sw) * uWind * tip * hgt;
+  p.xz += dir.yx * vec2(1.0, -1.0) * 0.18 * tip * hgt;
+  vC = mix(vec3(0.17, 0.36, 0.11), vec3(0.46, 0.74, 0.23), tip) * (0.8 + 0.4 * fract(seed * 3.3));
+  float dd = distance(p, uCam);
+  vF = clamp((dd - uFog.x) / max(uFog.y - uFog.x, 1.0), 0.0, 1.0);
+  gl_Position = uVP * vec4(p, 1.0);
+}`;
+const GRASS_FS = `#version 300 es
+precision highp float;
+in vec3 vC; in float vF; uniform vec3 uLit; uniform vec3 uFogCol; out vec4 o;
+void main(){ o = vec4(mix(vC * uLit, uFogCol, vF * vF), 1.0); }`;
 
 const WEATHER_VS = `#version 300 es
 precision highp float;
@@ -366,8 +432,8 @@ void main(){
       float sky = texture(uDepth, uv).r >= 0.99999 ? 1.0 : 0.0;
       acc += sky * wgt; wgt *= 0.95; uv += stp;
     }
-    float ray = acc / 28.0 * smoothstep(1.4, 0.0, dist);
-    c += uSunCol * ray * 0.55 * uSunScr.z;
+    float fall = pow(clamp(1.0 - dist * 0.9, 0.0, 1.0), 2.0);
+    c += uSunCol * (acc / 28.0) * fall * 0.5 * uSunScr.z;
   }
   // błysk pioruna
   c += vec3(0.7, 0.75, 0.95) * uGrade.w * 0.25;
@@ -601,6 +667,10 @@ export class ApexRenderer {
   private planes = new Float32Array(24);
   private terrain: GpuGrid | null = null;
   private water: GpuGrid | null = null;
+  /** poziom wody terenu (do odbicia lustrzanego) */
+  private waterY: number | null = null;
+  private refl: Target | null = null;
+  reflActive = false;
   private vp: Mat4 = new Float32Array(16);
   private invVp: Mat4 = new Float32Array(16);
   private lightVp: Mat4 = new Float32Array(16);
@@ -1234,6 +1304,7 @@ export class ApexRenderer {
     if (this.terrain) gl.deleteVertexArray(this.terrain.vao);
     if (this.water) gl.deleteVertexArray(this.water.vao);
     this.terrain = this.water = null;
+    this.waterY = null;
     if (!g) return;
     const n = g.n;
     const pos: number[] = [];
@@ -1283,6 +1354,12 @@ export class ApexRenderer {
         wv += 4;
       }
     if (wi.length) this.water = this.buildVao(wp, wc, wi);
+    // poziom wody do odbicia: najczęstszy w siatce
+    const counts = new Map<number, number>();
+    for (const lv of g.w) if (!Number.isNaN(lv)) counts.set(Math.round(lv * 20) / 20, (counts.get(Math.round(lv * 20) / 20) ?? 0) + 1);
+    let best: number | null = null, bc = 0;
+    for (const [lv, n2] of counts) if (n2 > bc) ((best = lv), (bc = n2));
+    this.waterY = best;
   }
 
   /** siatka z kolorem na wierzchołek (atrybuty 7 i 8 nie są instancjonowane) */
@@ -1430,6 +1507,68 @@ export class ApexRenderer {
   }
   private weatherProg: Program | null = null;
 
+  // ---------- trawa ----------
+  private grassProg: Program | null = null;
+  private grass: { cx: number; cz: number; n: number; vao: WebGLVertexArrayObject; buf: WebGLBuffer }[] = [];
+  setGrass(chunks: { cx: number; cz: number; data: Float32Array }[]) {
+    const gl = this.gl;
+    for (const c of this.grass) {
+      gl.deleteVertexArray(c.vao);
+      gl.deleteBuffer(c.buf);
+    }
+    this.grass = chunks.map((c) => {
+      const vao = gl.createVertexArray()!;
+      gl.bindVertexArray(vao);
+      const buf = gl.createBuffer()!;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, c.data, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0);
+      gl.vertexAttribDivisor(0, 1);
+      gl.bindVertexArray(null);
+      return { cx: c.cx, cz: c.cz, n: c.data.length / 4, vao, buf };
+    });
+  }
+  private drawGrass(vp: Mat4, eye: V3, fc: number[], light: number) {
+    const q = this.q;
+    if (!this.grass.length || q.grass <= 0) return;
+    const gl = this.gl;
+    this.grassProg ??= new Program(gl, GRASS_VS, GRASS_FS);
+    const g = this.grassProg;
+    gl.useProgram(g.p);
+    gl.uniformMatrix4fv(g.loc("uVP"), false, vp);
+    gl.uniform3fv(g.loc("uCam"), eye);
+    gl.uniform1f(g.loc("uTime"), this.time);
+    const wind = (this.atm?.wind ?? 0.15) * (this.atm?.weather === "storm" ? 1.8 : 1);
+    gl.uniform1f(g.loc("uWind"), 0.35 + wind * 1.3);
+    gl.uniform1f(g.loc("uRange"), q.grassRange);
+    gl.uniform1f(g.loc("uDensity"), q.grass);
+    gl.uniform2f(g.loc("uFog"), this.fogS, this.fogE);
+    const sk = this.sky.tint, up = Math.max(0.15, this.sky.sunDir[1]);
+    gl.uniform3f(g.loc("uLit"), (sk[0] * 0.75 + 0.2 * up) * light, (sk[1] * 0.75 + 0.2 * up) * light, (sk[2] * 0.75 + 0.2 * up) * light);
+    gl.uniform3fv(g.loc("uFogCol"), fc);
+    gl.disable(gl.CULL_FACE);
+    const pl = this.planes, R = q.grassRange + GRASS_CHUNK;
+    for (const c of this.grass) {
+      const mx = (c.cx + 0.5) * GRASS_CHUNK, mz = (c.cz + 0.5) * GRASS_CHUNK;
+      if (Math.hypot(mx - eye[0], mz - eye[2]) > R + GRASS_CHUNK * 0.7) continue;
+      let vis = true;
+      for (let k = 0; k < 6 && vis; k++) {
+        const r = GRASS_CHUNK * 0.75 + 3;
+        // środek kwadratu na wysokości oka - wystarczy do odrzucenia tego, co za plecami
+        if (pl[k * 4] * mx + pl[k * 4 + 1] * eye[1] + pl[k * 4 + 2] * mz + pl[k * 4 + 3] < -r - 12) vis = false;
+      }
+      if (!vis) continue;
+      gl.bindVertexArray(c.vao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 9, c.n);
+      this.stats.draws++;
+      this.stats.instances += c.n;
+    }
+    gl.bindVertexArray(null);
+    gl.enable(gl.CULL_FACE);
+    gl.useProgram(this.prog.p);
+  }
+
   // ---------- światła dynamiczne ----------
 
   private lights: DynLight[] = [];
@@ -1491,6 +1630,73 @@ export class ApexRenderer {
     const z = m[2] * cx + m[6] * cy + m[10] + m[14];
     const w = m[3] * cx + m[7] * cy + m[11] + m[15];
     return norm3([x / w - eye[0], y / w - eye[1], z / w - eye[2]]);
+  }
+
+  /** niebo i nieprzezroczysta część sceny (też do odbicia w wodzie: mirrorY = poziom wody, wszystko pod nim jest odcinane) */
+  private drawOpaque(eye: V3, vp: Mat4, invVp: Mat4, light: number, fc: number[], sun: V3, casc2: boolean, mirrorY: number | null) {
+    const gl = this.gl, sky = this.sky, wCover = this.cover;
+    // niebo
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+    const sp = this.skyProg;
+    gl.useProgram(sp.p);
+    gl.uniformMatrix4fv(sp.loc("uInvVP"), false, invVp);
+    gl.uniform3fv(sp.loc("uCam"), eye);
+    // ciemne światy (horror): niebo i mgła ciemnieją razem z jasnością
+    const dim = 0.12 + 0.88 * Math.min(1, light);
+    const sc3 = (c: number[]) => [c[0] * dim, c[1] * dim, c[2] * dim];
+    gl.uniform3fv(sp.loc("uTop"), sc3(sky.top));
+    gl.uniform3fv(sp.loc("uHor"), sc3(sky.hor));
+    gl.uniform3fv(sp.loc("uBot"), sc3(sky.bot));
+    gl.uniform3fv(sp.loc("uSun"), sun);
+    gl.uniform4fv(sp.loc("uSunDisc"), sky.sunDisc);
+    gl.uniform1f(sp.loc("uStars"), sky.stars);
+    gl.uniform4fv(sp.loc("uClouds"), sky.clouds);
+    gl.uniform1f(sp.loc("uCover"), wCover);
+    gl.uniform1f(sp.loc("uTime"), this.time);
+    gl.bindVertexArray(null);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+
+    const p = this.prog;
+    gl.useProgram(p.p);
+    gl.uniformMatrix4fv(p.loc("uVP"), false, vp);
+    gl.uniformMatrix4fv(p.loc("uLightVP"), false, this.lightVp);
+    gl.uniformMatrix4fv(p.loc("uLightVP2"), false, this.lightVp2);
+    gl.uniform1f(p.loc("uCasc"), casc2 ? 2 : 1);
+    gl.uniform3fv(p.loc("uCam"), eye);
+    gl.uniform3fv(p.loc("uSun"), sun);
+    const sc = sky.tint;
+    gl.uniform3f(p.loc("uSunCol"), sc[0] * light, sc[1] * light, sc[2] * light);
+    gl.uniform3f(p.loc("uSky"), sc[0] * light, sc[1] * light, sc[2] * light);
+    gl.uniform3f(p.loc("uGround"), sky.ground[0] * light, sky.ground[1] * light, sky.ground[2] * light);
+    gl.uniform3fv(p.loc("uFogCol"), fc);
+    gl.uniform2f(p.loc("uFog"), this.fogS, this.fogE);
+    gl.uniform1f(p.loc("uTime"), this.time);
+    gl.uniform1f(p.loc("uClipY"), mirrorY ?? -1e9);
+    gl.uniform1i(p.loc("uRefl"), 5);
+    gl.uniform3fv(p.loc("uEnvTop"), sc3(sky.top));
+    gl.uniform3fv(p.loc("uEnvHor"), sc3(sky.hor));
+    gl.uniform1f(p.loc("uShadowOn"), this.shadows && light > 0.1 ? 1 : 0);
+    gl.uniform1f(p.loc("uShadowTexel"), 1 / this.shadowSize);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex0);
+    gl.uniform1i(p.loc("uShadow"), 0);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    gl.uniform1i(p.loc("uShadow2"), 4);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1f(p.loc("uBevel"), 0);
+    gl.uniform1i(p.loc("uTexD"), 2);
+    gl.uniform1f(p.loc("uUseTex"), 0);
+    gl.uniform1f(p.loc("uNeon"), this.postReady() ? 1.9 : 1.15);
+    this.uploadLights(p);
+    if (this.terrain) this.drawTerrain(this.terrain);
+    this.drawBatches(this.staticBatches, false, p);
+    this.drawBatches(this.frameBatches, false, p);
+    if (mirrorY === null) this.drawGrass(vp, eye, fc, light);
+    if (mirrorY === null) this.drawVoxels(["opaque", "cutout", "glow"], eye, fc);
   }
 
   render(look: Look) {
@@ -1563,6 +1769,43 @@ export class ApexRenderer {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
+    // --- odbicie w wodzie: scena z lustrzanej kamery do małej tekstury (tylko przy wysokiej jakości) ---
+    this.reflActive = false;
+    if (this.q.reflections && this.waterY !== null && this.water && this.post && look.eye[1] > this.waterY + 0.2) {
+      const wy = this.waterY;
+      const rw = Math.max(2, this.width >> 1), rh = Math.max(2, this.height >> 1);
+      if (!this.refl || this.refl.w !== rw || this.refl.h !== rh) {
+        if (this.refl) {
+          gl.deleteFramebuffer(this.refl.fbo);
+          gl.deleteTexture(this.refl.tex);
+        }
+        this.refl = this.makeTarget(rw, rh, true);
+      }
+      if (this.refl) {
+        const mEye: V3 = [look.eye[0], 2 * wy - look.eye[1], look.eye[2]];
+        const mTarget: V3 = [look.target[0], 2 * wy - look.target[1], look.target[2]];
+        const mView = new Float32Array(16), mVp = new Float32Array(16), mInv = new Float32Array(16);
+        lookAt(mEye, mTarget, [0, -1, 0], mView);
+        multiply(this.proj, mView, mVp);
+        invert(mVp, mInv);
+        gl.activeTexture(gl.TEXTURE5);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.refl.fbo);
+        gl.viewport(0, 0, rw, rh);
+        const fc0 = [sky.fog[0] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[1] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[2] * (0.12 + 0.88 * Math.min(1, light))];
+        gl.clearColor(fc0[0], fc0[1], fc0[2], 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+        // kamera lustrzana odwraca kolejność wierzchołków: silnik rysuje z frontFace(CW), więc w odbiciu jest CCW
+        gl.frontFace(gl.CCW);
+        this.drawOpaque(mEye, mVp, mInv, light, fc0, sun, casc2, wy - 0.05);
+        gl.frontFace(gl.CW);
+        this.reflActive = true;
+      }
+    }
+
     // --- scena ---
     const pst = this.bloom && !this.postFailed ? this.post : null;
     gl.bindFramebuffer(gl.FRAMEBUFFER, pst ? (pst.ms ?? pst.scene.fbo) : null);
@@ -1572,63 +1815,8 @@ export class ApexRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
-    // niebo
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
-    const sp = this.skyProg;
-    gl.useProgram(sp.p);
-    gl.uniformMatrix4fv(sp.loc("uInvVP"), false, this.invVp);
-    gl.uniform3fv(sp.loc("uCam"), look.eye);
-    // ciemne światy (horror): niebo i mgła ciemnieją razem z jasnością
-    const dim = 0.12 + 0.88 * Math.min(1, light);
-    const sc3 = (c: number[]) => [c[0] * dim, c[1] * dim, c[2] * dim];
-    gl.uniform3fv(sp.loc("uTop"), sc3(sky.top));
-    gl.uniform3fv(sp.loc("uHor"), sc3(sky.hor));
-    gl.uniform3fv(sp.loc("uBot"), sc3(sky.bot));
-    gl.uniform3fv(sp.loc("uSun"), sun);
-    gl.uniform4fv(sp.loc("uSunDisc"), sky.sunDisc);
-    gl.uniform1f(sp.loc("uStars"), sky.stars);
-    gl.uniform4fv(sp.loc("uClouds"), sky.clouds);
-    gl.uniform1f(sp.loc("uCover"), wCover);
-    gl.uniform1f(sp.loc("uTime"), this.time);
-    gl.bindVertexArray(null);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
-
+    this.drawOpaque(look.eye, this.vp, this.invVp, light, fc, sun, casc2, null);
     const p = this.prog;
-    gl.useProgram(p.p);
-    gl.uniformMatrix4fv(p.loc("uVP"), false, this.vp);
-    gl.uniformMatrix4fv(p.loc("uLightVP"), false, this.lightVp);
-    gl.uniformMatrix4fv(p.loc("uLightVP2"), false, this.lightVp2);
-    gl.uniform1f(p.loc("uCasc"), casc2 ? 2 : 1);
-    gl.uniform3fv(p.loc("uCam"), look.eye);
-    gl.uniform3fv(p.loc("uSun"), sun);
-    const sc = sky.tint;
-    gl.uniform3f(p.loc("uSunCol"), sc[0] * light, sc[1] * light, sc[2] * light);
-    gl.uniform3f(p.loc("uSky"), sc[0] * light, sc[1] * light, sc[2] * light);
-    gl.uniform3f(p.loc("uGround"), sky.ground[0] * light, sky.ground[1] * light, sky.ground[2] * light);
-    gl.uniform3fv(p.loc("uFogCol"), fc);
-    gl.uniform2f(p.loc("uFog"), this.fogS, this.fogE);
-    gl.uniform1f(p.loc("uTime"), this.time);
-    gl.uniform1f(p.loc("uShadowOn"), this.shadows && light > 0.1 ? 1 : 0);
-    gl.uniform1f(p.loc("uShadowTexel"), 1 / this.shadowSize);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex0);
-    gl.uniform1i(p.loc("uShadow"), 0);
-    gl.activeTexture(gl.TEXTURE4);
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
-    gl.uniform1i(p.loc("uShadow2"), 4);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.uniform1f(p.loc("uBevel"), 0);
-    gl.uniform1i(p.loc("uTexD"), 2);
-    gl.uniform1f(p.loc("uUseTex"), 0);
-    gl.uniform1f(p.loc("uNeon"), this.postReady() ? 1.9 : 1.15);
-    this.uploadLights(p);
-    if (this.terrain) this.drawTerrain(this.terrain);
-    this.drawBatches(this.staticBatches, false, p);
-    this.drawBatches(this.frameBatches, false, p);
-    this.drawVoxels(["opaque", "cutout", "glow"], look.eye, fc);
     gl.useProgram(p.p);
     // przezroczyste
     gl.enable(gl.BLEND);
@@ -1637,6 +1825,15 @@ export class ApexRenderer {
     gl.disable(gl.CULL_FACE);
     gl.uniform1f(p.loc("uBevel"), 0);
     gl.uniform1f(p.loc("uUseTex"), 0);
+    gl.uniform1f(p.loc("uReflOn"), this.reflActive ? 1 : 0);
+    gl.uniform2f(p.loc("uRes"), this.width, this.height);
+    gl.uniform1f(p.loc("uClipY"), -1e9);
+    if (this.reflActive && this.refl) {
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, this.refl.tex);
+      gl.uniform1i(p.loc("uRefl"), 5);
+      gl.activeTexture(gl.TEXTURE0);
+    }
     if (this.water) this.drawTerrain(this.water);
     this.drawBatches(this.staticBatches, true, p);
     this.drawBatches(this.frameBatches, true, p);

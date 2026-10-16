@@ -16,7 +16,7 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
-import type { AnimDef, Atmosphere, CharacterDef, Part, PartKind, PartShape, ToolDef, WeatherId, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
+import type { AnimDef, Atmosphere, CharacterDef, Nature, Part, PartKind, PartShape, ToolDef, WeatherId, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
 import { MAX_PLAYERS_LIMIT, PART_EMITTERS, PART_TEXTURES, WEATHERS } from "../../../shared/types.ts";
 import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
 import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
@@ -677,7 +677,7 @@ export function studioScreen(
 
     // ---------- zmiany i cofanie ----------
     // cofanie obejmuje klocki, teren i to, co zmienia asystent AI (skrypty, GUI, miejsca, narzędzia, ustawienia)
-    const UNDO_KEYS = ["scripts", "guis", "places", "startPlace", "tools", "badges", "skyColor", "skybox", "light", "atmosphere", "gravity", "pvp", "genre", "playerCharacter"] as const;
+    const UNDO_KEYS = ["scripts", "guis", "places", "startPlace", "tools", "badges", "skyColor", "skybox", "light", "atmosphere", "nature", "gravity", "pvp", "genre", "playerCharacter"] as const;
     const snapshot = () => JSON.stringify({ parts: data.parts, terrain: data.terrain ?? null, extra: Object.fromEntries(UNDO_KEYS.map((k) => [k, data[k] ?? null])) });
     function pushUndo() {
       undo.push(snapshot());
@@ -2852,6 +2852,15 @@ export function studioScreen(
       );
       syncAt();
       const atEl = h("div", { class: "prop" }, h("label", { class: "check" }, atOn, h("span", null, "🌤️ Pora dnia i pogoda (Apex)")), atBox);
+      // przyroda (Apex): trawa na terenie i drzewa rozsiane masowo
+      const natGrass = h("input", { type: "checkbox", checked: data.nature?.grass !== false });
+      const natTrees = h("input", { type: "range", min: "0", max: "1", step: "0.05", value: String(data.nature?.trees ?? 0) });
+      const natEl = h(
+        "div",
+        { class: "prop" },
+        h("label", { class: "check" }, natGrass, h("span", null, "🌿 Trawa na trawiastym terenie (Apex)")),
+        h("label", null, "🌳 Drzewa rozsiane po terenie (0 = brak, 1 = las)", natTrees),
+      );
       const grav = h("input", { type: "number", min: "10", max: "500", step: "1", value: String(data.gravity) });
       const pub = h("input", { type: "checkbox", checked: src.published });
       const pvp = h("input", { type: "checkbox", checked: data.pvp });
@@ -2878,6 +2887,7 @@ export function studioScreen(
           h("div", { class: "prop" }, h("span", null, "Niebo (podgląd od razu w Studio)"), skyGrid),
           h("label", null, "Kolor nieba (gdy wybrane „Kolor”)", sky),
           atEl,
+          natEl,
           h("label", null, "Grawitacja (normalnie 196)", grav),
           h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
@@ -2905,6 +2915,13 @@ export function studioScreen(
                 if (atWeather.value !== "clear") a.weather = atWeather.value as WeatherId;
                 data.atmosphere = a;
               } else delete data.atmosphere;
+              {
+                const nat: Nature = {};
+                if (!natGrass.checked) nat.grass = false;
+                if (Number(natTrees.value) > 0) nat.trees = Number(natTrees.value);
+                if (Object.keys(nat).length) data.nature = nat;
+                else delete data.nature;
+              }
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
               data.pvp = pvp.checked;
               const al = audioLight.read();
@@ -3063,7 +3080,7 @@ export function studioScreen(
           // ktoś edytował wcześniej - stan z serwera jest aktualny
           const keep = new Set(srv.parts.map((p) => p.id));
           const del = data.parts.filter((p) => !keep.has(p.id)).map((p) => p.id);
-          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "atmosphere", "genre", "terrain", "guis", "places", "startPlace", "blocks"] as const).filter(
+          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "atmosphere", "nature", "genre", "terrain", "guis", "places", "startPlace", "blocks"] as const).filter(
             (k) => JSON.stringify(srv[k] ?? null) !== JSON.stringify(data[k] ?? null),
           );
           for (const k of fields) {

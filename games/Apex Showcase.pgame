@@ -5142,7 +5142,7 @@
     "name": "Serwer",
     "type": "lua",
     "enabled": true,
-    "source": "-- Apex Showcase: serwer\nonPlayerJoin(function(p)\n  say(\"Witaj w Apex Showcase! K kopie kule. Na czacie: /deszcz /snieg /burza /slonce /noc /dzien\")\n  fireClient(p, \"witaj\", 1)\nend)\nonClientEvent(\"kop\", function(p)\n  pushPart(\"Kula\", 0, 70, 30)\n  pushPart(\"Skrzynia\", 25, 20, 0)\nend)\nevery(25, function() pushPart(\"Kula\", 0, 55, 0) end)\n-- pogoda i pora dnia na czacie: /deszcz /snieg /burza /slonce /noc /dzien\nonChat(function(p, msg)\n  if msg == \"/deszcz\" then setWeather(\"rain\")\n  elseif msg == \"/snieg\" then setWeather(\"snow\")\n  elseif msg == \"/burza\" then setWeather(\"storm\")\n  elseif msg == \"/slonce\" then setWeather(\"clear\")\n  elseif msg == \"/noc\" then setHour(23)\n  elseif msg == \"/dzien\" then setHour(12) end\nend)\n"
+    "source": "-- Apex Showcase: serwer\nonPlayerJoin(function(p)\n  say(\"Witaj w Apex Showcase! K kopie kule. Na czacie: /deszcz /snieg /burza /slonce /noc /dzien /jezioro\")\n  fireClient(p, \"witaj\", 1)\nend)\nonClientEvent(\"kop\", function(p)\n  pushPart(\"Kula\", 0, 70, 30)\n  pushPart(\"Skrzynia\", 25, 20, 0)\nend)\nevery(25, function() pushPart(\"Kula\", 0, 55, 0) end)\n-- pogoda i pora dnia na czacie: /deszcz /snieg /burza /slonce /noc /dzien\nonChat(function(p, msg)\n  if msg == \"/deszcz\" then setWeather(\"rain\")\n  elseif msg == \"/snieg\" then setWeather(\"snow\")\n  elseif msg == \"/burza\" then setWeather(\"storm\")\n  elseif msg == \"/slonce\" then setWeather(\"clear\")\n  elseif msg == \"/noc\" then setHour(23)\n  elseif msg == \"/dzien\" then setHour(12)\n  elseif msg == \"/jezioro\" then teleport(p, 100, 14, 62) end\nend)\n"
    },
    {
     "id": "ax-c",
@@ -5173,6 +5173,9 @@
    "hour": 15,
    "cycle": 360,
    "wind": 0.3
+  },
+  "nature": {
+   "trees": 0.25
   }
  }
 }

@@ -34,7 +34,7 @@ const terrainHeight = (x: number, z: number) => lerp(GY, baseHeight(x, z), ss(46
 
 const SERVER = `-- Apex Showcase: serwer
 onPlayerJoin(function(p)
-  say("Witaj w Apex Showcase! K kopie kule. Na czacie: /deszcz /snieg /burza /slonce /noc /dzien")
+  say("Witaj w Apex Showcase! K kopie kule. Na czacie: /deszcz /snieg /burza /slonce /noc /dzien /jezioro")
   fireClient(p, "witaj", 1)
 end)
 onClientEvent("kop", function(p)
@@ -49,7 +49,8 @@ onChat(function(p, msg)
   elseif msg == "/burza" then setWeather("storm")
   elseif msg == "/slonce" then setWeather("clear")
   elseif msg == "/noc" then setHour(23)
-  elseif msg == "/dzien" then setHour(12) end
+  elseif msg == "/dzien" then setHour(12)
+  elseif msg == "/jezioro" then teleport(p, 100, 14, 62) end
 end)
 `;
 const CLIENT = `-- Apex Showcase: skrypt gracza
@@ -184,6 +185,7 @@ export function demoApexShowcase(): WorldData {
     skyColor: "#8ec8ff",
     skybox: "day",
     atmosphere: { hour: 15, cycle: 360, wind: 0.3 },
+    nature: { trees: 0.25 },
     pvp: false,
     scripts: [
       { id: "ax-s", name: "Serwer", type: "lua", enabled: true, source: SERVER },
