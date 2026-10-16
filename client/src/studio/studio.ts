@@ -16,6 +16,7 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
+import { openApexPreview } from "./apexPreview.ts";
 import type { AnimDef, Atmosphere, CharacterDef, Nature, Part, PartKind, PartShape, ToolDef, WeatherId, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
 import { MAX_PLAYERS_LIMIT, PART_EMITTERS, PART_TEXTURES, WEATHERS } from "../../../shared/types.ts";
 import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
@@ -1746,6 +1747,7 @@ export function studioScreen(
       h("button", { class: "tb-btn", onClick: () => openPlaces(), title: "Miejsca gry: osobne mapy (menu, lobby, arena...)" }, "🗺", h("span", null, "Miejsca")),
       h("button", { class: "tb-btn", onClick: () => openGuis(), title: "GUI: menu, okienka, przyciski i napisy na ekranie gracza" }, "🪟", h("span", null, "GUI")),
       h("button", { class: "tb-btn", onClick: () => openGameSettings(), title: "Nazwa, opis, niebo, odznaki, publikacja" }, "⚙", h("span", null, "Gra")),
+      h("button", { class: "tb-btn", onClick: () => openApexView(), title: "Podgląd w silniku Apex: niebo, światło, pora dnia, pogoda, trawa, drzewa i cząsteczki na żywo" }, "🎬", h("span", null, "Apex")),
       h("button", { class: "tb-btn", onClick: () => openGuide("3d"), title: "Jak zrobić grę - przewodnik i skróty" }, "❓", h("span", null, "Pomoc")),
       themeButton(),
       // przyciski widoku (tylko w wyglądzie Roblox: panele jak w Roblox Studio)
@@ -2797,6 +2799,21 @@ export function studioScreen(
     }
 
     // ---------- ustawienia gry ----------
+    let closeApex: (() => void) | null = null;
+    function openApexView() {
+      closeApex?.();
+      closeApex = openApexPreview({
+        data,
+        selected: () => selected,
+        mutate: (fn) => {
+          pushUndo();
+          fn();
+          if (data.skybox) view.setSkybox(data.skybox);
+          else view.setSky(data.skyColor);
+          changed();
+        },
+      });
+    }
     function openGameSettings() {
       const name = h("input", { value: meta.name, maxLength: 40 });
       const desc = h("textarea", { value: meta.description, maxLength: 500, rows: 3 });

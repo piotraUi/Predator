@@ -1,7 +1,7 @@
 // Pora dnia i pogoda: Lua steruje godziną/pogodą/wiatrem, gracz dostaje stan przy wejściu, zapis świata czyści błędne wartości.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyWorld, sanitizeAtmosphere, sanitizeNature } from "../world.ts";
+import { emptyWorld, sanitizeAtmosphere, sanitizeEmitterCfg, sanitizeNature } from "../world.ts";
 import { run } from "./simHarness.ts";
 
 test("atmosfera: setHour/setDayCycle/setWeather/setWind, czas płynie, nowy gracz dostaje stan", () => {
@@ -51,4 +51,10 @@ test("sanitizeNature: trawa domyślnie włączona, drzewa 0-1", () => {
   assert.equal(sanitizeNature({}), undefined);
   assert.equal(sanitizeNature({ grass: true, trees: 0 }), undefined);
   assert.deepEqual(sanitizeNature({ grass: false, trees: 7 }), { grass: false, trees: 1 });
+});
+
+test("sanitizeEmitterCfg: kolory i mnożniki z zakresami, domyślne wartości znikają", () => {
+  assert.equal(sanitizeEmitterCfg({}), undefined);
+  assert.equal(sanitizeEmitterCfg({ size: 1, c0: "zły" }), undefined);
+  assert.deepEqual(sanitizeEmitterCfg({ c0: "#ff0000", size: 99, speed: 0.01, gravity: -9, spread: 0 }), { c0: "#ff0000", size: 5, speed: 0.1, gravity: -3, spread: 0 });
 });

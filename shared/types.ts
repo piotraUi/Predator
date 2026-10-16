@@ -23,6 +23,17 @@ export const PART_TEXTURES: { id: string; name: string }[] = [
   { id: "hazard", name: "Pasy ostrzegawcze" },
 ];
 
+/** Ustawienia emitera cząsteczek: kolory i mnożniki względem wybranego rodzaju (1 = bez zmian) */
+export interface EmitterCfg {
+  c0?: string;
+  c1?: string;
+  size?: number;
+  speed?: number;
+  life?: number;
+  rate?: number;
+  gravity?: number;
+  spread?: number;
+}
 export const PART_EMITTERS: { id: NonNullable<Part["emitter"]>; name: string }[] = [
   { id: "fire", name: "Ogień" },
   { id: "smoke", name: "Dym" },
@@ -59,6 +70,8 @@ export interface Part {
   texture?: string;
   /** ciągłe cząsteczki wydobywające się z klocka (silnik Apex) */
   emitter?: "fire" | "smoke" | "sparks" | "magic" | "dust" | "splash";
+  /** własne ustawienia cząsteczek (edytor cząsteczek w Studio) */
+  emitterCfg?: EmitterCfg;
   /** Które narzędzie leży na klocku (tylko kind = "pickup") */
   toolId?: string;
   /** Postać NPC stojąca na klocku (tylko kind = "npc") */

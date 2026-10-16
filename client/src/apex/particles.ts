@@ -1,5 +1,6 @@
 // Apex: cząsteczki - ogień, dym, iskry, magia, kurz, plusk i błyski. Liczone na procesorze, rysowane jako małe kule
 // (świecące albo półprzezroczyste) przez ApexRenderer; ciągłe źródła (Part.emitter) i jednorazowe wybuchy (strzały, skrypty).
+import type { EmitterCfg } from "../../../shared/types.ts";
 import type { V3 } from "./math.ts";
 import { MAT, rgb, type ApexRenderer } from "./renderer.ts";
 
@@ -48,7 +49,7 @@ const MAX = 1400;
 
 export class Particles {
   private list: P[] = [];
-  private emitters = new Map<string, { kind: FxKind; pos: V3; size: V3; acc: number }>();
+  private emitters = new Map<string, { kind: FxKind; pos: V3; size: V3; acc: number; cfg?: EmitterCfg }>();
 
   /** jednorazowy rozbłysk `n` cząsteczek w punkcie */
   burst(kind: FxKind, pos: V3, n = 12, dir?: V3) {
@@ -56,14 +57,14 @@ export class Particles {
   }
 
   /** ciągłe źródło związane z klockiem (id) - null zdejmuje */
-  setEmitter(id: string, kind: FxKind | null, pos?: V3, size?: V3) {
+  setEmitter(id: string, kind: FxKind | null, pos?: V3, size?: V3, cfg?: EmitterCfg) {
     if (!kind || !pos || !size) return void this.emitters.delete(id);
     const e = this.emitters.get(id);
-    if (e) { e.kind = kind; e.pos = pos; e.size = size; }
-    else this.emitters.set(id, { kind, pos, size, acc: Math.random() });
+    if (e) { e.kind = kind; e.pos = pos; e.size = size; e.cfg = cfg; }
+    else this.emitters.set(id, { kind, pos, size, acc: Math.random(), cfg });
   }
 
-  private spawn(kind: FxKind, x: number, y: number, z: number, dir?: V3) {
+  private spawn(kind: FxKind, x: number, y: number, z: number, dir?: V3, cfg?: EmitterCfg) {
     if (this.list.length >= MAX) return;
     const sp = SPECS[kind];
     const r = (a: number, b: number) => a + Math.random() * (b - a);
@@ -72,15 +73,15 @@ export class Particles {
     const l = Math.hypot(dx, dy, dz) || 1;
     dx /= l; dy /= l; dz /= l;
     const base: V3 = dir ?? [0, 1, 0];
-    const k = sp.spread;
+    const k = sp.spread * (cfg?.spread ?? 1);
     dx = base[0] * sp.up + dx * k; dy = base[1] * sp.up + dy * k; dz = base[2] * sp.up + dz * k;
     const l2 = Math.hypot(dx, dy, dz) || 1;
-    const v = r(sp.speed[0], sp.speed[1]);
+    const v = r(sp.speed[0], sp.speed[1]) * (cfg?.speed ?? 1);
     this.list.push({
       x, y, z, vx: (dx / l2) * v, vy: (dy / l2) * v, vz: (dz / l2) * v,
-      age: 0, life: r(sp.life[0], sp.life[1]),
-      s0: r(sp.size[0], sp.size[1]), s1: 0,
-      c0: rgb(sp.c0), c1: rgb(sp.c1), a0: sp.alpha, grav: sp.grav, drag: sp.drag, neon: sp.neon, swirl: sp.swirl ?? 0,
+      age: 0, life: r(sp.life[0], sp.life[1]) * (cfg?.life ?? 1),
+      s0: r(sp.size[0], sp.size[1]) * (cfg?.size ?? 1), s1: 0,
+      c0: rgb(cfg?.c0 ?? sp.c0), c1: rgb(cfg?.c1 ?? sp.c1), a0: sp.alpha, grav: sp.grav * (cfg?.gravity ?? 1), drag: sp.drag, neon: sp.neon, swirl: sp.swirl ?? 0,
     });
     const p = this.list[this.list.length - 1];
     p.s1 = p.s0 * (1 + sp.grow * p.life * (kind === "smoke" || kind === "dust" ? 1 : 0.5));
@@ -90,10 +91,10 @@ export class Particles {
     // ciągłe źródła
     for (const e of this.emitters.values()) {
       const rate = ({ fire: 26, smoke: 9, sparks: 14, magic: 18, dust: 8, splash: 18, flash: 0, hit: 0, blood: 0 })[e.kind] * Math.min(2.5, 0.5 + (e.size[0] * e.size[2]) / 6);
-      e.acc += rate * dt;
+      e.acc += rate * (e.cfg?.rate ?? 1) * dt;
       while (e.acc >= 1) {
         e.acc -= 1;
-        this.spawn(e.kind, e.pos[0] + (Math.random() - 0.5) * e.size[0], e.pos[1] + e.size[1] / 2, e.pos[2] + (Math.random() - 0.5) * e.size[2]);
+        this.spawn(e.kind, e.pos[0] + (Math.random() - 0.5) * e.size[0], e.pos[1] + e.size[1] / 2, e.pos[2] + (Math.random() - 0.5) * e.size[2], undefined, e.cfg);
       }
     }
     for (let i = this.list.length - 1; i >= 0; i--) {

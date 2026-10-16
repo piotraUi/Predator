@@ -1733,3 +1733,20 @@ body[data-screen="play"] .dl-banner, body[data-screen="studio"] .dl-banner { dis
 .help-group > summary { cursor: pointer; font-weight: 700; padding: 6px 4px; color: var(--accent, #8ab4ff); }
 
 .pv-promo { margin-top: auto; padding: 10px 12px; font-size: 12px; color: var(--muted, #8a93b5); opacity: .75; text-align: center; }
+
+/* podgląd Apex w Studiu */
+.ap-bg { z-index: 60; }
+.ap-win { background: var(--panel, #1c2230); color: var(--text, #e9edf5); border-radius: 12px; width: min(1100px, 96vw); height: min(680px, 92vh); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 40px #0009; }
+.ap-head { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ffffff1c; }
+.ap-head .muted { flex: 1; font-size: 12px; opacity: .65; }
+.ap-body { display: flex; flex: 1; min-height: 0; }
+.ap-view { position: relative; flex: 1; min-width: 0; background: #000; }
+.ap-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.ap-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; }
+.ap-side { width: 290px; overflow-y: auto; padding: 8px 12px; border-left: 1px solid #ffffff1c; font-size: 13px; }
+.ap-sec { padding: 6px 0 10px; border-bottom: 1px solid #ffffff14; }
+.ap-sec h4 { margin: 0 0 6px; font-size: 13px; }
+.ap-row { display: grid; grid-template-columns: 1fr 1.3fr auto; gap: 6px; align-items: center; margin: 4px 0; }
+.ap-row > span { opacity: .8; }
+.ap-row input[type=range], .ap-row select, .ap-row input[type=number] { width: 100%; min-width: 0; }
+@media (max-width: 760px) { .ap-body { flex-direction: column; } .ap-side { width: auto; max-height: 45%; border-left: 0; border-top: 1px solid #ffffff1c; } }

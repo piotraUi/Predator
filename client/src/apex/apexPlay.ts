@@ -119,7 +119,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const isNpc = (p: Part) => p.kind === "npc" && p.transparency < 0.999;
   const refreshPart = (p: Part) => {
     rend.updatePart(p, rot(p));
-    fx.setEmitter(p.id, p.emitter ?? null, [p.x, p.y, p.z], [p.sx, p.sy, p.sz]);
+    fx.setEmitter(p.id, p.emitter ?? null, [p.x, p.y, p.z], [p.sx, p.sy, p.sz], p.emitterCfg);
     if (p.spin) spinning.set(p.id, p.ry);
     else spinning.delete(p.id);
     if (isNpc(p)) {

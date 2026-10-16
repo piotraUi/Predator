@@ -28,6 +28,7 @@ import type {
   WorldLight,
   Atmosphere,
   Nature,
+  EmitterCfg,
   WeatherId,
   WorldSound,
 } from "./types.ts";
@@ -270,6 +271,7 @@ export function sanitizeWorld(input: unknown): WorldData {
         ? (p.material as Part["material"])
         : "plastic",
       ...(PART_EMITTERS.some((e) => e.id === p.emitter) ? { emitter: p.emitter as Part["emitter"] } : {}),
+      ...(PART_EMITTERS.some((e) => e.id === p.emitter) && sanitizeEmitterCfg(p.emitterCfg) ? { emitterCfg: sanitizeEmitterCfg(p.emitterCfg) } : {}),
       ...(typeof p.texture === "string" && PART_TEXTURES.some((t) => t.id === p.texture) ? { texture: p.texture } : {}),
       ...(p.kind === "pickup" && typeof p.toolId === "string" ? { toolId: p.toolId.slice(0, 40) } : {}),
       ...(p.kind === "npc" && typeof p.characterId === "string" ? { characterId: p.characterId.slice(0, 40) } : {}),
@@ -556,5 +558,22 @@ export function sanitizeNature(raw: unknown): Nature | undefined {
   const out: Nature = {};
   if (a.grass === false) out.grass = false;
   if (typeof a.trees === "number" && a.trees > 0) out.trees = num(a.trees, 0, 1, 0);
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** ustawienia cząsteczek: kolory i mnożniki z ograniczonymi zakresami */
+export function sanitizeEmitterCfg(raw: unknown): EmitterCfg | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const a = raw as Record<string, unknown>;
+  const out: EmitterCfg = {};
+  if (typeof a.c0 === "string" && COLOR_RE.test(a.c0)) out.c0 = a.c0;
+  if (typeof a.c1 === "string" && COLOR_RE.test(a.c1)) out.c1 = a.c1;
+  const mul = (k: "size" | "speed" | "life" | "rate", lo: number, hi: number) => {
+    const v = a[k];
+    if (typeof v === "number" && Number.isFinite(v) && Math.abs(v - 1) > 0.01) out[k] = num(v, lo, hi, 1);
+  };
+  mul("size", 0.2, 5); mul("speed", 0.1, 5); mul("life", 0.2, 4); mul("rate", 0.1, 5);
+  if (typeof a.gravity === "number" && Number.isFinite(a.gravity) && Math.abs(a.gravity - 1) > 0.01) out.gravity = num(a.gravity, -3, 3, 1);
+  if (typeof a.spread === "number" && Number.isFinite(a.spread) && Math.abs(a.spread - 1) > 0.01) out.spread = num(a.spread, 0, 2.5, 1);
   return Object.keys(out).length ? out : undefined;
 }
