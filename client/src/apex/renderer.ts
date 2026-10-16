@@ -43,9 +43,9 @@ layout(location=6) in vec4 iM3;
 layout(location=7) in vec4 iCol;
 layout(location=8) in vec4 iMisc;
 uniform mat4 uVP;
-uniform mat4 uLightVP;
+uniform mat4 uLightVP; uniform mat4 uLightVP2;
 uniform float uTile;
-out vec3 vN; out vec3 vW; out vec2 vUv; out vec4 vCol; out float vMat; out vec4 vL; out vec2 vT;
+out vec3 vN; out vec3 vW; out vec2 vUv; out vec4 vCol; out float vMat; out vec4 vL; out vec4 vL2; out vec2 vT;
 void main(){
   mat4 M = mat4(iM0,iM1,iM2,iM3);
   vec4 w = M * vec4(aPos,1.0);
@@ -62,35 +62,51 @@ void main(){
   vT = uTile > 0.0 ? tp / uTile : uv;
   // przesunięcie wzdłuż normalnej przy liczeniu cienia - mniej plam na ścianach ustawionych bokiem do słońca
   vL = uLightVP * vec4(w.xyz + normalize(vN) * 0.4, 1.0);
+  vL2 = uLightVP2 * vec4(w.xyz + normalize(vN) * 1.1, 1.0);
   gl_Position = uVP * w;
 }`;
 
 const FS = `#version 300 es
 precision highp float;
 precision highp sampler2DShadow;
-in vec3 vN; in vec3 vW; in vec2 vUv; in vec4 vCol; in float vMat; in vec4 vL; in vec2 vT;
+in vec3 vN; in vec3 vW; in vec2 vUv; in vec4 vCol; in float vMat; in vec4 vL; in vec4 vL2; in vec2 vT;
 uniform sampler2D uTexD; uniform float uUseTex; uniform float uTile;
 uniform vec3 uCam; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSky; uniform vec3 uGround;
 uniform vec3 uFogCol; uniform vec2 uFog; uniform float uTime; uniform float uBevel; uniform float uShadowOn;
-uniform sampler2DShadow uShadow; uniform float uShadowTexel;
+uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadow2; uniform float uShadowTexel; uniform float uCasc;
 uniform int uNL; uniform vec4 uLP[8]; uniform vec4 uLC[8]; uniform vec4 uLD[8];
 uniform float uNeon;
 out vec4 o;
 const vec2 PD[12] = vec2[](vec2(-0.326,-0.406), vec2(-0.840,-0.074), vec2(-0.696,0.457), vec2(-0.203,0.621), vec2(0.962,-0.195), vec2(0.473,-0.480),
   vec2(0.519,0.767), vec2(0.185,-0.893), vec2(0.507,0.064), vec2(0.896,0.412), vec2(-0.322,-0.933), vec2(-0.792,-0.598));
 float hash2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float tap(sampler2DShadow sm, vec3 p, float bias, float spread, mat2 R){
+  float s = 0.0;
+  for (int i=0;i<12;i++) s += texture(sm, vec3(p.xy + R * PD[i] * uShadowTexel * spread, p.z - bias));
+  return s / 12.0;
+}
+// cienie kaskadowe: blisko gęsta mapa (ostre krawędzie), dalej szeroka (duże mapy); przejście płynne
 float shadowAt(vec3 n){
   if (uShadowOn < 0.5) return 1.0;
-  vec3 p = vL.xyz / vL.w * 0.5 + 0.5;
-  if (p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0||p.z>1.0) return 1.0;
   float ndl = max(dot(n,uSun),0.0);
   float bias = 0.0006 + 0.0022 * (1.0 - ndl);
-  // miękkie cienie: 12 próbek rozrzuconych dyskiem, obróconych losowo na piksel
   float a = hash2(gl_FragCoord.xy) * 6.2832;
   mat2 R = mat2(cos(a), sin(a), -sin(a), cos(a));
+  vec3 p0 = vL.xyz / vL.w * 0.5 + 0.5;
+  vec3 p1 = vL2.xyz / vL2.w * 0.5 + 0.5;
+  float w = 0.0;
+  if (uCasc > 1.5) {
+    float e = max(abs(p0.x - 0.5), abs(p0.y - 0.5)) * 2.0;
+    w = (p0.z > 1.0 || p0.z < 0.0) ? 0.0 : 1.0 - smoothstep(0.78, 0.96, e);
+  }
   float s = 0.0;
-  for (int i=0;i<12;i++) s += texture(uShadow, vec3(p.xy + R * PD[i] * uShadowTexel * 2.0, p.z - bias));
-  return s / 12.0;
+  if (w > 0.001) s += w * tap(uShadow, p0, bias, 1.6, R);
+  if (w < 0.999) {
+    float lit = 1.0;
+    if (p1.x > 0.0 && p1.x < 1.0 && p1.y > 0.0 && p1.y < 1.0 && p1.z < 1.0) lit = tap(uShadow2, p1, bias * (uCasc > 1.5 ? 2.6 : 1.0), uCasc > 1.5 ? 1.4 : 2.0, R);
+    s += (1.0 - w) * lit;
+  }
+  return s;
 }
 void main(){
   vec3 n = normalize(vN);
@@ -294,10 +310,75 @@ void main(){
 }`;
 const COMPOSE_FS = `#version 300 es
 precision highp float;
-in vec2 vUv; uniform sampler2D uScene; uniform sampler2D uB1; uniform sampler2D uB2; uniform float uAmount; out vec4 o;
+in vec2 vUv; uniform sampler2D uScene; uniform sampler2D uB1; uniform sampler2D uB2; uniform float uAmount;
+uniform sampler2D uDepth; uniform float uSsao; uniform float uDof; uniform vec2 uNF; uniform vec2 uTexel; uniform float uFocus;
+uniform vec3 uSunScr; uniform vec3 uSunCol; uniform vec4 uGrade; uniform vec3 uTint;
+out vec4 o;
+float lin(float d){ return uNF.x * uNF.y / (uNF.y - d * (uNF.y - uNF.x)); }
+float h12(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p + 19.19); return fract(p.x * p.y); }
 void main(){
-  vec3 c = texture(uScene, vUv).rgb + (texture(uB1, vUv).rgb * 0.75 + texture(uB2, vUv).rgb * 1.0) * uAmount;
-  o = vec4(c, 1.0);
+  float d0 = texture(uDepth, vUv).r;
+  float z0 = lin(d0);
+  vec3 c = texture(uScene, vUv).rgb;
+  // głębia ostrości: dalekie tło lekko rozmyte (krążek próbek, promień rośnie z odległością)
+  if (uDof > 0.5 && d0 < 0.99999) {
+    float coc = clamp((z0 - uFocus * 5.0) / (uFocus * 25.0), 0.0, 1.0);
+    if (coc > 0.02) {
+      vec3 acc = c; float wsum = 1.0;
+      float rot = h12(gl_FragCoord.xy) * 6.2832;
+      for (int i = 0; i < 10; i++) {
+        float a = rot + float(i) * 2.39996;
+        float r = sqrt((float(i) + 0.5) / 10.0) * coc * 7.0;
+        vec2 uv = vUv + vec2(cos(a), sin(a)) * r * uTexel;
+        float zs = lin(texture(uDepth, uv).r);
+        float w = zs > z0 * 0.7 ? 1.0 : 0.0;
+        acc += texture(uScene, uv).rgb * w; wsum += w;
+      }
+      c = acc / wsum;
+    }
+  }
+  // SSAO: ciemniejsze zakamarki (porównanie głębi z sąsiednimi pikselami)
+  if (uSsao > 0.5 && d0 < 0.99999) {
+    float ao = 0.0;
+    float rad = clamp(14.0 / z0, 2.0, 18.0);
+    float rot = h12(gl_FragCoord.xy + 7.0) * 6.2832;
+    float n = uSsao;
+    for (int i = 0; i < 14; i++) {
+      if (float(i) >= n) break;
+      float a = rot + float(i) * 2.39996;
+      float r = (float(i) + 1.0) / n * rad;
+      vec2 uv = vUv + vec2(cos(a), sin(a)) * r * uTexel;
+      float zs = lin(texture(uDepth, uv).r);
+      float diff = z0 - zs;
+      ao += step(0.05 + z0 * 0.004, diff) * smoothstep(2.5, 0.3, diff);
+    }
+    c *= 1.0 - 0.55 * ao / n;
+  }
+  c += (texture(uB1, vUv).rgb * 0.75 + texture(uB2, vUv).rgb * 1.0) * uAmount;
+  // promienie światła: marsz do słońca po pikselach nieba
+  if (uSunScr.z > 0.01) {
+    vec2 dir = (uSunScr.xy - vUv);
+    float dist = length(dir);
+    vec2 stp = dir / 28.0 * 0.85;
+    vec2 uv = vUv + stp * h12(gl_FragCoord.xy);
+    float acc = 0.0, wgt = 1.0;
+    for (int i = 0; i < 28; i++) {
+      float sky = texture(uDepth, uv).r >= 0.99999 ? 1.0 : 0.0;
+      acc += sky * wgt; wgt *= 0.95; uv += stp;
+    }
+    float ray = acc / 28.0 * smoothstep(1.4, 0.0, dist);
+    c += uSunCol * ray * 0.55 * uSunScr.z;
+  }
+  // błysk pioruna
+  c += vec3(0.7, 0.75, 0.95) * uGrade.w * 0.25;
+  // korekcja kolorów
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, uGrade.y);
+  c = (c - 0.5) * uGrade.x + 0.5;
+  c *= uTint;
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - uGrade.z * smoothstep(0.25, 0.85, dot(q, q) * 2.2);
+  o = vec4(max(c, 0.0), 1.0);
 }`;
 
 interface Target { fbo: WebGLFramebuffer; tex: WebGLTexture; w: number; h: number }
@@ -312,6 +393,9 @@ interface Post {
   msRb: WebGLRenderbuffer[];
   b1: Target[];
   b2: Target[];
+  /** głębia sceny (kopia z bufora sceny) do SSAO, głębi ostrości i promieni światła */
+  depthFbo: WebGLFramebuffer;
+  depthTex: WebGLTexture;
 }
 
 class Program {
@@ -504,6 +588,9 @@ export class ApexRenderer {
   private frameBatches = new Map<string, Batch>();
   private shadowTex!: WebGLTexture;
   private shadowFbo!: WebGLFramebuffer;
+  private shadowTex0!: WebGLTexture;
+  private shadowFbo0!: WebGLFramebuffer;
+  private lightVp2: Mat4 = new Float32Array(16);
   shadowSize = 2048;
   shadows = true;
   /** bieżący poziom jakości (setQuality) */
@@ -697,6 +784,8 @@ export class ApexRenderer {
       gl.deleteFramebuffer(t.fbo);
       gl.deleteTexture(t.tex);
     }
+    gl.deleteFramebuffer(p.depthFbo);
+    gl.deleteTexture(p.depthTex);
     if (p.ms) gl.deleteFramebuffer(p.ms);
     for (const rb of p.msRb) gl.deleteRenderbuffer(rb);
     this.post = null;
@@ -751,7 +840,20 @@ export class ApexRenderer {
     const b1 = [this.makeTarget(hw, hh), this.makeTarget(hw, hh)];
     const b2 = [this.makeTarget(qw, qh), this.makeTarget(qw, qh)];
     if (b1.some((t) => !t) || b2.some((t) => !t)) return void (this.postFailed = true);
-    this.post = { w, h, samples: want, scene, ms, msRb, b1: b1 as Target[], b2: b2 as Target[] };
+    const depthTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, depthTex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, w, h);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const depthFbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, depthFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depthTex, 0);
+    gl.drawBuffers([gl.NONE]);
+    gl.readBuffer(gl.NONE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.post = { w, h, samples: want, scene, ms, msRb, b1: b1 as Target[], b2: b2 as Target[], depthFbo, depthTex };
     if (!this.postProgs)
       this.postProgs = { bright: new Program(gl, POST_VS, BRIGHT_FS), blur: new Program(gl, POST_VS, BLUR_FS), compose: new Program(gl, POST_VS, COMPOSE_FS) };
     if (!this.emptyVao) this.emptyVao = gl.createVertexArray()!;
@@ -768,13 +870,63 @@ export class ApexRenderer {
     this.stats.draws++;
   }
 
+  /** czy włączone są efekty ekranu wymagające głębi (SSAO, głębia ostrości, promienie światła) */
+  private fxOn() {
+    const q = this.q;
+    return !!(this.post && (q.ssao > 0 || q.dof || q.rays));
+  }
+  fxInfo = { ssao: 0, dof: false, rays: false };
+
+  /** uniformy końcowego przejścia: korekcja kolorów, SSAO, głębia ostrości, promienie słońca */
+  private composeFx(pg: Program, p: Post, fx: boolean) {
+    const gl = this.gl, q = this.q;
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, p.depthTex);
+    gl.uniform1i(pg.loc("uDepth"), 3);
+    gl.activeTexture(gl.TEXTURE0);
+    const ssao = fx ? q.ssao : 0;
+    const rays = fx && q.rays;
+    const dof = fx && q.dof;
+    this.fxInfo = { ssao, dof, rays };
+    gl.uniform1f(pg.loc("uSsao"), ssao);
+    gl.uniform1f(pg.loc("uDof"), dof ? 1 : 0);
+    gl.uniform2f(pg.loc("uNF"), this.nearFar[0], this.nearFar[1]);
+    gl.uniform2f(pg.loc("uTexel"), 1 / p.w, 1 / p.h);
+    gl.uniform1f(pg.loc("uFocus"), this.focus);
+    // słońce na ekranie
+    const m = this.vp, e = this.eyePos, s = this.sky.sunDir;
+    const sx = e[0] + s[0] * 1000, sy = e[1] + s[1] * 1000, sz = e[2] + s[2] * 1000;
+    const cw = m[3] * sx + m[7] * sy + m[11] * sz + m[15];
+    const cx = m[0] * sx + m[4] * sy + m[8] * sz + m[12], cy = m[1] * sx + m[5] * sy + m[9] * sz + m[13];
+    const vis = rays && cw > 0 ? this.sky.sunDisc[3] * (1 - this.cover) : 0;
+    gl.uniform3f(pg.loc("uSunScr"), cw > 0 ? cx / cw * 0.5 + 0.5 : 0.5, cw > 0 ? cy / cw * 0.5 + 0.5 : 0.5, vis);
+    const dc = this.sky.sunDisc;
+    gl.uniform3f(pg.loc("uSunCol"), dc[0], dc[1], dc[2]);
+    // korekcja kolorów: lekki kontrast i nasycenie, ciepło o zachodzie, chłód w nocy, winieta
+    const g = this.grade;
+    gl.uniform4f(pg.loc("uGrade"), g.contrast, g.saturation, g.vignette, this.flash);
+    gl.uniform3f(pg.loc("uTint"), g.tint[0], g.tint[1], g.tint[2]);
+  }
+
+  /** odległość do ostrego punktu (gracza) - do głębi ostrości */
+  focus = 14;
+  private nearFar: [number, number] = [0.2, 2000];
+  private grade = { contrast: 1.06, saturation: 1.08, vignette: 0.22, tint: [1, 1, 1] as number[] };
+
   /** poświata: jasne miejsca sceny (neon, słońce, odblaski) rozmyte i dodane do obrazu */
   private applyBloom() {
     const gl = this.gl, p = this.post!, pr = this.postProgs!;
+    const fx = this.fxOn();
     if (p.ms) {
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, p.ms);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, p.scene.fbo);
       gl.blitFramebuffer(0, 0, p.w, p.h, 0, 0, p.w, p.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    }
+    if (fx) {
+      // głębia sceny do osobnej tekstury (z bufora MSAA albo z bufora sceny)
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, p.ms ?? p.scene.fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, p.depthFbo);
+      gl.blitFramebuffer(0, 0, p.w, p.h, 0, 0, p.w, p.h, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
     }
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.CULL_FACE);
@@ -813,6 +965,7 @@ export class ApexRenderer {
       gl.uniform1i(pg.loc("uB1"), 1);
       gl.uniform1i(pg.loc("uB2"), 2);
       gl.uniform1f(pg.loc("uAmount"), 0.6);
+      this.composeFx(pg, p, fx);
     });
     gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(null);
@@ -846,29 +999,37 @@ export class ApexRenderer {
     gl.enable(gl.DEPTH_TEST);
   }
 
-  /** (re)tworzy mapę cieni (głębia z porównaniem sprzętowym) */
+  /** (re)tworzy mapy cieni (głębia z porównaniem sprzętowym): bliska i daleka kaskada */
   private makeShadow(size: number) {
     const gl = this.gl;
     if (this.shadowTexInit) {
       gl.deleteTexture(this.shadowTex);
       gl.deleteFramebuffer(this.shadowFbo);
+      gl.deleteTexture(this.shadowTex0);
+      gl.deleteFramebuffer(this.shadowFbo0);
     }
     this.shadowTexInit = true;
     this.shadowSize = size;
-    this.shadowTex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, size, size);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
-    this.shadowFbo = gl.createFramebuffer()!;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.shadowTex, 0);
-    gl.drawBuffers([gl.NONE]);
-    gl.readBuffer(gl.NONE);
+    const mk = () => {
+      const tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, size, size);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+      const fbo = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0);
+      gl.drawBuffers([gl.NONE]);
+      gl.readBuffer(gl.NONE);
+      return { tex, fbo };
+    };
+    const far = mk(), near = mk();
+    this.shadowTex = far.tex; this.shadowFbo = far.fbo;
+    this.shadowTex0 = near.tex; this.shadowFbo0 = near.fbo;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -1337,6 +1498,8 @@ export class ApexRenderer {
     const gl = this.gl;
     this.stats = { draws: 0, instances: 0, tris: 0, ms: 0 };
     this.ensurePost();
+    this.nearFar = [look.near ?? 0.2, look.far ?? 2000];
+    this.focus = Math.max(6, Math.hypot(look.eye[0] - look.target[0], look.eye[1] - look.target[1], look.eye[2] - look.target[2]));
     perspective(look.fov, this.width / this.height, look.near ?? 0.2, look.far ?? 2000, this.proj);
     lookAt(look.eye, look.target, [0, 1, 0], this.view);
     multiply(this.proj, this.view, this.vp);
@@ -1346,23 +1509,32 @@ export class ApexRenderer {
     const fogK = 1 - 0.55 * wCover;
     this.fogS = this.fogStart * fogK * fogK;
     this.fogE = this.fogEnd * fogK;
+    {
+      // barwa końcowa zależy od nieba: ciepła przy zachodzie słońca, chłodna w nocy
+      const t = this.sky.tint, g = this.grade;
+      g.tint = [0.85 + 0.15 * t[0], 0.9 + 0.1 * t[1], 0.92 + 0.08 * t[2]];
+      g.contrast = 1.05 + 0.05 * (1 - this.cover);
+      g.saturation = 1.1 - 0.25 * this.cover;
+    }
     const sky = this.sky;
     const light = this.brightness * this.skyLight * (1 + this.flash * 1.6);
     const sun = sky.sunDir;
 
-    // macierz światła (ortogonalna wokół gracza, przyciągnięta do pikseli mapy, żeby cień nie drżał)
+    // macierze światła (ortogonalne wokół gracza, przyciągnięte do pikseli mapy, żeby cień nie drżał): dwie kaskady
     const c = this.shadowCenter;
-    const ext = this.extent;
-    const texel = (ext * 2) / this.shadowSize;
-    const eyeL: V3 = [c[0] + sun[0] * 160, c[1] + sun[1] * 160, c[2] + sun[2] * 160];
-    lookAt(eyeL, c, Math.abs(sun[1]) > 0.98 ? [0, 0, 1] : [0, 1, 0], this.view as Mat4 & Float32Array);
-    const lv = new Float32Array(this.view);
-    // przyciąganie środka do siatki pikseli w przestrzeni światła
-    const sx = Math.round(lv[12] / texel) * texel - lv[12];
-    const sy = Math.round(lv[13] / texel) * texel - lv[13];
-    lv[12] += sx;
-    lv[13] += sy;
-    multiply(ortho(-ext, ext, -ext, ext, 1, 360), lv, this.lightVp);
+    const casc2 = this.q.cascades > 1;
+    const lightMatrix = (ext: number, out: Mat4) => {
+      const texel = (ext * 2) / this.shadowSize;
+      const eyeL: V3 = [c[0] + sun[0] * 160, c[1] + sun[1] * 160, c[2] + sun[2] * 160];
+      lookAt(eyeL, c, Math.abs(sun[1]) > 0.98 ? [0, 0, 1] : [0, 1, 0], this.view as Mat4 & Float32Array);
+      const lv = new Float32Array(this.view);
+      lv[12] += Math.round(lv[12] / texel) * texel - lv[12];
+      lv[13] += Math.round(lv[13] / texel) * texel - lv[13];
+      multiply(ortho(-ext, ext, -ext, ext, 1, 360), lv, out);
+    };
+    const extFar = casc2 ? this.extent * 1.6 : this.extent;
+    lightMatrix(extFar, this.lightVp2);
+    if (casc2) lightMatrix(Math.min(34, this.extent * 0.4), this.lightVp);
     lookAt(look.eye, look.target, [0, 1, 0], this.view);
 
     for (const b of this.staticBatches.values()) b.upload(gl);
@@ -1373,16 +1545,20 @@ export class ApexRenderer {
 
     // --- cienie ---
     if (this.shadows && light > 0.1) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFbo);
       gl.viewport(0, 0, this.shadowSize, this.shadowSize);
-      gl.clear(gl.DEPTH_BUFFER_BIT);
       gl.useProgram(this.depthProg.p);
-      gl.uniformMatrix4fv(this.depthProg.loc("uVP"), false, this.lightVp);
       gl.enable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(1.5, 4);
-      this.drawBatches(this.staticBatches, false);
-      this.drawBatches(this.frameBatches, false);
-      if (this.terrain) this.drawTerrain(this.terrain);
+      const pass = (fbo: WebGLFramebuffer, vp: Mat4) => {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        gl.uniformMatrix4fv(this.depthProg.loc("uVP"), false, vp);
+        this.drawBatches(this.staticBatches, false);
+        this.drawBatches(this.frameBatches, false);
+        if (this.terrain) this.drawTerrain(this.terrain);
+      };
+      pass(this.shadowFbo, this.lightVp2);
+      if (casc2) pass(this.shadowFbo0, this.lightVp);
       gl.disable(gl.POLYGON_OFFSET_FILL);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
@@ -1424,6 +1600,8 @@ export class ApexRenderer {
     gl.useProgram(p.p);
     gl.uniformMatrix4fv(p.loc("uVP"), false, this.vp);
     gl.uniformMatrix4fv(p.loc("uLightVP"), false, this.lightVp);
+    gl.uniformMatrix4fv(p.loc("uLightVP2"), false, this.lightVp2);
+    gl.uniform1f(p.loc("uCasc"), casc2 ? 2 : 1);
     gl.uniform3fv(p.loc("uCam"), look.eye);
     gl.uniform3fv(p.loc("uSun"), sun);
     const sc = sky.tint;
@@ -1436,8 +1614,12 @@ export class ApexRenderer {
     gl.uniform1f(p.loc("uShadowOn"), this.shadows && light > 0.1 ? 1 : 0);
     gl.uniform1f(p.loc("uShadowTexel"), 1 / this.shadowSize);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex0);
     gl.uniform1i(p.loc("uShadow"), 0);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    gl.uniform1i(p.loc("uShadow2"), 4);
+    gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(p.loc("uBevel"), 0);
     gl.uniform1i(p.loc("uTexD"), 2);
     gl.uniform1f(p.loc("uUseTex"), 0);
@@ -1554,7 +1736,7 @@ export class ApexRenderer {
   /** duże paczki stałych klocków: rysujemy tylko to, co w kadrze; z daleka małe rzeczy znikają, a kule i walce są uproszczone */
   private cullBatches(eye: V3) {
     const gl = this.gl, q = this.q, pl = this.planes, sc = this.shadowCenter;
-    const shR = this.extent * 1.5;
+    const shR = this.extent * 1.8;
     for (const b of this.staticBatches.values()) {
       b.culled = false;
       if (!q.cull || !b.cullable || b.count < 160) continue;

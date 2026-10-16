@@ -12,6 +12,14 @@ export interface QualityTier {
   dprCap: number;
   shadows: boolean;
   shadowSize: number;
+  /** kaskady cieni: 2 = ostre blisko i szerokie daleko (duże mapy) */
+  cascades: 1 | 2;
+  /** SSAO: liczba próbek (0 = wyłączone) */
+  ssao: number;
+  /** głębia ostrości (rozmycie dalekiego tła) */
+  dof: boolean;
+  /** promienie światła ze słońca */
+  rays: boolean;
   /** próbki MSAA sceny HDR (0 = brak) */
   msaa: number;
   bloom: boolean;
@@ -24,10 +32,10 @@ export interface QualityTier {
 }
 
 export const TIERS: Record<TierId, QualityTier> = {
-  low: { id: "low", label: "Niska", renderScale: 0.75, dprCap: 1, shadows: true, shadowSize: 1024, msaa: 0, bloom: false, cull: true, lodDist: 70, drawDist: 420 },
-  medium: { id: "medium", label: "Średnia", renderScale: 1, dprCap: 1.5, shadows: true, shadowSize: 2048, msaa: 0, bloom: true, cull: true, lodDist: 110, drawDist: 700 },
-  high: { id: "high", label: "Wysoka", renderScale: 1, dprCap: 2, shadows: true, shadowSize: 2048, msaa: 4, bloom: true, cull: true, lodDist: 170, drawDist: 1200 },
-  ultra: { id: "ultra", label: "Ultra", renderScale: 1, dprCap: 2.5, shadows: true, shadowSize: 4096, msaa: 4, bloom: true, cull: true, lodDist: 260, drawDist: 2000 },
+  low: { id: "low", label: "Niska", renderScale: 0.75, dprCap: 1, shadows: true, shadowSize: 1024, cascades: 1, ssao: 0, dof: false, rays: false, msaa: 0, bloom: false, cull: true, lodDist: 70, drawDist: 420 },
+  medium: { id: "medium", label: "Średnia", renderScale: 1, dprCap: 1.5, shadows: true, shadowSize: 2048, cascades: 2, ssao: 0, dof: false, rays: true, msaa: 0, bloom: true, cull: true, lodDist: 110, drawDist: 700 },
+  high: { id: "high", label: "Wysoka", renderScale: 1, dprCap: 2, shadows: true, shadowSize: 2048, cascades: 2, ssao: 8, dof: false, rays: true, msaa: 4, bloom: true, cull: true, lodDist: 170, drawDist: 1200 },
+  ultra: { id: "ultra", label: "Ultra", renderScale: 1, dprCap: 2.5, shadows: true, shadowSize: 4096, cascades: 2, ssao: 14, dof: true, rays: true, msaa: 4, bloom: true, cull: true, lodDist: 260, drawDist: 2000 },
 };
 export const TIER_ORDER: TierId[] = ["low", "medium", "high", "ultra"];
 export const QUALITY_LABELS: Record<QualityId, string> = { auto: "Automatyczna (zalecana)", low: "Niska", medium: "Średnia", high: "Wysoka", ultra: "Ultra" };
