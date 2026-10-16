@@ -80,6 +80,8 @@ export const geminiModel = () => process.env.GEMINI_MODEL || settings.get("gemin
 export const geminiFastModel = () => process.env.GEMINI_FAST_MODEL || settings.get("gemini_fast_model") || DEFAULT_GEMINI_FAST_MODEL;
 /** "global" działa dla najnowszych modeli; można zmienić np. na europe-central2 */
 export const geminiLocation = () => process.env.GEMINI_LOCATION || settings.get("gemini_location") || "global";
+/** projekt Google Cloud z wgranego klucza */
+export const geminiProject = () => account()?.project_id ?? "";
 /** jest klucz (Gemini może działać) */
 export const geminiReady = () => !!account();
 
@@ -101,7 +103,7 @@ export function geminiStatus() {
 let token: { value: string; until: number } | null = null;
 const b64url = (b: Buffer | string) => Buffer.from(b).toString("base64url");
 
-async function accessToken(): Promise<string> {
+export async function accessToken(): Promise<string> {
   const sa = account();
   if (!sa) throw new Error("Brak klucza Gemini - wgraj plik JSON w panelu admina (zakładka AI)");
   if (token && Date.now() < token.until) return token.value;
@@ -159,11 +161,11 @@ export class GeminiError extends Error {
 const unsupported = new Set<string>();
 
 /** model: zwykły (gry, obrazki, asystent) albo inny, np. szybki do czatu */
-export async function gemini(req: GeminiRequest, timeoutMs = 60_000, model = geminiModel()): Promise<GeminiResponse> {
-  const loc = geminiLocation();
-  const host = loc === "global" ? "aiplatform.googleapis.com" : `${loc}-aiplatform.googleapis.com`;
+export async function gemini(req: GeminiRequest, timeoutMs = 60_000, model = geminiModel(), location?: string): Promise<GeminiResponse> {
+  const loc = location || geminiLocation();
+  const base = process.env.VERTEX_BASE_URL || `https://${loc === "global" ? "aiplatform.googleapis.com" : `${loc}-aiplatform.googleapis.com`}`;
   const project = account()?.project_id;
-  const url = `https://${host}/v1/projects/${project}/locations/${loc}/publishers/google/models/${encodeURIComponent(model)}:generateContent`;
+  const url = `${base}/v1/projects/${project}/locations/${loc}/publishers/google/models/${encodeURIComponent(model)}:generateContent`;
   for (let attempt = 0; ; attempt++) {
     const gc = { ...(req.generationConfig ?? {}) };
     if (unsupported.has(model + ":thinking")) delete gc.thinkingConfig;

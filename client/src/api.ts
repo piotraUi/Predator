@@ -298,6 +298,7 @@ export interface AdminAi {
   location: string;
   assistant: boolean;
   dailyLimit: number;
+  media: { enabled: boolean; imageModel: string; videoModel: string; imageLocation: string; videoLocation: string; defaults: { image: string; video: string }; imageCoins: number; videoCoins: number; imageDaily: number; videoDaily: number; imagesToday: number; videosToday: number };
   stats: { requests: number; tokens: number; users: number };
 }
 
@@ -334,6 +335,16 @@ export const aiApi = {
   buy: () => req<{ ok: true; limit: number; used: number; coins: number; user: PublicUser }>("POST", "/ai/buy"),
   step: (mode: "3d" | "2d", contents: AiContent[], signal?: AbortSignal) =>
     req<{ content: AiContent; finish: string; used: number; limit: number | null }>("POST", "/ai/assistant", { mode, contents }, 200_000, signal),
+  mediaStatus: () =>
+    req<{ enabled: boolean; image: { model: string; coins: number; left: number | null }; video: { model: string; coins: number; left: number | null }; coins: number }>("GET", "/ai/media-status"),
+  /** obraz (Nano Banana) - zwraca adres pliku */
+  image: (prompt: string, aspect?: string, reference?: string, signal?: AbortSignal) =>
+    req<{ id: string; url: string; mime: string; user: PublicUser }>("POST", "/ai/image", { prompt, aspect, reference }, 150_000, signal),
+  /** film (Veo 3.1) - najpierw zadanie, potem pytamy o stan */
+  video: (prompt: string, opts: { aspect?: string; seconds?: number; audio?: boolean; reference?: string } = {}, signal?: AbortSignal) =>
+    req<{ job: string; user: PublicUser }>("POST", "/ai/video", { prompt, ...opts }, 60_000, signal),
+  videoStatus: (job: string, signal?: AbortSignal) =>
+    req<{ status: "working" | "done" | "failed"; url?: string; error?: string; seconds?: number; user?: PublicUser }>("GET", `/ai/video/${job}`, undefined, 40_000, signal),
 };
 
 /** panel admina - serwer sprawdza, czy konto jest adminem */
@@ -375,7 +386,7 @@ export const adminApi = {
     }>("GET", "/admin/update" + (check ? "?check=1" : "")),
   updateServer: () => req<{ ok: true }>("POST", "/admin/update"),
   ai: () => req<AdminAi>("GET", "/admin/ai"),
-  setAi: (b: { model?: string; fastModel?: string; location?: string; assistant?: boolean; dailyLimit?: number }) => req<AdminAi>("PUT", "/admin/ai", b),
+  setAi: (b: { model?: string; fastModel?: string; location?: string; assistant?: boolean; dailyLimit?: number; media?: boolean; imageModel?: string; videoModel?: string; imageLocation?: string; videoLocation?: string; imageCoins?: number; videoCoins?: number; imageDaily?: number; videoDaily?: number }) => req<AdminAi>("PUT", "/admin/ai", b),
   uploadAiKey: (json: string) => req<AdminAi>("POST", "/admin/ai/key", { json }),
   deleteAiKey: () => req<AdminAi>("DELETE", "/admin/ai/key"),
   testAi: (fast = false) => req<{ ok: boolean; text: string; ms: number }>("POST", "/admin/ai/test", { fast }),

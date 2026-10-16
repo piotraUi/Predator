@@ -125,6 +125,35 @@ const PART_FIELDS: Record<string, S> = {
   anchored_note: str("ignored - every part is anchored (does not fall)"),
 };
 
+const MEDIA_TOOLS = [
+  fn(
+    "generate_image",
+    "Generate a picture with AI (Nano Banana on Vertex AI). Costs the user coins, so call it only when the user wants a new picture (logo, background, texture, character art, icon, poster) - never for tests. The result is added to the chat as attached image #N: use it right away as image_attachment (GUI image element, object look, tile) or just show it. Write the prompt in English, concrete: subject, style, colors, background (e.g. 'flat transparent-looking white background' for sprites).",
+    obj(
+      {
+        prompt: str("What to draw, in English, one or two sentences"),
+        aspect: str("Shape of the picture", { enum: ["1:1", "16:9", "9:16", "4:3", "3:4"] }),
+        reference_attachment: int("Optional: redraw / edit this attached image (1-based index)"),
+      },
+      ["prompt"],
+    ),
+  ),
+  fn(
+    "generate_video",
+    "Generate a short video clip (4-8 s, with sound) with AI (Veo 3.1 on Vertex AI). Takes 1-3 minutes and costs the user many coins, so call it only when the user clearly asks for a video / trailer / animation clip. The video is shown to the user in the chat (they can download it); games cannot play videos, so do not try to put it into the game.",
+    obj(
+      {
+        prompt: str("What happens in the video, in English: scene, camera, action, mood"),
+        aspect: str("Shape", { enum: ["16:9", "9:16"] }),
+        seconds: int("Length: 4, 6 or 8"),
+        audio: bool("Generate sound (default true)"),
+        reference_attachment: int("Optional: start from this attached image (1-based index)"),
+      },
+      ["prompt"],
+    ),
+  ),
+];
+
 export const TOOLS_3D = [
   fn("get_overview", "Summary of the whole 3D game: places, part counts and extents, spawn, scripts, GUIs, tools, characters, sounds, settings, the camera focus point and the user's selection. Call this first."),
   fn(
@@ -228,6 +257,7 @@ export const TOOLS_3D = [
   ),
   ...SCRIPT_TOOLS,
   ...GUI_TOOLS,
+  ...MEDIA_TOOLS,
   fn(
     "run_test",
     "Run the game in a headless simulation (current editor place, with your unsaved changes) and report chat messages, script errors, prints, GUI changes, teleports, scores and badges. Use it to verify scripts you wrote. Players spawn on the spawn part.",
@@ -361,6 +391,7 @@ export const TOOLS_2D = [
   ),
   ...SCRIPT_TOOLS,
   ...GUI_TOOLS,
+  ...MEDIA_TOOLS,
   fn(
     "run_test",
     "Run the 2D game in a headless simulation (with your unsaved changes) and report chat messages, script errors, prints, level changes and GUI changes. Players start on the start level.",

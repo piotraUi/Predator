@@ -10,6 +10,7 @@ import { adminLog, groups, mutes, reports } from "./social.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings, worldMod } from "./moderation.ts";
+import { DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, imageLocation, imageModel, mediaCosts, mediaStats, videoLocation, videoModel } from "./media.ts";
 import { deleteServiceAccount, gemini, geminiFastModel, geminiModel, geminiReady, geminiStatus, responseText, saveServiceAccount } from "./gemini.ts";
 import { assistantStats } from "./assistant.ts";
 import { mountMediaAdmin } from "./downloads.ts";
@@ -351,7 +352,7 @@ admin.post("/moderation/test", async (req, res) => {
 
 // ---------- Gemini (Google Cloud): plik klucza JSON, model, asystent ----------
 
-const aiStatus = () => ({ ...geminiStatus(), assistant: settings.get("ai_assistant") !== "0", dailyLimit: Number(settings.get("ai_daily_limit") ?? 300), stats: assistantStats() });
+const aiStatus = () => ({ ...geminiStatus(), assistant: settings.get("ai_assistant") !== "0", dailyLimit: Number(settings.get("ai_daily_limit") ?? 300), stats: assistantStats(), media: { enabled: settings.get("ai_media") !== "0", imageModel: imageModel(), videoModel: videoModel(), imageLocation: imageLocation(), videoLocation: videoLocation(), defaults: { image: DEFAULT_IMAGE_MODEL, video: DEFAULT_VIDEO_MODEL }, ...mediaCosts(), ...mediaStats() } });
 
 admin.get("/ai", (_req, res) => res.json(aiStatus()));
 
@@ -386,6 +387,21 @@ admin.put("/ai", (req, res) => {
     if (l && !/^[a-z0-9-]{2,40}$/.test(l)) return fail(res, 400, "Zły region");
     settings.set("gemini_location", l || null);
   }
+  for (const [field, key, re] of [
+    ["imageModel", "ai_image_model", /^[a-z0-9][a-z0-9.\-_@]{1,80}$/i],
+    ["videoModel", "ai_video_model", /^[a-z0-9][a-z0-9.\-_@]{1,80}$/i],
+    ["imageLocation", "ai_image_location", /^[a-z0-9-]{2,40}$/],
+    ["videoLocation", "ai_video_location", /^[a-z0-9-]{2,40}$/],
+  ] as const) {
+    if (typeof b[field] === "string") {
+      const v = b[field].trim();
+      if (v && !re.test(v)) return fail(res, 400, "Zła wartość: " + field);
+      settings.set(key, v || null);
+    }
+  }
+  for (const [field, key] of [["imageCoins", "ai_image_coins"], ["videoCoins", "ai_video_coins"], ["imageDaily", "ai_image_daily"], ["videoDaily", "ai_video_daily"]] as const)
+    if (typeof b[field] === "number") settings.set(key, String(Math.max(0, Math.min(100_000, Math.round(b[field])))));
+  if (typeof b.media === "boolean") settings.set("ai_media", b.media ? "1" : "0");
   if (typeof b.assistant === "boolean") settings.set("ai_assistant", b.assistant ? "1" : "0");
   if (typeof b.dailyLimit === "number") settings.set("ai_daily_limit", String(Math.max(0, Math.min(100_000, Math.round(b.dailyLimit)))));
   log(req, "Ustawienia AI zmienione", "", JSON.stringify({ model: b.model, fastModel: b.fastModel, location: b.location, assistant: b.assistant, dailyLimit: b.dailyLimit }));

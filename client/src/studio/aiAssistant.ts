@@ -1,7 +1,7 @@
 // Asystent AI w Studio (2D i 3D): okno czatu i pętla agenta.
 // Twórca pisze prośbę, model (Gemini na serwerze) odpowiada wywołaniami narzędzi, Studio je wykonuje
 // na otwartej grze i odsyła wyniki - aż model skończy. Cała prośba to jeden krok cofania (Ctrl+Z).
-import { aiApi, ApiError, type AiContent, type AiPart } from "../api.ts";
+import { aiApi, ApiError, getServerUrl, type AiContent, type AiPart } from "../api.ts";
 import { MAX_ASSISTANT_STEPS } from "../../../shared/ai/assistantTools.ts";
 import { normalizeContents } from "../../../shared/ai/contents.ts";
 import { ToolError, type AiAttachments, type Args } from "./aiCommon.ts";
@@ -24,7 +24,7 @@ interface Chat {
   contents: AiContent[];
   att: AiAttachments;
   /** to, co widać w oknie */
-  log: { kind: "user" | "ai" | "step" | "error"; text: string; ok?: boolean; images?: string[] }[];
+  log: { kind: "user" | "ai" | "step" | "error"; text: string; ok?: boolean; images?: string[]; videos?: string[] }[];
 }
 const chats = new Map<string, Chat>();
 export const chatFor = (key: string): Chat => {
@@ -33,7 +33,7 @@ export const chatFor = (key: string): Chat => {
   return c;
 };
 
-const READ_ONLY = new Set(["get_overview", "find_parts", "find_instances", "read_script", "get_gui", "run_test", "show_to_user"]);
+const READ_ONLY = new Set(["get_overview", "find_parts", "find_instances", "read_script", "get_gui", "run_test", "show_to_user", "generate_image", "generate_video"]);
 const len = (v: unknown) => (Array.isArray(v) ? v.length : 0);
 const q = (v: unknown) => `„${String(v ?? "")}”`;
 const LABELS: Record<string, (a: Args) => string> = {
@@ -55,6 +55,8 @@ const LABELS: Record<string, (a: Args) => string> = {
   delete_gui: (a) => `Usuwam GUI ${q(a.name)}`,
   run_test: (a) => `Testuję grę (${a.seconds ?? 10} s)`,
   show_to_user: () => "Pokazuję ci to",
+  generate_image: (a) => `Rysuję obrazek: ${String(a.prompt ?? "").slice(0, 60)}`,
+  generate_video: (a) => `Robię filmik (Veo 3.1): ${String(a.prompt ?? "").slice(0, 50)}`,
   save_objects: (a) => `Obiekty: ${(Array.isArray(a.objects) ? (a.objects as Args[]) : []).map((o) => o.name).join(", ")}`,
   delete_objects: () => "Usuwam obiekty",
   place_instances: (a) => `Stawiam ${len(a.items)} obiektów`,
@@ -181,6 +183,14 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
     if (it.kind === "error") return h("div", { class: "ai-msg error" }, "❌ " + it.text);
     const el = h("div", { class: "ai-msg " + it.kind });
     if (it.images?.length) el.append(h("div", { class: "ai-imgs" }, ...it.images.map((src) => h("img", { src, alt: "" }))));
+    if (it.videos?.length)
+      el.append(
+        h(
+          "div",
+          { class: "ai-imgs" },
+          ...it.videos.map((src) => h("div", { class: "ai-video" }, h("video", { src, controls: true, loop: true, playsinline: true, preload: "metadata" }), h("a", { class: "btn tiny", href: src, download: "film-ai.mp4", target: "_blank" }, "⬇ Pobierz"))),
+        ),
+      );
     el.append(it.kind === "ai" ? md(it.text) : h("div", { class: "ai-text" }, it.text));
     return el;
   }
@@ -300,6 +310,59 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
     await agent();
   }
 
+
+  /** pobiera plik z serwera jako data URL (obrazek wraca do rozmowy jako załącznik) */
+  async function toDataUrl(url: string): Promise<string> {
+    const blob = await (await fetch(getServerUrl() + url)).blob();
+    return await new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result));
+      r.onerror = () => rej(new Error("Nie udało się wczytać obrazka"));
+      r.readAsDataURL(blob);
+    });
+  }
+  const refImage = (a: Args) => {
+    const i = typeof a.reference_attachment === "number" ? a.reference_attachment : 0;
+    const src = i > 0 ? chat.att.images[i - 1] : undefined;
+    return src && /^data:image\/(png|jpeg|webp);/.test(src) ? src : undefined;
+  };
+  /** generate_image / generate_video - wykonuje je serwer (Vertex AI), nie Studio */
+  async function runMedia(name: string, a: Args, signal: AbortSignal, progress: (t: string) => void): Promise<unknown> {
+    const prompt = String(a.prompt ?? "").trim();
+    if (!prompt) throw new ToolError("prompt is required");
+    try {
+      if (name === "generate_image") {
+        const r = await aiApi.image(prompt, typeof a.aspect === "string" ? a.aspect : undefined, refImage(a), signal);
+        session.set(r.user);
+        const src = await toDataUrl(r.url);
+        chat.att.images.push(src);
+        add({ kind: "ai", text: "🖼 Narysowane przez AI (Nano Banana)", images: [src] });
+        return { ok: true, image_attachment: chat.att.images.length, note: "The picture is shown to the user and saved as attached image #" + chat.att.images.length + ". Use it as image_attachment if the game needs it." };
+      }
+      const t0 = Date.now();
+      const started = await aiApi.video(prompt, { aspect: typeof a.aspect === "string" ? a.aspect : undefined, seconds: typeof a.seconds === "number" ? a.seconds : undefined, audio: a.audio === false ? false : undefined, reference: refImage(a) }, signal);
+      session.set(started.user);
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 5000));
+        if (signal.aborted) throw new ToolError("Stopped by the user (the video keeps rendering and the coins are not returned)");
+        progress(`Filmik się renderuje… ${Math.round((Date.now() - t0) / 1000)} s (zwykle 1-3 min)`);
+        const st = await aiApi.videoStatus(started.job, signal).catch((e): Awaited<ReturnType<typeof aiApi.videoStatus>> => {
+          if (e instanceof ApiError && e.status === 0) return { status: "working" };
+          throw e;
+        });
+        if (st.user) session.set(st.user);
+        if (st.status === "failed") throw new ToolError(st.error ?? "Video failed");
+        if (st.status === "done" && st.url) {
+          add({ kind: "ai", text: "🎬 Filmik gotowy (Veo 3.1)", videos: [getServerUrl() + st.url] });
+          return { ok: true, note: "The video is shown to the user in the chat with a download button." };
+        }
+      }
+    } catch (e) {
+      if (e instanceof ToolError) throw e;
+      throw new ToolError((e instanceof ApiError ? e.message : (e as Error).message) || "AI media failed");
+    }
+  }
+
   /** telefon traci czasem połączenie (np. zmiana sieci) - krok ponawiamy 2 razy */
   async function stepWithRetry(signal: AbortSignal) {
     for (let attempt = 0; ; attempt++) {
@@ -354,8 +417,17 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
                 host.begin();
                 began = true;
               }
-              result = { result: await host.run(fc.name, args) };
-              if (!READ_ONLY.has(fc.name)) host.end();
+              if (fc.name === "generate_image" || fc.name === "generate_video") {
+                result = {
+                  result: await runMedia(fc.name, args, ctrl.signal, (t) => {
+                    line.it.text = t;
+                    line.el.replaceWith((line.el = renderItem(line.it)));
+                  }),
+                };
+              } else {
+                result = { result: await host.run(fc.name, args) };
+                if (!READ_ONLY.has(fc.name)) host.end();
+              }
             } catch (e) {
               result = { error: e instanceof ToolError ? e.message : "Tool crashed: " + (e as Error).message };
               if (!(e instanceof ToolError)) console.error(e);

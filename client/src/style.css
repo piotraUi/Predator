@@ -1489,6 +1489,9 @@ button.gui-el:active { transform: translateY(calc(var(--gs,1px)*3)); box-shadow:
 .ai-chip:hover { border-color: #8a7dff; }
 .ai-imgs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .ai-imgs img { max-width: 120px; max-height: 90px; border-radius: 6px; }
+.ai-msg.ai .ai-imgs img { max-width: min(100%, 300px); max-height: 260px; }
+.ai-video { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.ai-video video { max-width: min(100%, 320px); max-height: 260px; border-radius: 8px; background: #000; }
 .ai-thumbs { display: flex; gap: 6px; padding: 0 12px; flex-wrap: wrap; }
 .ai-thumbs:empty { display: none; }
 .ai-thumb { position: relative; }

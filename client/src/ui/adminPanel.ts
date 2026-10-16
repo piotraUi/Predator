@@ -519,6 +519,16 @@ async function aiTab(el: HTMLElement) {
   const fastModel = h("input", { value: s.fastModel, placeholder: "gemini-3.5-flash-lite" });
   const loc = h("input", { value: s.location, placeholder: "global" });
   const limit = h("input", { type: "number", min: "0", value: String(s.dailyLimit) });
+  const m = s.media;
+  const imgModel = h("input", { value: m.imageModel, placeholder: m.defaults.image });
+  const vidModel = h("input", { value: m.videoModel, placeholder: m.defaults.video });
+  const imgLoc = h("input", { value: m.imageLocation, placeholder: "global" });
+  const vidLoc = h("input", { value: m.videoLocation, placeholder: "us-central1" });
+  const numIn = (v: number) => h("input", { type: "number", min: "0", value: String(v) });
+  const imgCoins = numIn(m.imageCoins);
+  const vidCoins = numIn(m.videoCoins);
+  const imgDaily = numIn(m.imageDaily);
+  const vidDaily = numIn(m.videoDaily);
   const testOut = h("div", { class: "muted small" });
   el.append(
     h(
@@ -592,6 +602,39 @@ async function aiTab(el: HTMLElement) {
         ),
       ),
       testOut,
+    ),
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "🎨 Obrazy i filmiki AI"),
+      h("p", { class: "muted small" }, "Asystent w Studio może rysować obrazy (Nano Banana) i robić filmiki (Veo 3.1) przez Vertex AI - tym samym kluczem. Kosztuje to monety graczy (admini za darmo); nieudane generowanie zwraca monety. Veo działa tylko w wybranych regionach (np. us-central1)."),
+      h("p", null, m.enabled ? "✅ Włączone" : "⏸️ Wyłączone", s.ready ? "" : " (potrzebny klucz Gemini)"),
+      h("p", { class: "muted small" }, `Dzisiaj: ${m.imagesToday} obrazów, ${m.videosToday} filmików.`),
+      h("label", { class: "field" }, h("span", null, "Model obrazów (Nano Banana, np. " + m.defaults.image + ")"), imgModel),
+      h("label", { class: "field" }, h("span", null, "Region obrazów (global)"), imgLoc),
+      h("label", { class: "field" }, h("span", null, "Model filmów (Veo 3.1, np. " + m.defaults.video + ")"), vidModel),
+      h("label", { class: "field" }, h("span", null, "Region filmów (us-central1)"), vidLoc),
+      h("label", { class: "field" }, h("span", null, "Cena obrazu w monetach"), imgCoins),
+      h("label", { class: "field" }, h("span", null, "Cena filmu w monetach"), vidCoins),
+      h("label", { class: "field" }, h("span", null, "Obrazów na gracza dziennie"), imgDaily),
+      h("label", { class: "field" }, h("span", null, "Filmów na gracza dziennie"), vidDaily),
+      h(
+        "div",
+        { class: "row wrap" },
+        h(
+          "button",
+          {
+            class: "btn small primary",
+            onClick: async () =>
+              (await run(
+                adminApi.setAi({ imageModel: imgModel.value, videoModel: vidModel.value, imageLocation: imgLoc.value, videoLocation: vidLoc.value, imageCoins: Number(imgCoins.value) || 0, videoCoins: Number(vidCoins.value) || 0, imageDaily: Number(imgDaily.value) || 0, videoDaily: Number(vidDaily.value) || 0 }),
+                "Zapisano",
+              )) && redraw(),
+          },
+          "Zapisz",
+        ),
+        h("button", { class: "btn small", onClick: async () => (await run(adminApi.setAi({ media: !m.enabled }))) && redraw() }, m.enabled ? "⏸️ Wyłącz obrazy i filmy" : "▶️ Włącz obrazy i filmy"),
+      ),
     ),
     h(
       "div",
