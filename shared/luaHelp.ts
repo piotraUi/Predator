@@ -93,6 +93,24 @@ export const LUA_HELP: [string, string][] = [
   ["setTime(0.25) / getTime() / isNight()", "pora dnia: 0 wschód, 0.25 południe, 0.5 zachód, 0.75 północ"],
   ['spawnMob("zombie", x, y, z)', "stwórz moba: zombie, creeper, pig, sheep, cow"],
   ["explode(x, y, z, 3)", "wybuch jak TNT (promień w blokach)"],
+  // ---- nowe: administracja, dane gry, odczyt klocków, drużyny, pomocnicze ----
+  ["isOwner(player) / isAdmin(player)", "czy gracz jest właścicielem gry / administracją gry (właściciel, współtwórca, moderator Predatora)"],
+  ["getUserId(player)", "stały numer konta gracza (do własnych list banów, VIP-ów itp.)"],
+  ['kick(player, "powód")', "wyrzuć gracza z gry (nie działa na administrację gry)"],
+  ['saveGlobal("rekord", 120) / loadGlobal("rekord", 0)', "dane całej gry (wspólne dla wszystkich graczy i serwerów), np. rekord wszech czasów"],
+  ['getSize("Nazwa")', "zwraca sx, sy, sz klocka"],
+  ['getColor("Nazwa") / getTransparency("Nazwa") / getRotation("Nazwa") / getLabel("Nazwa")', "kolor, przezroczystość, obrót, napis klocka (nil gdy nie ma takiego klocka)"],
+  ['partExists("Nazwa")', "czy jest klocek o tej nazwie"],
+  ["local t = every(2, f) · cancel(t)", "every i after zwracają uchwyt - cancel(uchwyt) kończy odliczanie / powtarzanie"],
+  ['setTeam(player, "Czerwoni") · getTeam(player) · teamPlayers("Czerwoni") · teamCount("Czerwoni") · clearTeams()', "drużyny graczy"],
+  ["playerCount() · findPlayer(\"nick\") · tellAll(\"tekst\")", "ilu graczy / znajdź gracza po nicku / wiadomość do wszystkich"],
+  ["playersNear(x, y, z, promień) · nearestPlayer(x, y, z, maks)", "lista graczy w pobliżu / najbliższy gracz (zwraca gracza i odległość)"],
+  ["topPlayers(3)", "najlepsi gracze wg punktów (lista)"],
+  ['cooldown("klucz", 3)', "true, jeśli minęły 3 s od ostatniego razu - ogranicza spam akcji"],
+  ["clamp(x, a, b) · lerp(a, b, t) · round(x, miejsca) · sign(x)", "matematyka"],
+  ["distance(x1, z1, x2, z2) · distance3(x1, y1, z1, x2, y2, z2)", "odległość"],
+  ["choice(lista) · shuffle(lista) · contains(lista, wartość)", "losowy element / pomieszaj listę / czy lista zawiera"],
+  ["formatTime(sekundy) · formatNumber(n)", '"2:05" / "12 345"'],
 ];
 
 export const LUA_HELP_2D: [string, string][] = [
@@ -152,4 +170,36 @@ export const LUA_HELP_2D: [string, string][] = [
   ["addScore(player, 1)", "punkty w rankingu"],
   ['awardBadge(player, "Nazwa odznaki")', "daj graczowi odznakę (Ustawienia gry → Odznaki)"],
   ['print("tekst")', "wypisz w konsoli"],
+  // ---- nowe: dane gry i pomocnicze ----
+  ['saveGlobal("rekord", 120) / loadGlobal("rekord", 0)', "dane całej gry (wspólne dla wszystkich graczy), np. rekord wszech czasów"],
+  ["local t = every(2, f) · cancel(t)", "every i after zwracają uchwyt - cancel(uchwyt) kończy odliczanie / powtarzanie"],
+  ['setTeam(player, "Czerwoni") · getTeam(player) · teamPlayers("Czerwoni") · teamCount("Czerwoni") · clearTeams()', "drużyny graczy"],
+  ["playerCount() · findPlayer(\"nick\") · tellAll(\"tekst\") · topPlayers(3)", "gracze: ilu / po nicku / wiadomość do wszystkich / najlepsi wg punktów"],
+  ['cooldown("klucz", 3)', "true, jeśli minęły 3 s od ostatniego razu - ogranicza spam akcji"],
+  ["clamp(x, a, b) · lerp(a, b, t) · round(x, miejsca) · sign(x) · distance(x1, y1, x2, y2)", "matematyka"],
+  ["choice(lista) · shuffle(lista) · contains(lista, wartość) · formatTime(s) · formatNumber(n)", "listy i formatowanie"],
 ];
+
+/** Grupy funkcji (do pomocy w edytorze i do instrukcji asystenta AI): nazwa grupy -> wzorzec początku funkcji */
+const GROUPS: [string, RegExp][] = [
+  ["Zdarzenia", /^(onPlayer|onTouch|onChat|onRespawn|onDied|onToolUse|onAnswer|onSit|onUnsit|onPurchase|onGuiClick|onClientEvent|onBlock|onLevelEnter|-- skrypt GRACZA)/],
+  ["Czas i timery", /^(every|after|wait|time|local t = every|cooldown|formatTime)/],
+  ["Gracze", /^(kill|teleport|playerName|getPlayers|getPlayerPosition|getPlayerLook|addScore|setSpeed|setJump|setSpeed|giveTool|removeTool|hasTool|damage|heal|getHealth|setCharacter|playAnimation|stopAnimation|chooseCharacter|isOwner|getUserId|kick|setTeam|playerCount|playersNear|topPlayers|hidePlayer|getCoins|setPlayerAnimation|resetPlayerAnimations|autoWalk|setForce|jump|lockCamera|exitGame|setLevel|getLevel|getPlayersOnLevel)/],
+  ["Klocki i obiekty", /^(setColor|setPosition|move|setSize|setVisible|setTransparency|setCollide|getPosition|getSize|getColor|partExists|tweenPart|tweenMove|setPhysics|pushPart|setLabel|setRotation|npcAnimation|setAnimation|setText|hideObject|moveObject|flipObject|showFor|countObjects|createObject|deleteObject|setVisibleFor)/],
+  ["Okienka (GUI)", /^(showGui|setGuiText|isGuiOpen|prompt|speak)/],
+  ["Dźwięk, światło, niebo", /^(playSound|setMusic|setSky|setSkybox|setLight|flicker|effect|setBackground|setSkyFor)/],
+  ["Zapis i sklep", /^(saveData|loadData|deleteData|saveGlobal|promptPurchase|onPurchase|ownsProduct|openShop|awardBadge)/],
+  ["Świat z bloków", /^(getBlock|setBlock|blockAt|getSurface|giveItem|takeItem|spawnMob|explode|setTime)/],
+  ["Miejsca i pokoje", /^(teleportToPlace|openRooms|getRoom|getPlace)/],
+  ["Matematyka i narzędzia", /^(clamp|distance|choice|round)/],
+];
+/** funkcje pogrupowane tematycznie (kolejność grup stała, reszta w "Inne") */
+export function groupLuaHelp(list: [string, string][]): [string, [string, string][]][] {
+  const out = new Map<string, [string, string][]>(GROUPS.map(([g]) => [g, []]));
+  out.set("Inne", []);
+  for (const e of list) {
+    const g = GROUPS.find(([, re]) => re.test(e[0]))?.[0] ?? "Inne";
+    out.get(g)!.push(e);
+  }
+  return [...out].filter(([, v]) => v.length);
+}

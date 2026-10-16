@@ -3,7 +3,7 @@ import type { WorldScript } from "../../../shared/types.ts";
 import { ask, h, toast } from "../ui/dom.ts";
 
 export { LUA_HELP, LUA_HELP_2D } from "../../../shared/luaHelp.ts";
-import { LUA_HELP } from "../../../shared/luaHelp.ts";
+import { groupLuaHelp, LUA_HELP } from "../../../shared/luaHelp.ts";
 
 export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) => void, helpList: [string, string][] = LUA_HELP, mode: "3d" | "2d" = "3d") {
   const nameInput = h("input", { class: "script-name", value: script.name, maxLength: 40 });
@@ -62,19 +62,26 @@ export function openScriptEditor(script: WorldScript, onSave: (s: WorldScript) =
       { class: "help" },
       h("h3", null, "Co można użyć"),
       h("p", { class: "muted" }, "Kliknij, żeby wstawić do kodu. Klocki wskazujesz po nazwie z panelu Właściwości."),
-      helpList.map(([code, desc]) =>
+      groupLuaHelp(helpList).map(([group, items]) =>
         h(
-          "button",
-          {
-            class: "help-item",
-            onClick: () => {
-              area.setRangeText(code, area.selectionStart, area.selectionEnd, "end");
-              area.focus();
-              markDirty();
-            },
-          },
-          h("code", null, code),
-          h("span", null, desc),
+          "details",
+          { class: "help-group", open: group === "Zdarzenia" || group === "Klocki i obiekty" },
+          h("summary", null, `${group} (${items.length})`),
+          items.map(([code, desc]) =>
+            h(
+              "button",
+              {
+                class: "help-item",
+                onClick: () => {
+                  area.setRangeText(code, area.selectionStart, area.selectionEnd, "end");
+                  area.focus();
+                  markDirty();
+                },
+              },
+              h("code", null, code),
+              h("span", null, desc),
+            ),
+          ),
         ),
       ),
     );

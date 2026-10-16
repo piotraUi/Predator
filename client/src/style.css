@@ -1726,3 +1726,5 @@ body[data-screen="play"] .dl-banner, body[data-screen="studio"] .dl-banner { dis
 
 .players-admin { background: #1a2030; border: 1px solid #3a4a70; border-radius: 10px; padding: 8px; margin-bottom: 10px; }
 .players-admin .players-actions { flex-wrap: wrap; margin-top: 6px; }
+
+.help-group > summary { cursor: pointer; font-weight: 700; padding: 6px 4px; color: var(--accent, #8ab4ff); }

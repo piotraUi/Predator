@@ -5,7 +5,8 @@ import { aiApi, ApiError, type AiContent, type AiPart } from "../api.ts";
 import { MAX_ASSISTANT_STEPS } from "../../../shared/ai/assistantTools.ts";
 import { normalizeContents } from "../../../shared/ai/contents.ts";
 import { ToolError, type AiAttachments, type Args } from "./aiCommon.ts";
-import { h, toast } from "../ui/dom.ts";
+import { ask, h, toast } from "../ui/dom.ts";
+import { session } from "../state.ts";
 
 export interface AiHost {
   mode: "3d" | "2d";
@@ -241,11 +242,30 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
     stopBtn.classList.toggle("hidden", !b);
     input.disabled = b;
   };
-  const showUsage = (used: number, limit: number | null) => (status.textContent = limit === null ? "" : `· ${used}/${limit} kroków dziś`);
+  let pack: { steps: number; coins: number } | undefined;
+  const buyBtn = h("button", { class: "btn tiny hidden", title: "Przedłuż asystenta na dziś" }, "➕ więcej");
+  status.after(buyBtn);
+  buyBtn.addEventListener("click", async () => {
+    if (!pack) return;
+    if (!(await ask(`Dokupić ${pack.steps} kroków asystenta na dziś za ${pack.coins} 🪙?`, "Kup", "Anuluj"))) return;
+    try {
+      const r = await aiApi.buy();
+      session.set(r.user);
+      showUsage(r.used, r.limit);
+      toast(`Dokupiono ${pack.steps} kroków 🎉`, "good");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  });
+  const showUsage = (used: number, limit: number | null) => {
+    status.textContent = limit === null ? "" : `· ${used}/${limit} kroków dziś`;
+    buyBtn.classList.toggle("hidden", limit === null || !pack);
+  };
   aiApi
     .status()
     .then((s) => {
       if (!s.enabled) add({ kind: "error", text: "Asystent AI jest wyłączony na tym serwerze. Admin musi wgrać klucz Gemini (Panel admina → AI)." });
+      pack = s.pack;
       showUsage(s.used, s.limit);
     })
     .catch(() => {});

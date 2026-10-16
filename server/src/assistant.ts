@@ -2,10 +2,10 @@
 // Serwer tylko pośredniczy: dodaje instrukcje i listę narzędzi, pilnuje limitów i klucza.
 // Narzędzia wykonuje Studio w przeglądarce (na otwartej grze, z cofaniem), a wyniki wracają w kolejnym zapytaniu.
 import express from "express";
-import { LUA_HELP, LUA_HELP_2D } from "../../shared/luaHelp.ts";
+import { groupLuaHelp, LUA_HELP, LUA_HELP_2D } from "../../shared/luaHelp.ts";
 import { MAX_ASSISTANT_STEPS, TOOLS_2D, TOOLS_3D } from "../../shared/ai/assistantTools.ts";
 import { requireAuth, type AuthedRequest } from "./auth.ts";
-import { isAdminName } from "./db.ts";
+import { db, isAdminName, toPublicUser, users } from "./db.ts";
 import { gemini, GeminiError, geminiModel, geminiReady, type GeminiContent, type GeminiPart } from "./gemini.ts";
 import { settings } from "./settings.ts";
 import { normalizeContents } from "../../shared/ai/contents.ts";
@@ -14,6 +14,19 @@ export const assistantRouter = express.Router();
 
 const enabled = () => geminiReady() && settings.get("ai_assistant") !== "0";
 const dailyLimit = () => Number(settings.get("ai_daily_limit") ?? 300);
+
+// ---------- dokupowanie kroków za monety ----------
+/** pakiet: tyle kroków asystenta (na dzisiejszy dzień) za tyle monet */
+const PACK = { steps: 150, coins: 40 };
+db.exec(`CREATE TABLE IF NOT EXISTS ai_extra (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  steps INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+)`);
+const extraSteps = (userId: number) =>
+  (db.prepare("SELECT steps FROM ai_extra WHERE user_id = ? AND day = ?").get(userId, new Date().toISOString().slice(0, 10)) as { steps: number } | undefined)?.steps ?? 0;
+const limitFor = (userId: number) => dailyLimit() + extraSteps(userId);
 
 // ---------- limity (zapytania na dzień na konto) ----------
 const usage = new Map<number, { day: string; n: number }>();
@@ -46,11 +59,18 @@ How you work:
 - Names matter: scripts find parts/objects by name, so give clear unique names (e.g. "Lawa", "Meta", "Przycisk_Start").
 - Content must be suitable for children: no sexual content, gore, hate, real-world violence, drugs or personal data. Cartoon game violence (swords, monsters) is fine. Refuse other requests politely.
 - At the end, tell the user in 1-4 short sentences what you made and how to try it (e.g. "Kliknij ▶ Testuj").
-- If something cannot be done with your tools, say so honestly and suggest what the user can do by hand in Studio.
+- If something cannot be done with your tools or with the Lua functions listed below, say so honestly in one sentence ("W Predatorze nie ma jeszcze funkcji do ...") and offer the closest thing that IS possible. Never invent functions, parameters or tool names - if a function is not in the lists, it does not exist.
+- Think before acting: list what the game needs (map, scripts, GUI, sounds, badges) and build it in the right order. When the request is vague, make good default choices instead of asking many questions; ask at most one short question only if the answer changes everything.
+- Quality bar: a finished game has a clear goal, feedback (messages, sounds, GUI), a way to win or lose, and no leftovers (test parts, overlapping objects, scripts that error). Re-read what you built with the find_* / get_* tools and fix problems before you answer.
+- Use the helper functions (cooldown, setTeam, topPlayers, distance, saveGlobal, cancel...) instead of re-implementing them.
 
 Lua scripting (server-side, Lua 5.3, sandboxed): there are no Roblox objects (no game.Workspace, no Instance.new) - only the functions below. Event handlers are registered once at the top level of a script. Use local variables and tables for state per player (key by playerName(player)). Use every()/after() for timers; wait() only inside handlers. Text shown to players should be in Polish unless the user wants another language.`;
 
-const luaList = (list: [string, string][]) => list.map(([f, d]) => `- ${f} — ${d}`).join("\n");
+/** pełna lista funkcji Lua, pogrupowana - asystent zawsze zna całe API */
+const luaList = (list: [string, string][]) =>
+  groupLuaHelp(list)
+    .map(([g, items]) => `## ${g}\n` + items.map(([f, d]) => `- ${f} — ${d}`).join("\n"))
+    .join("\n\n");
 
 const PROMPT_3D = `${COMMON}
 
@@ -110,7 +130,19 @@ function cleanContents(raw: unknown): GeminiContent[] | string {
 assistantRouter.get("/status", requireAuth, (req, res) => {
   const u = (req as AuthedRequest).user;
   const admin = isAdminName(u.username);
-  res.json({ enabled: enabled(), model: geminiModel(), used: used(u.id), limit: admin ? null : dailyLimit() });
+  res.json({ enabled: enabled(), model: geminiModel(), used: used(u.id), limit: admin ? null : limitFor(u.id), pack: PACK, coins: u.coins });
+});
+
+/** przedłużenie asystenta na dziś: kilka monet za kolejną porcję kroków */
+assistantRouter.post("/buy", requireAuth, (req, res) => {
+  const u = (req as AuthedRequest).user;
+  if (isAdminName(u.username)) return void res.status(400).json({ error: "Admin nie ma limitu" });
+  const fresh = users.byId(u.id)!;
+  if (fresh.coins < PACK.coins) return void res.status(400).json({ error: `Za mało monet (potrzeba ${PACK.coins})` });
+  users.addCoins(u.id, -PACK.coins);
+  const day = new Date().toISOString().slice(0, 10);
+  db.prepare("INSERT INTO ai_extra (user_id, day, steps) VALUES (?, ?, ?) ON CONFLICT(user_id, day) DO UPDATE SET steps = steps + excluded.steps").run(u.id, day, PACK.steps);
+  res.json({ ok: true, limit: limitFor(u.id), used: used(u.id), coins: users.byId(u.id)!.coins, user: toPublicUser(users.byId(u.id)!) });
 });
 
 assistantRouter.post("/assistant", express.json({ limit: "12mb" }), requireAuth, async (req, res) => {
@@ -121,7 +153,7 @@ assistantRouter.post("/assistant", express.json({ limit: "12mb" }), requireAuth,
   if (typeof contents === "string") return void res.status(400).json({ error: contents });
   const admin = isAdminName(u.username);
   const n = used(u.id);
-  if (!admin && n >= dailyLimit()) return void res.status(429).json({ error: `Dzisiejszy limit asystenta się skończył (${dailyLimit()} kroków). Wróć jutro!` });
+  if (!admin && n >= limitFor(u.id)) return void res.status(429).json({ error: `Dzisiejszy limit asystenta się skończył (${limitFor(u.id)} kroków). Wróć jutro albo przedłuż go za ${PACK.coins} monet (przycisk ➕ przy liczniku kroków).`, limitReached: true });
   usage.set(u.id, { day: today(), n: n + 1 });
   try {
     const r = await gemini(
@@ -139,7 +171,7 @@ assistantRouter.post("/assistant", express.json({ limit: "12mb" }), requireAuth,
       const why = r.promptFeedback?.blockReason || cand?.finishReason || "brak odpowiedzi";
       return void res.status(422).json({ error: why === "SAFETY" || r.promptFeedback?.blockReason ? "Asystent nie może pomóc w tej prośbie." : `Asystent nie odpowiedział (${why}). Spróbuj jeszcze raz.` });
     }
-    res.json({ content: { role: "model", parts: cand.content.parts }, finish: cand.finishReason ?? "", used: n + 1, limit: admin ? null : dailyLimit() });
+    res.json({ content: { role: "model", parts: cand.content.parts }, finish: cand.finishReason ?? "", used: n + 1, limit: admin ? null : limitFor(u.id) });
   } catch (e) {
     const err = e as Error;
     console.warn("Asystent AI:", err.message);

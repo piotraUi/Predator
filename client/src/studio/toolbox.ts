@@ -3,6 +3,7 @@
 import type { Part, WorldScript } from "../../../shared/types.ts";
 import { newId } from "../../../shared/world.ts";
 import { h, modal } from "../ui/dom.ts";
+import { EXTRA_CATS, EXTRA_MODELS } from "./toolboxExtra.ts";
 
 // =====================================================================
 // Zestaw - gotowe modele
@@ -23,7 +24,7 @@ const WOOD = "#8d6e63";
 const LEAF = "#43a047";
 const STONE = "#9e9e9e";
 
-export const TOOLBOX_CATS = ["Podstawowe", "Tor przeszkód", "Natura", "Budynki", "Miasto", "Pojazdy", "Zabawa"];
+export const TOOLBOX_CATS = ["Podstawowe", "Tor przeszkód", "Natura", "Budynki", "Miasto", "Pojazdy", "Zabawa", ...EXTRA_CATS];
 
 /** koło pojazdu: spłaszczona kula (oś wzdłuż x) */
 const wheel = (x: number, y: number, z: number, r = 1.1): ModelPart => ({ name: "Koło", shape: "sphere", sx: 0.8, sy: r * 2, sz: r * 2, x, y, z, color: "#212121" });
@@ -378,6 +379,9 @@ export const MODEL_BEHAVIOR: Record<string, string> = {
   portal: "teleport",
   finish: "finish",
 };
+
+// dodatkowe modele (samoloty, statki, wille, meble, Kukirin...) - osobny plik
+TOOLBOX.push(...EXTRA_MODELS);
 
 // =====================================================================
 // Zachowania - skrypty jednym kliknięciem

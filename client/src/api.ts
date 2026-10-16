@@ -329,7 +329,9 @@ export interface AiContent {
   parts: AiPart[];
 }
 export const aiApi = {
-  status: () => req<{ enabled: boolean; model: string; used: number; limit: number | null }>("GET", "/ai/status"),
+  status: () => req<{ enabled: boolean; model: string; used: number; limit: number | null; pack?: { steps: number; coins: number }; coins?: number }>("GET", "/ai/status"),
+  /** przedłużenie na dziś za monety */
+  buy: () => req<{ ok: true; limit: number; used: number; coins: number; user: PublicUser }>("POST", "/ai/buy"),
   step: (mode: "3d" | "2d", contents: AiContent[], signal?: AbortSignal) =>
     req<{ content: AiContent; finish: string; used: number; limit: number | null }>("POST", "/ai/assistant", { mode, contents }, 200_000, signal),
 };
