@@ -17,7 +17,7 @@ const DIR = path.join(config.dataDir, "ai-media");
 fs.mkdirSync(DIR, { recursive: true });
 
 /** Domyślne modele (admin może zmienić w panelu: zakładka AI). */
-export const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview"; // Nano Banana
+export const DEFAULT_IMAGE_MODEL = "gemini-nano-banana-2.1"; // Nano Banana
 export const DEFAULT_VIDEO_MODEL = "veo-3.1-generate-001"; // Veo 3.1
 export const imageModel = () => process.env.AI_IMAGE_MODEL || settings.get("ai_image_model") || DEFAULT_IMAGE_MODEL;
 export const videoModel = () => process.env.AI_VIDEO_MODEL || settings.get("ai_video_model") || DEFAULT_VIDEO_MODEL;
@@ -110,7 +110,7 @@ const ASPECT_IMG = new Set(["1:1", "16:9", "9:16", "4:3", "3:4"]);
 const ASPECT_VID = new Set(["16:9", "9:16"]);
 const errText = (e: unknown) => (e instanceof GeminiError || e instanceof Error ? e.message : String(e)).slice(0, 300);
 
-// ---------- obrazy (Nano Banana) ----------
+// ---------- obrazy (Nano Banana 2.1) ----------
 
 mediaRouter.get("/media-status", requireAuth, (req, res) => {
   const u = (req as AuthedRequest).user;
