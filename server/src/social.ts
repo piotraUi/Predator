@@ -381,17 +381,14 @@ export const privateServers = {
   remove: (id: number) => db.prepare("DELETE FROM private_servers WHERE id = ?").run(id),
   setCode: (id: number, code: string) => db.prepare("UPDATE private_servers SET code = ? WHERE id = ?").run(code, id),
   countOwned: (ownerId: number) => (db.prepare("SELECT COUNT(*) AS c FROM private_servers WHERE owner_id = ?").get(ownerId) as { c: number }).c,
-  /** serwery gry, które widzi użytkownik: własne i znajomych */
+  /** serwery gry, które widzi użytkownik: tylko własne (cudze serwery otwiera się wyłącznie kodem zaproszenia) */
   visible: (worldId: number, userId: number) =>
     db
       .prepare(
         `SELECT s.*, u.username AS owner_name FROM private_servers s JOIN users u ON u.id = s.owner_id
-         WHERE s.world_id = ? AND (s.owner_id = ? OR s.owner_id IN (
-           SELECT CASE WHEN f.user_id = ? THEN f.friend_id ELSE f.user_id END FROM friends f
-           WHERE (f.user_id = ? OR f.friend_id = ?) AND f.status = 'accepted'))
-         ORDER BY s.owner_id = ? DESC, s.id DESC LIMIT 50`,
+         WHERE s.world_id = ? AND s.owner_id = ? ORDER BY s.id DESC LIMIT 50`,
       )
-      .all(worldId, userId, userId, userId, userId, userId) as unknown as (PrivateServerRow & { owner_name: string })[],
+      .all(worldId, userId) as unknown as (PrivateServerRow & { owner_name: string })[],
 };
 
 export const areFriends = (a: number, b: number) =>

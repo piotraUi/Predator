@@ -3,7 +3,8 @@ import express from "express";
 import { matchMaker } from "colyseus";
 import { CATALOG, findItem } from "../../shared/catalog.ts";
 import { hashPassword, requireAuth, type AuthedRequest } from "./auth.ts";
-import { alerts, isAdminName, users, worlds } from "./db.ts";
+import { alerts, isAdminName, isModeratorName, isSuperAdmin, users, worlds } from "./db.ts";
+import { kickUserEverywhere } from "./kick.ts";
 import { presence } from "./presence.ts";
 import { adminLog, groups, mutes, reports } from "./social.ts";
 import fs from "node:fs";
@@ -17,12 +18,15 @@ import { BACKUP_DIR, BACKUP_NAME_RE, backupNow, checkUpdates, isGitRepo, listBac
 export const admin = express.Router();
 
 admin.use(express.json({ limit: "100kb" }));
+/** to, co wolno moderatorowi (reszta panelu tylko dla adminów): zgłoszenia, szukanie graczy, bany i wyciszenia */
+const MOD_ROUTES: [string, RegExp][] = [
+  ["GET", /^\/users$/], ["POST", /^\/users\/\d+\/ban$/], ["POST", /^\/users\/\d+\/mute$/], ["POST", /^\/users\/\d+\/kick$/],
+  ["GET", /^\/reports$/], ["POST", /^\/reports\/\d+\/close$/], ["GET", /^\/bans$/], ["GET", /^\/stats$/], ["GET", /^\/log$/],
+];
 admin.use(requireAuth, (req, res, next) => {
-  if (!isAdminName((req as AuthedRequest).user.username)) {
-    res.status(403).json({ error: "Brak dostępu do panelu admina" });
-    return;
-  }
-  next();
+  const name = (req as AuthedRequest).user.username;
+  if (isAdminName(name) || (isModeratorName(name) && MOD_ROUTES.some(([m, re]) => m === req.method && re.test(req.path)))) return next();
+  res.status(403).json({ error: "Brak dostępu do panelu admina" });
 });
 
 const fail = (res: express.Response, code: number, error: string) => res.status(code).json({ error });
@@ -39,6 +43,8 @@ const userOut = (u: ReturnType<typeof users.byId> & object) => ({
   coins: u.coins,
   banned: !!u.banned,
   admin: isAdminName(u.username),
+  role: isSuperAdmin(u.username) ? "super" : u.role,
+  ban: u.banned ? { reason: u.ban_reason, by: u.ban_by, until: u.ban_until, at: u.banned_at } : null,
   createdAt: u.created_at,
   online: presence.get(u.id).online,
   mutedUntil: mutes.until(u.id) > Date.now() ? mutes.until(u.id) : 0,
@@ -91,11 +97,50 @@ admin.post("/users/:id/ban", async (req, res) => {
   const u = target(req, res);
   if (!u) return;
   const banned = req.body?.banned !== false;
-  if (banned && isAdminName(u.username)) return fail(res, 400, "Nie można zablokować admina");
-  users.setBanned(u.id, banned);
-  if (banned) await eachRoom("kickUser", [u.id]);
+  const me = (req as unknown as AuthedRequest).user;
+  if (banned && isModeratorName(u.username)) return fail(res, 400, "Nie można zablokować admina ani moderatora");
+  const reason = String(req.body?.reason ?? "").trim().slice(0, 300);
+  // dni: 0 = na zawsze
+  const days = Math.min(3650, Math.max(0, Math.round(Number(req.body?.days) || 0)));
+  if (banned && reason.length < 3) return fail(res, 400, "Podaj powód bana (min. 3 znaki) - zobaczy go zbanowany gracz");
+  users.setBanned(u.id, banned, { reason, by: me.username, days });
+  if (banned) await kickUserEverywhere(u.id);
   if (banned) reports.closeTarget("user", u.id, adminId(req));
-  log(req, banned ? "Zablokował konto" : "Odblokował konto", u.username, String(req.body?.reason ?? ""));
+  log(req, banned ? "Zablokował konto" : "Odblokował konto", u.username, banned ? `${days ? days + " dni" : "na zawsze"}: ${reason}` : "");
+  res.json(userOut(users.byId(u.id)!));
+});
+
+/** wyrzucenie z gry bez bana */
+admin.post("/users/:id/kick", async (req, res) => {
+  const u = target(req, res);
+  if (!u) return;
+  if (isModeratorName(u.username)) return fail(res, 400, "Nie można wyrzucić admina ani moderatora");
+  await kickUserEverywhere(u.id);
+  log(req, "Wyrzucił z gry", u.username);
+  res.json({ ok: true });
+});
+
+/** aktualnie zbanowani */
+admin.get("/bans", (_req, res) => {
+  res.json(users.banned().map(userOut));
+});
+
+/** role: tylko konta główne (Predator, Piotrek53_3) */
+admin.get("/roles", (req, res) => {
+  if (!isSuperAdmin((req as unknown as AuthedRequest).user.username)) return fail(res, 403, "Role nadają tylko konta Predator i Piotrek53_3");
+  res.json(users.staff().map(userOut));
+});
+admin.post("/users/:id/role", (req, res) => {
+  if (!isSuperAdmin((req as unknown as AuthedRequest).user.username)) return fail(res, 403, "Role nadają tylko konta Predator i Piotrek53_3");
+  const u = target(req, res);
+  if (!u) return;
+  if (isSuperAdmin(u.username)) return fail(res, 400, "To konto główne - ma już wszystkie uprawnienia");
+  const role = String(req.body?.role ?? "");
+  if (role !== "" && role !== "moderator" && role !== "admin") return fail(res, 400, "Zła rola");
+  if (u.banned) return fail(res, 400, "Najpierw odblokuj to konto");
+  users.setRole(u.id, role);
+  alerts.add(u.id, role === "admin" ? "🛡️ Dostałeś rolę ADMINA Predatora!" : role === "moderator" ? "🛡️ Dostałeś rolę MODERATORA - w menu pojawiła się zakładka Moderacja." : "Twoja rola w administracji została zdjęta.");
+  log(req, "Zmienił rolę", u.username, role || "gracz");
   res.json(userOut(users.byId(u.id)!));
 });
 

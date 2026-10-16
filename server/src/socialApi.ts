@@ -440,13 +440,14 @@ const newCode = () => {
   }
 };
 
-const serverInfo = (s: { id: number; world_id: number; owner_id: number; name: string; code: string } & { owner_name?: string }, viewerId: number): PrivateServerInfo => ({
+const serverInfo = (s: { id: number; world_id: number; owner_id: number; name: string; code: string } & { owner_name?: string }, viewerId: number, viaCode = false): PrivateServerInfo => ({
   id: s.id,
   worldId: s.world_id,
   name: s.name,
   ownerName: s.owner_name ?? users.byId(s.owner_id)?.username ?? "?",
   mine: s.owner_id === viewerId,
-  code: s.code,
+  // kod widzi właściciel albo ten, kto go właśnie wpisał
+  code: s.owner_id === viewerId || viaCode ? s.code : "",
   playing: presence.privateCount(s.code),
 });
 
@@ -485,7 +486,7 @@ social.get("/servers/code/:code", requireAuth, (req, res) => {
   if (!s) return fail(res, 404, "Nie ma serwera z takim kodem");
   const w = infoById(s.world_id);
   if (!w) return fail(res, 404, "Ta gra już nie istnieje");
-  res.json({ server: serverInfo(s, me(req).id), world: w });
+  res.json({ server: serverInfo(s, me(req).id, true), world: w });
 });
 
 /** przedmioty znajomego, które można od niego chcieć w wymianie */

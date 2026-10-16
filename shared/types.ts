@@ -417,6 +417,10 @@ export interface PublicUser {
   inventory: string[];
   /** dostęp do panelu admina */
   admin?: boolean;
+  /** moderator (zakładka Moderacja: zgłoszenia, bany, wyciszenia) */
+  moderator?: boolean;
+  /** konto główne (Predator, Piotrek53_3): nadaje role */
+  superAdmin?: boolean;
 }
 
 export interface FriendInfo {

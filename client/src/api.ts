@@ -98,6 +98,18 @@ export async function pingServer(url = getServerUrl(), ms = 5000): Promise<{ has
 export const getToken = () => read(LS_TOKEN);
 export const setToken = (t: string | null) => write(LS_TOKEN, t);
 
+/** szczegóły bana (ekran zbanowania) */
+export interface BanInfo {
+  reason: string;
+  by: string;
+  /** do kiedy (ms), 0 = na zawsze */
+  until: number;
+  at: number;
+}
+let banHandler: ((b: BanInfo) => void) | null = null;
+/** ekran zbanowania pokazuje się, gdy serwer odpowie, że konto jest zablokowane */
+export const onBanned = (fn: (b: BanInfo) => void) => (banHandler = fn);
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -133,7 +145,10 @@ async function req<T>(method: string, path: string, body?: unknown, timeoutMs?: 
     clearTimeout(timer);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? "Błąd serwera", res.status);
+  if (!res.ok) {
+    if (res.status === 403 && data.ban) banHandler?.(data.ban as BanInfo);
+    throw new ApiError(data.error ?? "Błąd serwera", res.status);
+  }
   return data as T;
 }
 
@@ -233,6 +248,9 @@ export interface AdminUser {
   coins: number;
   banned: boolean;
   admin: boolean;
+  /** "super" (Predator / Piotrek53_3), "admin", "moderator" albo "" */
+  role: string;
+  ban: BanInfo | null;
   createdAt: number;
   online: boolean;
   items: number;
@@ -358,7 +376,11 @@ export const adminApi = {
   approveWorld: (id: number) => req<{ ok: true }>("POST", `/admin/moderation/worlds/${id}/approve`),
   users: (q = "") => req<AdminUser[]>("GET", "/admin/users?q=" + encodeURIComponent(q)),
   coins: (id: number, amount: number, set = false) => req<AdminUser>("POST", `/admin/users/${id}/coins`, { amount, set }),
-  ban: (id: number, banned: boolean) => req<AdminUser>("POST", `/admin/users/${id}/ban`, { banned }),
+  ban: (id: number, banned: boolean, reason = "", days = 0) => req<AdminUser>("POST", `/admin/users/${id}/ban`, { banned, reason, days }),
+  kick: (id: number) => req("POST", `/admin/users/${id}/kick`),
+  bans: () => req<AdminUser[]>("GET", "/admin/bans"),
+  roles: () => req<AdminUser[]>("GET", "/admin/roles"),
+  setRole: (id: number, role: "" | "moderator" | "admin") => req<AdminUser>("POST", `/admin/users/${id}/role`, { role }),
   give: (id: number, itemId: string) => req<AdminUser>("POST", `/admin/users/${id}/give`, { itemId }),
   password: (id: number, password: string) => req("POST", `/admin/users/${id}/password`, { password }),
   worlds: (q = "") => req<AdminWorld[]>("GET", "/admin/worlds?q=" + encodeURIComponent(q)),

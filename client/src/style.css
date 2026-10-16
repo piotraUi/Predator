@@ -1703,3 +1703,13 @@ html[data-studio-theme="roblox"] .studio-mtabs { background: #1b1b1b; }
 .dl-banner .dl-text { font-weight: 700; font-size: 14px; }
 .dl-banner a.btn { text-decoration: none; white-space: nowrap; }
 body[data-screen="play"] .dl-banner, body[data-screen="studio"] .dl-banner { display: none; }
+
+/* ekran zbanowania */
+.ban-screen { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 30%, #3a0d12, #0b0508 70%); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ban-card { width: min(460px, 100%); background: #14090c; border: 2px solid #a4202e; border-radius: 18px; padding: 24px; text-align: center; box-shadow: 0 0 60px rgba(200, 30, 50, 0.35); }
+.ban-card h1 { font-size: 22px; margin: 8px 0 18px; color: #ff6b78; }
+.ban-icon { font-size: 54px; }
+.ban-row { display: flex; justify-content: space-between; gap: 12px; text-align: left; padding: 10px 12px; background: #1d0d11; border-radius: 10px; margin-bottom: 8px; }
+.ban-row span { color: #b99; }
+.ban-row b { text-align: right; word-break: break-word; }
+.ban-card .btn { margin-top: 12px; }

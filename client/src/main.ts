@@ -1,5 +1,6 @@
 import "./style.css";
-import { api, getServerUrl, getToken, needsServerAddress, pingServer, setToken } from "./api.ts";
+import { api, getServerUrl, getToken, needsServerAddress, onBanned, pingServer, setToken } from "./api.ts";
+import { showBanScreen } from "./ui/banScreen.ts";
 import { session } from "./state.ts";
 import { authScreen } from "./ui/auth.ts";
 import { startLiveNotifications } from "./ui/liveNotify.ts";
@@ -231,4 +232,5 @@ async function boot() {
   }
 }
 
+onBanned((b) => showBanScreen(b));
 boot();

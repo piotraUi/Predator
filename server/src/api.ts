@@ -94,7 +94,8 @@ api.post("/login", (req, res) => {
   const user = typeof username === "string" ? users.byName(username) : undefined;
   if (!user || typeof password !== "string" || !checkPassword(password, user))
     return fail(res, 401, "Zły nick lub hasło");
-  if (user.banned) return fail(res, 403, "To konto jest zablokowane przez administratora");
+  const ban = users.activeBan(user);
+  if (ban) return void res.status(403).json({ error: "To konto jest zablokowane", ban });
   res.json({ token: newSession(user.id), user: toPublicUser(user) });
 });
 
@@ -409,6 +410,23 @@ api.get("/worlds/:id/rooms", requireAuth, async (req, res) => {
       .sort((a, b) => (a.metadata?.lobbyStarted ?? 0) - (b.metadata?.lobbyStarted ?? 0))
       .map((r) => ({ roomId: r.roomId, name: r.metadata?.lobby ?? "Pokój", players: r.clients, max: r.maxClients, private: !!r.metadata?.lobbyCode, full: r.clients >= r.maxClients || r.locked })),
   );
+});
+
+/**
+ * Wybór serwera dla przycisku "Graj": zamiast napełniać jeden serwer do pełna i dopiero potem zakładać
+ * następny, gracz trafia na najmniej zapełniony serwer, który ma jeszcze zapas miejsca (miękki limit ~60%).
+ * Gdy wszystkie są powyżej limitu - zakładamy nowy, więc na każdym serwerze zawsze zostaje trochę miejsc
+ * (na znajomych i na tych, którzy dołączą po chwili).
+ */
+export const softCap = (max: number) => (max <= 3 ? max : Math.max(2, Math.ceil(max * 0.6)));
+api.get("/worlds/:id/pick", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const place = typeof req.query.place === "string" ? req.query.place : "";
+  const rooms = (await matchMaker.query({ name: "world" })).filter(
+    (r) => r.metadata?.worldId === id && (r.metadata?.placeId ?? "") === place && !r.locked && r.clients < r.maxClients && r.clients < softCap(r.maxClients),
+  );
+  rooms.sort((a, b) => a.clients - b.clients || (a.createdAt ? +new Date(a.createdAt) : 0) - (b.createdAt ? +new Date(b.createdAt) : 0));
+  res.json({ roomId: rooms[0]?.roomId ?? null });
 });
 
 /** Pełne dane świata do edytora (właściciel i współtwórcy) */

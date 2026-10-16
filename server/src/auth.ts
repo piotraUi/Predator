@@ -28,8 +28,10 @@ export function validateCredentials(username: unknown, password: unknown): strin
   return null;
 }
 
+/** gracz z tokenu; zbanowany nie wejdzie do gier (ban czasowy po wygaśnięciu przestaje działać) */
 export function userFromToken(token: unknown): UserRow | undefined {
-  return typeof token === "string" && token ? sessions.userFor(token) : undefined;
+  const u = typeof token === "string" && token ? sessions.userFor(token) : undefined;
+  return u && !users.activeBan(u) ? u : undefined;
 }
 
 export interface AuthedRequest extends Request {
@@ -40,7 +42,14 @@ export interface AuthedRequest extends Request {
 /** Middleware wymagające zalogowania (nagłówek Authorization: Bearer <token>) */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.replace(/^Bearer /, "") ?? "";
-  const user = userFromToken(token);
+  const raw = token ? sessions.userFor(token) : undefined;
+  const ban = raw ? users.activeBan(raw) : null;
+  // zbanowany: klient pokazuje ekran zbanowania (powód, podpis moderatora, czas)
+  if (raw && ban) {
+    res.status(403).json({ error: "To konto jest zablokowane", ban });
+    return;
+  }
+  const user = raw;
   if (!user) {
     res.status(401).json({ error: "Zaloguj się ponownie" });
     return;

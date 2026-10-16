@@ -35,9 +35,11 @@ function inputModal(title: string, label: string, opts: { type?: string; value?:
   });
 }
 
-export function adminPanel(el: HTMLElement) {
-  const tabs = ["Start", "Zgłoszenia", "Gracze", "Gry", "Ogłoszenie", "Moderacja", "AI", "Aplikacje", "Serwer", "Historia"] as const;
-  let tab: (typeof tabs)[number] = "Start";
+export function adminPanel(el: HTMLElement, who: { admin: boolean; superAdmin: boolean } = { admin: true, superAdmin: false }) {
+  const all = ["Start", "Zgłoszenia", "Gracze", "Zbanowani", "Gry", "Ogłoszenie", "Moderacja", "Moderacja AI", "AI", "Aplikacje", "Serwer", "Historia"] as const;
+  // moderator widzi tylko to, co mu wolno: zgłoszenia, gracze (ban, wyciszenie, wyrzucenie), zbanowani
+  const tabs = (who.admin ? all.filter((t) => t !== "Moderacja" || who.superAdmin) : (["Zgłoszenia", "Gracze", "Zbanowani"] as const)) as readonly (typeof all)[number][];
+  let tab: (typeof all)[number] = tabs[0];
   const tabBar = h("div", { class: "shop-tabs adm-tabs" });
   const body = h("div", { class: "adm-body" });
   el.append(tabBar, body);
@@ -55,9 +57,11 @@ export function adminPanel(el: HTMLElement) {
     else if (tab === "Historia") logTab(body);
     else if (tab === "Aplikacje") appsTab(body);
     else if (tab === "Serwer") serverTab(body);
-    else if (tab === "Moderacja") moderationTab(body);
+    else if (tab === "Moderacja") rolesTab(body);
+    else if (tab === "Zbanowani") bansTab(body, who.admin);
+    else if (tab === "Moderacja AI") moderationTab(body);
     else if (tab === "AI") aiTab(body);
-    else if (tab === "Gracze") usersTab(body);
+    else if (tab === "Gracze") usersTab(body, who.admin);
     else if (tab === "Gry") worldsTab(body);
     else announceTab(body);
   };
@@ -85,7 +89,7 @@ async function statsTab(el: HTMLElement) {
   );
 }
 
-function usersTab(el: HTMLElement) {
+function usersTab(el: HTMLElement, fullAdmin = true) {
   const q = h("input", { class: "input", type: "search", placeholder: "Szukaj gracza…" });
   const list = h("div", { class: "adm-list" });
   let timer = 0;
@@ -107,7 +111,8 @@ function usersTab(el: HTMLElement) {
         "div",
         { class: "adm-row-main" },
         h("b", null, u.username),
-        u.admin ? h("span", { class: "adm-tag" }, "ADMIN") : null,
+        u.role === "moderator" ? h("span", { class: "adm-tag warn" }, "MODERATOR") : null,
+        u.admin ? h("span", { class: "adm-tag" }, u.role === "super" ? "ADMIN GŁÓWNY" : "ADMIN") : null,
         u.banned ? h("span", { class: "adm-tag bad" }, "ZABLOKOWANY") : null,
         u.online ? h("span", { class: "adm-tag good" }, "online") : null,
         u.mutedUntil ? h("span", { class: "adm-tag warn", title: "do " + new Date(u.mutedUntil).toLocaleString("pl-PL") }, "WYCISZONY") : null,
@@ -116,7 +121,7 @@ function usersTab(el: HTMLElement) {
       h(
         "div",
         { class: "adm-actions" },
-        h(
+        !fullAdmin ? null : h(
           "button",
           {
             class: "btn small",
@@ -127,7 +132,7 @@ function usersTab(el: HTMLElement) {
           },
           "🪙 Monety",
         ),
-        h(
+        !fullAdmin ? null : h(
           "button",
           {
             class: "btn small",
@@ -141,7 +146,7 @@ function usersTab(el: HTMLElement) {
           },
           "🎁 Daj",
         ),
-        h(
+        !fullAdmin ? null : h(
           "button",
           {
             class: "btn small",
@@ -152,7 +157,7 @@ function usersTab(el: HTMLElement) {
           },
           "🔑 Hasło",
         ),
-        u.admin
+        u.admin || u.role === "moderator"
           ? null
           : h(
               "button",
@@ -166,19 +171,23 @@ function usersTab(el: HTMLElement) {
               },
               u.mutedUntil ? "🔊 Odcisz" : "🔇 Wycisz",
             ),
-        u.admin
+        u.admin || u.role === "moderator"
           ? null
           : h(
               "button",
               {
                 class: "btn small " + (u.banned ? "" : "danger"),
                 onClick: async () => {
-                  if (!u.banned && !(await ask(`Zablokować konto ${u.username}? Zostanie wylogowany i wyrzucony z gier.`, "Zablokuj", "Anuluj", true))) return;
-                  replace(await run(adminApi.ban(u.id, !u.banned), u.banned ? "Odblokowano" : "Zablokowano"));
+                  if (u.banned) return replace(await run(adminApi.ban(u.id, false), "Odblokowano"));
+                  const b = await pickBan(u.username);
+                  if (b) replace(await run(adminApi.ban(u.id, true, b.reason, b.days), "Zablokowano"));
                 },
               },
               u.banned ? "✅ Odblokuj" : "⛔ Zablokuj",
             ),
+        u.admin || u.role === "moderator"
+          ? null
+          : h("button", { class: "btn small", onClick: async () => (await run(adminApi.kick(u.id), "Wyrzucono z gry")) }, "👢 Wyrzuć z gry"),
       ),
     );
     return r;
@@ -278,6 +287,110 @@ const MUTE_TIMES: [number, string][] = [
   [60 * 24 * 7, "7 dni"],
   [60 * 24 * 30, "30 dni"],
 ];
+
+/** ban: powód (zobaczy go zbanowany) i czas */
+function pickBan(name: string): Promise<{ reason: string; days: number } | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: { reason: string; days: number } | null) => {
+      if (done) return;
+      done = true;
+      close();
+      resolve(v);
+    };
+    const reason = h("textarea", { class: "input", rows: 3, maxLength: 300, placeholder: "Powód bana (zobaczy go gracz)…" }) as HTMLTextAreaElement;
+    const days = h(
+      "select",
+      { class: "input" },
+      ...([[1, "1 dzień"], [3, "3 dni"], [7, "7 dni"], [30, "30 dni"], [0, "Na zawsze"]] as [number, string][]).map(([v, l]) => h("option", { value: String(v) }, l)),
+    ) as HTMLSelectElement;
+    const close = modal(
+      `Zablokuj: ${name}`,
+      h("div", { class: "form" }, h("label", { class: "field" }, h("span", null, "Powód"), reason), h("label", { class: "field" }, h("span", null, "Na jak długo"), days), h("p", { class: "muted small" }, "Na ekranie bana gracz zobaczy powód i Twój nick jako podpis. Zostanie wylogowany i wyrzucony z gier.")),
+      [
+        { label: "Anuluj", onClick: () => finish(null) },
+        {
+          label: "Zablokuj",
+          kind: "primary",
+          onClick: () => (reason.value.trim().length < 3 ? toast("Wpisz powód (min. 3 znaki)", "error") : finish({ reason: reason.value.trim(), days: Number(days.value) })),
+        },
+      ],
+    );
+  });
+}
+
+/** zakładka Zbanowani: kto ma bana, za co, od kogo i do kiedy */
+async function bansTab(el: HTMLElement, canUnban: boolean) {
+  const list = h("div", { class: "adm-list" }, h("div", { class: "muted" }, "Wczytuję…"));
+  el.append(list);
+  const load = async () => {
+    const r = await run(adminApi.bans());
+    if (!r) return;
+    list.replaceChildren(
+      ...(r.length
+        ? r.map((u) =>
+            h(
+              "div",
+              { class: "adm-row banned" },
+              h(
+                "div",
+                { class: "adm-row-main" },
+                h("b", null, u.username),
+                h("span", { class: "adm-tag bad" }, u.ban?.until ? "do " + new Date(u.ban.until).toLocaleString("pl-PL") : "NA ZAWSZE"),
+                h("div", { class: "muted small" }, `Powód: ${u.ban?.reason || "-"} · zbanował: ${u.ban?.by || "-"} · ${u.ban?.at ? new Date(u.ban.at).toLocaleString("pl-PL") : ""}`),
+              ),
+              canUnban || true ? h("div", { class: "adm-actions" }, h("button", { class: "btn small", onClick: async () => ((await run(adminApi.ban(u.id, false), "Odblokowano")) && load()) }, "✅ Odblokuj")) : null,
+            ),
+          )
+        : [h("div", { class: "muted" }, "Nikt nie jest zbanowany.")]),
+    );
+  };
+  load();
+}
+
+/** zakładka Moderacja (tylko Predator i Piotrek53_3): nadawanie ról moderatora i admina */
+function rolesTab(el: HTMLElement) {
+  const q = h("input", { class: "input", type: "search", placeholder: "Szukaj gracza, żeby nadać rolę…" });
+  const list = h("div", { class: "adm-list" });
+  let timer = 0;
+  const load = async () => {
+    const term = q.value.trim();
+    const r = term ? await run(adminApi.users(term)) : await run(adminApi.roles());
+    if (r) list.replaceChildren(...(r.length ? r.map(row) : [h("div", { class: "muted" }, term ? "Brak graczy" : "Nikt jeszcze nie ma roli - wyszukaj gracza powyżej.")]));
+  };
+  q.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(load, 250);
+  });
+  const row = (u: AdminUser): HTMLElement => {
+    const set = async (role: "" | "moderator" | "admin") => {
+      const nu = await run(adminApi.setRole(u.id, role), role ? "Nadano rolę" : "Zdjęto rolę");
+      if (nu) r.replaceWith(row(nu));
+    };
+    const r = h(
+      "div",
+      { class: "adm-row" },
+      h(
+        "div",
+        { class: "adm-row-main" },
+        h("b", null, u.username),
+        u.role === "super" ? h("span", { class: "adm-tag" }, "ADMIN GŁÓWNY") : u.role === "admin" ? h("span", { class: "adm-tag" }, "ADMIN") : u.role === "moderator" ? h("span", { class: "adm-tag warn" }, "MODERATOR") : h("span", { class: "muted small" }, "gracz"),
+      ),
+      u.role === "super"
+        ? null
+        : h(
+            "div",
+            { class: "adm-actions" },
+            u.role === "moderator" ? null : h("button", { class: "btn small", onClick: () => set("moderator") }, "🛡️ Moderator"),
+            u.role === "admin" ? null : h("button", { class: "btn small", onClick: () => set("admin") }, "👑 Admin"),
+            u.role ? h("button", { class: "btn small danger", onClick: () => set("") }, "Zdejmij rolę") : null,
+          ),
+    );
+    return r;
+  };
+  el.append(h("p", { class: "muted small" }, "Moderator: zgłoszenia, bany, wyciszenia i wyrzucanie z gier. Admin: cały panel. Role nadają tylko konta Predator i Piotrek53_3."), q, list);
+  load();
+}
 
 /** wybór czasu wyciszenia (minuty albo null) */
 function pickMute(name: string): Promise<number | null> {

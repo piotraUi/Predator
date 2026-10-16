@@ -74,6 +74,7 @@ export class WorldRoom extends Room {
       worldId: world.id,
       name: world.name,
       private: !!this.priv,
+      placeId: typeof options.placeId === "string" ? options.placeId : "",
       ...(data.currentPlace ? { place: data.currentPlace.name } : {}),
       // pokój: nazwa i kod (kod zna tylko serwer - lista pokoi go nie pokazuje)
       ...(this.lobby ? { lobby: this.lobby.name, lobbyCode: this.lobby.code, lobbyStarted: Date.now() } : {}),
@@ -194,8 +195,8 @@ export class WorldRoom extends Room {
       if (!s) throw new Error("Ten prywatny serwer został usunięty");
       this.priv = s;
       const code = String((options as { privateCode?: unknown }).privateCode ?? "");
-      if (code !== s.code && user.id !== s.owner_id && !areFriends(user.id, s.owner_id))
-        throw new Error("To prywatny serwer - potrzebujesz kodu zaproszenia");
+      // prywatny serwer: tylko z kodem zaproszenia (albo właściciel) - znajomi też muszą znać kod
+      if (code !== s.code && user.id !== s.owner_id) throw new Error("To prywatny serwer - potrzebujesz kodu zaproszenia");
     }
     return user;
   }

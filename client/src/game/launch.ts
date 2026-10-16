@@ -3,7 +3,7 @@
 import { Client } from "colyseus.js";
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import type { WorldData } from "../../../shared/types.ts";
-import { getToken, wsUrl } from "../api.ts";
+import { getServerUrl, getToken, wsUrl } from "../api.ts";
 import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { settings } from "../settings.ts";
 import { session } from "../state.ts";
@@ -12,6 +12,18 @@ import { showBadge, type BadgeMsg } from "../ui/badgePopup.ts";
 import { BufferedConnection } from "./buffered.ts";
 import type { GameConnection } from "./connection.ts";
 import type { LobbyLaunch } from "./rooms.ts";
+
+/** serwer podpowiada najmniej zapełniony pokój gry (równomierne rozkładanie graczy); przy błędzie - zwykłe dołączanie */
+async function pickWorldRoom(worldId: number | undefined, place?: string): Promise<string | null> {
+  if (!worldId) return null;
+  try {
+    const r = await fetch(`${getServerUrl()}/api/worlds/${worldId}/pick${place ? `?place=${encodeURIComponent(place)}` : ""}`, { headers: { authorization: "Bearer " + getToken() } });
+    if (!r.ok) return null;
+    return ((await r.json()) as { roomId: string | null }).roomId;
+  } catch {
+    return null;
+  }
+}
 
 type Go = (screen: string, params?: Record<string, unknown>) => void;
 
@@ -60,7 +72,11 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
           ? client.joinById(params.roomId, { token: getToken(), v: GAME_PROTOCOL, ...(params.privateCode ? { privateCode: params.privateCode } : {}) })
           : params.privateCode
             ? client.joinOrCreate("private", { worldId: params.worldId, privateCode: params.privateCode, token: getToken(), v: GAME_PROTOCOL, ...(params.place ? { placeId: params.place } : {}) })
-            : client.joinOrCreate("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL, ...(params.place ? { placeId: params.place } : {}) });
+            : pickWorldRoom(params.worldId, params.place).then((roomId) =>
+                roomId
+                  ? client.joinById(roomId, { token: getToken(), v: GAME_PROTOCOL })
+                  : client.create("world", { worldId: params.worldId, token: getToken(), v: GAME_PROTOCOL, ...(params.place ? { placeId: params.place } : {}) }),
+              );
         return r.then((x) => x as unknown as GameConnection);
       })();
 

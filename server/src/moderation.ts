@@ -9,7 +9,8 @@
 import crypto from "node:crypto";
 import type { WorldData } from "../../shared/types.ts";
 import { htmlContent } from "../../shared/htmlGame.ts";
-import { alerts, db, worlds } from "./db.ts";
+import { alerts, db, isModeratorName, users, worlds } from "./db.ts";
+import { kickUserEverywhere } from "./kick.ts";
 import { mutes } from "./social.ts";
 import { decodePng, makeSheet, type Rgba } from "./pngSheet.ts";
 import { settings } from "./settings.ts";
@@ -518,9 +519,28 @@ export async function moderateMessage(text: string, userId: number, where: strin
       strikes.delete(userId);
       alerts.add(userId, `🛡️ Za kilka niedozwolonych wiadomości czat jest wyłączony na ${MUTE_MINUTES} minut.`);
       modLog.add("mute", userId, worldId, "", `wyciszony na ${MUTE_MINUTES} min (automatycznie)`);
+      aiBanIfRepeated(userId, worldId);
     }
   }
   return v;
+}
+
+/**
+ * Moderacja AI może banować: kto w ciągu doby dostał 3 automatyczne wyciszenia, dostaje bana
+ * (1 dzień, potem coraz dłuższy: 3, 7, 30 dni). Podpis na ekranie bana: "Moderacja AI". Moderatorów i adminów nie dotyczy.
+ */
+function aiBanIfRepeated(userId: number, worldId: number | null) {
+  const u = users.byId(userId);
+  if (!u || u.banned || isModeratorName(u.username)) return;
+  const since = Date.now() - 86_400_000;
+  const mutesToday = (db.prepare("SELECT COUNT(*) AS c FROM moderation_log WHERE user_id = ? AND kind = 'mute' AND created_at > ?").get(userId, since) as { c: number }).c;
+  if (mutesToday < 3) return;
+  const before = (db.prepare("SELECT COUNT(*) AS c FROM moderation_log WHERE user_id = ? AND kind = 'ban'").get(userId) as { c: number }).c;
+  const days = [1, 3, 7, 30][Math.min(before, 3)];
+  const reason = "Wielokrotne łamanie zasad czatu (obraźliwe lub niedozwolone wiadomości)";
+  users.setBanned(userId, true, { reason, by: "Moderacja AI", days });
+  modLog.add("ban", userId, worldId, "", `zbanowany na ${days} dni (automatycznie): ${reason}`);
+  void kickUserEverywhere(userId);
 }
 
 /** nick, nazwa grupy / serwera / modelu - true = można użyć */

@@ -148,10 +148,21 @@ if (!worldCols.includes("genre")) db.exec("ALTER TABLE worlds ADD COLUMN genre T
 // rodzaj gry: '' = gra Predatora, 'html' = gra HTML (strona w ramce)
 if (!worldCols.includes("kind")) db.exec("ALTER TABLE worlds ADD COLUMN kind TEXT NOT NULL DEFAULT ''");
 if (!userCols.includes("banned")) db.exec("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0");
+// role (puste = zwykły gracz, 'moderator', 'admin') i szczegóły bana: powód, kto zbanował, do kiedy (0 = na zawsze)
+if (!userCols.includes("role")) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT ''");
+if (!userCols.includes("ban_reason")) db.exec("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''");
+if (!userCols.includes("ban_by")) db.exec("ALTER TABLE users ADD COLUMN ban_by TEXT NOT NULL DEFAULT ''");
+if (!userCols.includes("ban_until")) db.exec("ALTER TABLE users ADD COLUMN ban_until INTEGER NOT NULL DEFAULT 0");
+if (!userCols.includes("banned_at")) db.exec("ALTER TABLE users ADD COLUMN banned_at INTEGER NOT NULL DEFAULT 0");
 
 export interface UserRow {
   id: number;
   banned: number;
+  role: string;
+  ban_reason: string;
+  ban_by: string;
+  ban_until: number;
+  banned_at: number;
   username: string;
   pass_hash: string;
   salt: string;
@@ -213,10 +224,26 @@ export function toPublicUser(u: UserRow): PublicUser {
     avatar: { ...DEFAULT_AVATAR, ...(JSON.parse(u.avatar) as Partial<Avatar>) },
     inventory: JSON.parse(u.inventory) as string[],
     ...(isAdminName(u.username) ? { admin: true } : {}),
+    ...(isModeratorName(u.username) ? { moderator: true } : {}),
+    ...(isSuperAdmin(u.username) ? { superAdmin: true } : {}),
   };
 }
 
-export const isAdminName = (name: string) => config.admins.some((a) => a.toLowerCase() === name.toLowerCase());
+/** konta główne (Predator i Piotrek53_3): tylko one nadają role moderatora i admina */
+export const isSuperAdmin = (name: string) => config.admins.some((a) => a.toLowerCase() === name.toLowerCase());
+const roleOf = (name: string) => (db.prepare("SELECT role FROM users WHERE username = ?").get(name) as { role: string } | undefined)?.role ?? "";
+/** admin: konto główne albo konto z nadaną rolą admina */
+export const isAdminName = (name: string) => isSuperAdmin(name) || roleOf(name) === "admin";
+/** moderator (admin też ma dostęp do narzędzi moderatora) */
+export const isModeratorName = (name: string) => isAdminName(name) || roleOf(name) === "moderator";
+
+export interface BanInfo {
+  reason: string;
+  by: string;
+  /** do kiedy (ms); 0 = na zawsze */
+  until: number;
+  at: number;
+}
 
 export const users = {
   byId: (id: number) => db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined,
@@ -238,10 +265,30 @@ export const users = {
     db.prepare("UPDATE users SET coins = MAX(0, coins + ?) WHERE id = ?").run(amount, id),
   setCoins: (id: number, coins: number) => db.prepare("UPDATE users SET coins = ? WHERE id = ?").run(Math.max(0, Math.round(coins)), id),
   setPassword: (id: number, hash: string, salt: string) => db.prepare("UPDATE users SET pass_hash = ?, salt = ? WHERE id = ?").run(hash, salt, id),
-  setBanned(id: number, banned: boolean) {
-    db.prepare("UPDATE users SET banned = ? WHERE id = ?").run(banned ? 1 : 0, id);
-    if (banned) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  setBanned(id: number, banned: boolean, info?: { reason?: string; by?: string; days?: number }) {
+    const days = Math.max(0, Math.round(info?.days ?? 0));
+    db.prepare("UPDATE users SET banned = ?, ban_reason = ?, ban_by = ?, ban_until = ?, banned_at = ? WHERE id = ?").run(
+      banned ? 1 : 0,
+      banned ? String(info?.reason ?? "").slice(0, 300) : "",
+      banned ? String(info?.by ?? "").slice(0, 40) : "",
+      banned && days > 0 ? Date.now() + days * 86_400_000 : 0,
+      banned ? Date.now() : 0,
+      id,
+    );
   },
+  setRole: (id: number, role: "" | "moderator" | "admin") => db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id),
+  /** ban gracza, jeśli trwa (czasowy ban sam wygasa i wtedy zwraca null) */
+  activeBan(u: UserRow): BanInfo | null {
+    if (!u.banned) return null;
+    if (u.ban_until > 0 && u.ban_until < Date.now()) {
+      users.setBanned(u.id, false);
+      return null;
+    }
+    return { reason: u.ban_reason, by: u.ban_by, until: u.ban_until, at: u.banned_at };
+  },
+  banned: () => db.prepare("SELECT * FROM users WHERE banned = 1 ORDER BY banned_at DESC LIMIT 200").all() as unknown as UserRow[],
+  /** konta z rolami (do zakładki Role) */
+  staff: () => db.prepare("SELECT * FROM users WHERE role <> '' ORDER BY role, username").all() as unknown as UserRow[],
   search: (q: string, limit = 50) =>
     db
       .prepare("SELECT * FROM users WHERE username LIKE ? ORDER BY created_at DESC LIMIT ?")

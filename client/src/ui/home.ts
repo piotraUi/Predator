@@ -95,7 +95,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
     sideItem("groups", "users", "Grupy"),
     sideItem("trades", "coin", "Wymiany", tradeBadge),
     sideItem("create", "build", "Twórz"),
-    session.user?.admin ? sideItem("admin", "settings", "Panel admina") : null,
+    session.user?.admin ? sideItem("admin", "settings", "Panel admina") : session.user?.moderator ? sideItem("admin", "settings", "Moderacja") : null,
     h("button", { class: "pv-side-item", onClick: () => go("offline") }, icon("folder", 22), h("span", null, "Studio bez serwera")),
     h("div", { class: "pv-side-sep" }),
     h("button", { class: "pv-side-item", onClick: () => (toggleDrawer(false), openSettings()) }, icon("settings", 22), h("span", null, "Ustawienia")),
@@ -721,15 +721,15 @@ export function timeAgo(at: number) {
 // =====================================================================
 
 async function adminView(el: HTMLElement) {
-  el.append(h("h1", null, "Panel admina"));
-  if (!session.user?.admin) return void el.append(h("div", { class: "pv-empty" }, "Brak dostępu"));
+  el.append(h("h1", null, session.user?.admin ? "Panel admina" : "Moderacja"));
+  if (!session.user?.admin && !session.user?.moderator) return void el.append(h("div", { class: "pv-empty" }, "Brak dostępu"));
   const box = h("div", null, loading());
   el.append(box);
   try {
     const { adminPanel } = await import("./adminPanel.ts");
     if (!box.isConnected) return;
     box.replaceChildren();
-    adminPanel(box);
+    adminPanel(box, { admin: !!session.user?.admin, superAdmin: !!session.user?.superAdmin });
   } catch (e) {
     box.replaceChildren(errorBox(e));
   }
