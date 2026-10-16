@@ -441,7 +441,7 @@ export function play2dScreen(
   conn.onMessage("scores", (list: { name: string; score: number }[]) => showScores(list));
   conn.onLeave((code) => {
     if (leaving || disposed) return;
-    toast(code === 4000 ? "Wyrzucono z gry" : "Rozłączono z serwerem", "error");
+    toast(code === 4000 ? "Wyrzucono z gry" : code === 4002 ? "Serwer został zrestartowany - wejdź ponownie" : "Rozłączono z serwerem", "error");
     back();
   });
 

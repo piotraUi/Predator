@@ -20,7 +20,7 @@ import {
 } from "./auth.ts";
 import { config } from "./config.ts";
 import { live } from "./live.ts";
-import { alerts, badges, canEdit, editors, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
+import { alerts, badges, canEdit, db, editors, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { blocks, mutes, privacy, sanitizePrivacy, stock, trades } from "./social.ts";
 import { beforePublish, moderateMessage, moderateName, queueWorldScan } from "./moderation.ts";
@@ -143,9 +143,8 @@ api.get("/catalog", (_req, res) => {
   res.json(CATALOG.map((i) => (i.limited ? { ...i, stockLeft: Math.max(0, i.limited - (sold[i.id] ?? 0)) } : i)));
 });
 
-api.put("/avatar", requireAuth, (req, res) => {
-  const user = toPublicUser((req as AuthedRequest).user);
-  const a = req.body as Partial<Avatar>;
+/** sprawdza i składa nowy wygląd (kolory, przedmioty, które gracz ma) - albo zwraca błąd */
+function buildAvatar(user: ReturnType<typeof toPublicUser>, a: Partial<Avatar>): { next: Avatar } | { error: string; status: number } {
   const next: Avatar = { ...user.avatar };
   for (const k of ["head", "torso", "arms", "legs"] as const) {
     if (typeof a[k] === "string" && COLOR_RE.test(a[k]!)) next[k] = a[k]!;
@@ -158,13 +157,69 @@ api.put("/avatar", requireAuth, (req, res) => {
       continue;
     }
     const item = findItem(id);
-    if (!item || item.type !== k) return fail(res, 400, "Nieznany przedmiot");
+    if (!item || item.type !== k) return { error: "Nieznany przedmiot", status: 400 };
     // darmowe rzeczy ma każdy (także konta sprzed dodania nowych przedmiotów)
-    if (!user.inventory.includes(id) && (item.price > 0 || item.offsale)) return fail(res, 403, "Nie masz tego przedmiotu");
+    if (!user.inventory.includes(id) && (item.price > 0 || item.offsale)) return { error: "Nie masz tego przedmiotu", status: 403 };
     next[k] = id;
   }
-  users.setAvatar(user.id, next);
+  return { next };
+}
+
+api.put("/avatar", requireAuth, (req, res) => {
+  const user = toPublicUser((req as AuthedRequest).user);
+  const r = buildAvatar(user, req.body as Partial<Avatar>);
+  if ("error" in r) return fail(res, r.status, r.error);
+  users.setAvatar(user.id, r.next);
   res.json({ user: toPublicUser(users.byId(user.id)!) });
+});
+
+// ---------- zapisane skiny ----------
+
+const MAX_SKINS = 12;
+db.exec(`CREATE TABLE IF NOT EXISTS skins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  avatar TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`);
+type SkinRow = { id: number; user_id: number; name: string; avatar: string; created_at: number };
+const skinOut = (r: SkinRow) => ({ id: r.id, name: r.name, avatar: { ...DEFAULT_AVATAR, ...(JSON.parse(r.avatar) as Partial<Avatar>) } as Avatar });
+api.get("/skins", requireAuth, (req, res) => {
+  const u = (req as AuthedRequest).user;
+  res.json((db.prepare("SELECT * FROM skins WHERE user_id = ? ORDER BY id DESC").all(u.id) as unknown as SkinRow[]).map(skinOut));
+});
+/** zapisuje aktualny wygląd pod nazwą */
+api.post("/skins", requireAuth, (req, res) => {
+  const u = (req as AuthedRequest).user;
+  const count = (db.prepare("SELECT COUNT(*) AS c FROM skins WHERE user_id = ?").get(u.id) as { c: number }).c;
+  if (count >= MAX_SKINS) return fail(res, 400, `Możesz zapisać maksymalnie ${MAX_SKINS} skinów - usuń któryś`);
+  const name = filterChat(String(req.body?.name ?? "").trim()).slice(0, 24) || `Skin ${count + 1}`;
+  db.prepare("INSERT INTO skins (user_id, name, avatar, created_at) VALUES (?, ?, ?, ?)").run(u.id, name, JSON.stringify(toPublicUser(u).avatar), Date.now());
+  res.json((db.prepare("SELECT * FROM skins WHERE user_id = ? ORDER BY id DESC").all(u.id) as unknown as SkinRow[]).map(skinOut));
+});
+/** zakłada zapisany skin (przedmioty, których już nie masz, są pomijane) */
+api.post("/skins/:id/wear", requireAuth, (req, res) => {
+  const u = (req as AuthedRequest).user;
+  const row = db.prepare("SELECT * FROM skins WHERE id = ? AND user_id = ?").get(Number(req.params.id), u.id) as SkinRow | undefined;
+  if (!row) return fail(res, 404, "Nie ma takiego skina");
+  const pub = toPublicUser(u);
+  const saved = JSON.parse(row.avatar) as Partial<Avatar>;
+  // zostawiamy tylko to, co gracz nadal może nosić
+  const ok: Partial<Avatar> = {};
+  for (const [k, v] of Object.entries(saved) as [keyof Avatar, string][]) {
+    const r = buildAvatar(pub, { [k]: v });
+    if (!("error" in r)) ok[k] = v;
+  }
+  const r = buildAvatar(pub, ok);
+  if ("error" in r) return fail(res, r.status, r.error);
+  users.setAvatar(u.id, r.next);
+  res.json({ user: toPublicUser(users.byId(u.id)!) });
+});
+api.delete("/skins/:id", requireAuth, (req, res) => {
+  const u = (req as AuthedRequest).user;
+  db.prepare("DELETE FROM skins WHERE id = ? AND user_id = ?").run(Number(req.params.id), u.id);
+  res.json({ ok: true });
 });
 
 api.post("/buy", requireAuth, (req, res) => {

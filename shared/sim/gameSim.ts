@@ -26,7 +26,8 @@ const ANIMS: Anim[] =["idle", "walk", "jump", "fall", "dead", "swim", "tread", "
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const LIMIT = 2000;
 const SPAWN_PROTECTION_MS = 2000;
-const PLAYER_HALF = 1;
+/** połowa szerokości trafienia: postać z rękami ma ok. 4 szerokości, więc trafienie w ramię też się liczy */
+const PLAYER_HALF = 1.6;
 const PLAYER_HEIGHT = 5.2;
 
 export interface SimTransport {
@@ -38,6 +39,8 @@ export interface SimTransport {
   storage?: GameStorage;
   /** wykryto oszukiwanie ruchem (kick = wyrzucić z gry) */
   cheat?(sid: string, reason: string, kick: boolean): void;
+  /** skrypt wyrzuca gracza z gry (kick) */
+  kick?(sid: string, reason: string): void;
   /** zapis świata z bloków (to, co zbudowali gracze) */
   worldSave?: { load(): string | null; save(data: string): void };
 }
@@ -51,6 +54,8 @@ export interface SimUser {
   emotes?: string[];
   /** kupione passy w sklepie tej gry (id produktów) */
   owned?: string[];
+  /** administracja gry (właściciel, współtwórca, moderator Predatora) - może wyrzucać, banować, dawać narzędzia */
+  admin?: boolean;
 }
 
 export interface SimInfo {
@@ -65,6 +70,8 @@ export interface SimInfo {
 
 interface PlayerState extends NetPlayer {
   isOwner: boolean;
+  /** administracja gry */
+  admin: boolean;
   emotes?: Set<string>;
   score: number;
   lastTouch: Map<string, number>;
@@ -184,6 +191,7 @@ export class GameSim {
       username: user.username,
       avatar: user.avatar,
       isOwner: user.isOwner,
+      admin: !!user.admin || user.isOwner,
       emotes: user.emotes ? new Set(user.emotes) : undefined,
       ...spawn,
       ry: 0,
@@ -392,7 +400,9 @@ export class GameSim {
     p.x = x;
     p.y = y;
     p.z = z;
-    p.ry = finite(v.ry, -10, 10) ?? p.ry;
+    // kąt spoza zakresu (stary klient dopisywał pełne obroty) zawijamy, zamiast go ignorować - inaczej postać "chodzi bokiem"
+    const ryRaw = finite(v.ry, -1000, 1000);
+    if (ryRaw !== undefined) p.ry = Math.atan2(Math.sin(ryRaw), Math.cos(ryRaw));
     let anim = ANIMS.includes(v.a as Anim) ? (v.a as Anim) : "idle";
     // emotka ze sklepu tylko dla tych, którzy ją kupili
     if (p.emotes && SHOP_EMOTES.includes(anim as ShopEmote) && !p.emotes.has(anim)) anim = "idle";
@@ -594,6 +604,29 @@ export class GameSim {
   private groupParts(part: Part): Part[] {
     if (!part.group) return [part];
     return [...this.partsById.values()].filter((o) => o.group === part.group);
+  }
+
+  // ---------- administracja gry (właściciel, współtwórcy, moderatorzy) ----------
+
+  /** nazwy narzędzi tej gry (do okna admina) */
+  toolNames(): string[] {
+    return this.data.tools.map((t) => t.name);
+  }
+
+  /** daje narzędzie po nazwie ("*" = wszystkie) */
+  adminGiveTool(sid: string, name: string): number {
+    const p = this.players.get(sid);
+    if (!p) return 0;
+    let n = 0;
+    for (const t of this.data.tools) if ((name === "*" || t.name === name) && this.giveTool(p, t.id, true)) n++;
+    return n;
+  }
+
+  /** zabiera narzędzie po nazwie ("*" = wszystkie) */
+  adminTakeTool(sid: string, name: string) {
+    const p = this.players.get(sid);
+    if (!p) return;
+    for (const t of this.data.tools) if (name === "*" || t.name === name) this.removeTool(p, t.id);
   }
 
   private onSit(sid: string, msg: unknown) {
@@ -968,6 +1001,14 @@ export class GameSim {
       // miejsca gry: teleportToPlace(player, "Arena"), getPlace() = nazwa tego miejsca
       teleportToPlace: (sid, name) => this.teleportToPlace(String(sid ?? ""), String(name ?? "")),
       getPlace: () => this.data.currentPlace?.name ?? "",
+      // administracja: czy gracz jest właścicielem / administracją gry, jego numer konta, wyrzucenie z gry
+      isOwner: (sid) => !!this.players.get(String(sid ?? ""))?.isOwner,
+      isAdmin: (sid) => !!this.players.get(String(sid ?? ""))?.admin,
+      getUserId: (sid) => this.players.get(String(sid ?? ""))?.userId ?? 0,
+      kick: (sid, reason) => {
+        const p = this.players.get(String(sid ?? ""));
+        if (p && !p.admin) this.t.kick?.(p.sid, String(reason ?? "").slice(0, 120));
+      },
       awardBadge: (sid, name) => this.t.badge?.(String(sid ?? ""), String(name ?? "")),
       playSound: (target, name) => to(target, "sound", { name: soundName(name) }),
       setMusic: (name, target) => to(target, "music", { name: name ? soundName(name) : "" }),

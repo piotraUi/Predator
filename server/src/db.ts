@@ -99,6 +99,24 @@ CREATE TABLE IF NOT EXISTS game_data (
   PRIMARY KEY (world_id, user_id)
 );
 
+-- bany w konkretnej grze (administracja gry: właściciel, współtwórcy, moderatorzy)
+CREATE TABLE IF NOT EXISTS world_bans (
+  world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  until INTEGER NOT NULL DEFAULT 0,      -- 0 = na zawsze
+  reason TEXT NOT NULL DEFAULT '',
+  by_name TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (world_id, user_id)
+);
+
+-- dane całej gry (saveGlobal / loadGlobal w skryptach)
+CREATE TABLE IF NOT EXISTS game_global (
+  world_id INTEGER PRIMARY KEY REFERENCES worlds(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 -- zapisane światy z bloków (to, co gracze zbudowali i wykopali)
 CREATE TABLE IF NOT EXISTS world_saves (
   world_id INTEGER NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
@@ -492,7 +510,41 @@ export const friends = {
 };
 
 /** Zapis postępu graczy w grze (saveData / loadData) */
+export const worldBans = {
+  /** aktywny ban gracza w tej grze (wygasłe są usuwane) */
+  get(worldId: number, userId: number) {
+    const b = db.prepare("SELECT * FROM world_bans WHERE world_id = ? AND user_id = ?").get(worldId, userId) as { until: number; reason: string; by_name: string } | undefined;
+    if (!b) return null;
+    if (b.until > 0 && b.until < Date.now()) {
+      db.prepare("DELETE FROM world_bans WHERE world_id = ? AND user_id = ?").run(worldId, userId);
+      return null;
+    }
+    return b;
+  },
+  add: (worldId: number, userId: number, minutes: number, reason: string, by: string) =>
+    db
+      .prepare("INSERT OR REPLACE INTO world_bans (world_id, user_id, until, reason, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(worldId, userId, minutes > 0 ? Date.now() + minutes * 60_000 : 0, reason.slice(0, 200), by, Date.now()),
+  remove: (worldId: number, userId: number) => db.prepare("DELETE FROM world_bans WHERE world_id = ? AND user_id = ?").run(worldId, userId),
+  list: (worldId: number) =>
+    db
+      .prepare("SELECT b.user_id AS userId, u.username, b.until, b.reason, b.by_name AS byName FROM world_bans b JOIN users u ON u.id = b.user_id WHERE b.world_id = ? ORDER BY b.created_at DESC LIMIT 100")
+      .all(worldId) as unknown as { userId: number; username: string; until: number; reason: string; byName: string }[],
+};
+
 export const gameData = {
+  /** dane całej gry (userId 0) */
+  loadGlobal(worldId: number): unknown {
+    const row = db.prepare("SELECT data FROM game_global WHERE world_id = ?").get(worldId) as { data: string } | undefined;
+    try {
+      return row ? JSON.parse(row.data) : {};
+    } catch {
+      return {};
+    }
+  },
+  saveGlobal(worldId: number, data: unknown) {
+    db.prepare("INSERT INTO game_global (world_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(world_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at").run(worldId, JSON.stringify(data), Date.now());
+  },
   load(worldId: number, userId: number): unknown {
     const row = db.prepare("SELECT data FROM game_data WHERE world_id = ? AND user_id = ?").get(worldId, userId) as { data: string } | undefined;
     if (!row) return {};

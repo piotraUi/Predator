@@ -247,7 +247,11 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     function testOffline() {
       go("play", { offline: { name: meta.name, data }, back: { screen: "studio", params: file ? { file: fileState() } : { worldId: params.worldId } } });
     }
+    /** Testuj: osobna, lokalna gra - bez serwera i bez innych graczy */
     async function test() {
+      testOffline();
+    }
+    async function testOnline() {
       if (!src.online) return testOffline();
       if (await save(true)) go("play", { worldId: params.worldId, back: { screen: "studio", params: { worldId: params.worldId } } });
     }
@@ -337,6 +341,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       item("📂 Otwórz plik .pgame", openFile),
       item("📦 Importuj grę z GDevelopa (.zip)", importGD),
       item("🎮 Testuj bez serwera", testOffline),
+      ...(src.online ? [item("🌐 Zapisz i zagraj na serwerze", () => void testOnline())] : []),
       !src.online ? item("☁ Wyślij na serwer", upload) : null,
     );
     const saveBtn = h("button", { class: "tb-btn", onClick: () => save(), title: "Zapisz (Ctrl+S)" }, "💾", h("span", null, "Zapisz"));
@@ -373,7 +378,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       ),
       saveBtn,
       src.online ? editorsBtn : "",
-      h("button", { class: "tb-btn play", onClick: () => test(), title: src.online ? "Zapisz i zagraj na serwerze" : "Zagraj bez serwera" }, "▶", h("span", null, "Testuj")),
+      h("button", { class: "tb-btn play", onClick: () => test(), title: "Zagraj w swoją grę w osobnym teście (bez serwera, tylko Ty)" }, "▶", h("span", null, "Testuj")),
       aiBtn,
       h("div", { class: "dd-wrap" }, h("button", { class: "tb-btn", onClick: (e: Event) => toggleMenu(fileMenu, e) }, "📁", h("span", null, "Plik")), fileMenu),
       h("span", { class: "tb-mode " + (src.online ? "on" : ""), title: src.online ? "Gra na serwerze" : "Gra z pliku - bez serwera" }, src.online ? "☁ serwer · 2D" : "📄 plik · 2D"),

@@ -5,11 +5,11 @@ import type { Emote } from "../../../shared/types.ts";
 import { drawLeg, drawShirtFront } from "../engine/clothes.ts";
 import { headshot } from "./headshot.ts";
 import type { Avatar } from "../../../shared/types.ts";
-import { api } from "../api.ts";
+import { api, type SavedSkin } from "../api.ts";
 import { AvatarModel } from "../engine/avatar.ts";
 import { createEngine } from "../engine/world.ts";
 import { session } from "../state.ts";
-import { h, toast } from "./dom.ts";
+import { ask, h, toast } from "./dom.ts";
 import { icon } from "./icons.ts";
 
 const PALETTE = [
@@ -199,12 +199,91 @@ export function avatarEditor(el: HTMLElement): () => void {
   };
   api.catalog().then(renderShop).catch((e) => toast(e.message, "error"));
 
+  // zapisane skiny: zapisz aktualny wygląd pod nazwą i zakładaj jednym kliknięciem
+  const skinBox = h("div", { class: "skins" });
+  const renderSkins = (list: SavedSkin[]) =>
+    skinBox.replaceChildren(
+      h(
+        "div",
+        { class: "skins-head" },
+        h("h3", null, "💾 Zapisane skiny"),
+        h(
+          "button",
+          {
+            class: "btn small",
+            onClick: async () => {
+              clearTimeout(saveTimer);
+              await api.saveAvatar(avatar).catch(() => {});
+              const name = prompt("Nazwa skina:", `Skin ${list.length + 1}`);
+              if (name === null) return;
+              try {
+                renderSkins(await api.saveSkin(name));
+                toast("Zapisano skin", "good");
+              } catch (e) {
+                toast((e as Error).message, "error");
+              }
+            },
+          },
+          "+ Zapisz obecny",
+        ),
+      ),
+      list.length
+        ? h(
+            "div",
+            { class: "skin-list" },
+            ...list.map((sk) =>
+              h(
+                "div",
+                { class: "skin-card" },
+                h("div", { class: "skin-swatch", style: `background: linear-gradient(135deg, ${sk.avatar.head} 0 25%, ${sk.avatar.torso} 25% 60%, ${sk.avatar.legs} 60%)` }),
+                h("b", null, sk.name),
+                h(
+                  "div",
+                  { class: "skin-actions" },
+                  h(
+                    "button",
+                    {
+                      class: "btn small green",
+                      onClick: async () => {
+                        try {
+                          const r = await api.wearSkin(sk.id);
+                          session.set(r.user);
+                          Object.assign(avatar, r.user.avatar);
+                          model.setAvatar(avatar);
+                          toast("Założono skin", "good");
+                        } catch (e) {
+                          toast((e as Error).message, "error");
+                        }
+                      },
+                    },
+                    "Załóż",
+                  ),
+                  h(
+                    "button",
+                    {
+                      class: "btn small danger",
+                      onClick: async () => {
+                        if (!(await ask(`Usunąć skin „${sk.name}”?`, "Usuń", "Anuluj", true))) return;
+                        await api.deleteSkin(sk.id).catch(() => {});
+                        renderSkins(await api.skins());
+                      },
+                    },
+                    "🗑",
+                  ),
+                ),
+              ),
+            ),
+          )
+        : h("div", { class: "muted small" }, "Zrób wygląd, który Ci się podoba, i zapisz go - później założysz go jednym kliknięciem."),
+    );
+  api.skins().then(renderSkins).catch(() => {});
+
   el.append(
     h(
       "div",
       { class: "avatar-layout" },
       h("div", { class: "avatar-preview" }, canvas),
-      h("div", { class: "avatar-edit" }, h("h3", null, "Kolory"), partBtns, swatches, shop),
+      h("div", { class: "avatar-edit" }, skinBox, h("h3", null, "Kolory"), partBtns, swatches, shop),
     ),
   );
   engine.resize();

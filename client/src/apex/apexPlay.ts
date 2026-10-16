@@ -897,7 +897,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   });
   r.onLeave((code) => {
     if (leaving || disposed) return;
-    toast(code === 4000 ? "Wyrzucono z gry" : "Rozłączono z serwerem", "error");
+    toast(code === 4000 ? "Wyrzucono z gry" : code === 4002 ? "Serwer został zrestartowany - wejdź ponownie" : "Rozłączono z serwerem", "error");
     back();
   });
 
@@ -1171,7 +1171,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     sendTimer += dt;
     if (sendTimer >= SEND_EVERY) {
       sendTimer = 0;
-      r.send("m", { x: body.x, y: body.y, z: body.z, ry, a: anim });
+      r.send("m", { x: body.x, y: body.y, z: body.z, ry: Math.atan2(Math.sin(ry), Math.cos(ry)), a: anim });
     }
 
     // rysowanie

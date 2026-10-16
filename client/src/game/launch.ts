@@ -88,7 +88,7 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
       c.onLeave((code) => {
         if (inner || disposed) return;
         leftEarly = true;
-        toast(code === 4000 ? "Wyrzucono z gry" : "Rozłączono z serwerem", "error");
+        toast(code === 4000 ? "Wyrzucono z gry" : code === 4002 ? "Serwer został zrestartowany - wejdź ponownie" : "Rozłączono z serwerem", "error");
         back();
       });
       const open = async (kind: "2d" | "3d", init: unknown) => {

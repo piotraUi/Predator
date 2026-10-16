@@ -253,7 +253,7 @@ label.check { flex-direction: row !important; align-items: center; gap: 10px; co
 .touch-ui { position: absolute; inset: 0; pointer-events: none; }
 .joy {
   position: absolute; left: 28px; bottom: calc(28px + var(--safe-bottom)); width: 130px; height: 130px; border-radius: 50%;
-  background: #ffffff1a; border: 2px solid #ffffff40; pointer-events: auto; touch-action: none;
+  background: #00000040; border: 2px solid #ffffff44; pointer-events: auto; touch-action: none;
 }
 .joy-knob {
   position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%;
@@ -261,10 +261,11 @@ label.check { flex-direction: row !important; align-items: center; gap: 10px; co
 }
 .jump-btn {
   position: absolute; right: 32px; bottom: calc(40px + var(--safe-bottom)); width: 86px; height: 86px; border-radius: 50%;
-  background: #ffffff26; border: 2px solid #ffffff50; color: white; font-size: 38px; display: flex; align-items: center; justify-content: center;
+  background: #0000005c; border: 2px solid #ffffff55; color: white; font-size: 38px; display: flex; align-items: center; justify-content: center;
+  text-shadow: 0 1px 3px #000; box-shadow: 0 2px 10px #0006;
   pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
 }
-.jump-btn.active { background: #ffffff55; }
+.jump-btn.active { background: #000000a0; }
 
 /* ---------- studio ---------- */
 .studio { height: 100%; display: flex; flex-direction: column; }
@@ -1713,3 +1714,15 @@ body[data-screen="play"] .dl-banner, body[data-screen="studio"] .dl-banner { dis
 .ban-row span { color: #b99; }
 .ban-row b { text-align: right; word-break: break-word; }
 .ban-card .btn { margin-top: 12px; }
+
+/* zapisane skiny */
+.skins { margin-bottom: 14px; }
+.skins-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.skins-head h3 { margin: 0; }
+.skin-list { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+.skin-card { flex: 0 0 120px; background: var(--panel, #20232b); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.skin-swatch { width: 48px; height: 48px; border-radius: 10px; border: 2px solid #ffffff22; }
+.skin-actions { display: flex; gap: 4px; }
+
+.players-admin { background: #1a2030; border: 1px solid #3a4a70; border-radius: 10px; padding: 8px; margin-bottom: 10px; }
+.players-admin .players-actions { flex-wrap: wrap; margin-top: 6px; }

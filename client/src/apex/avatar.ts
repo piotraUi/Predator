@@ -222,11 +222,11 @@ export class ApexAvatar {
       ease(L.la, 0.4); ease(L.ra, -0.4); ease(L.ll, 0); ease(L.rl, 0);
       brx = -Math.PI / 2;
     } else if (a === "seated" || a === "sit") {
-      ease(L.la, -0.5); ease(L.ra, -0.5); ease(L.ll, -Math.PI / 2); ease(L.rl, -Math.PI / 2);
+      ease(L.la, 0.5); ease(L.ra, 0.5); ease(L.ll, Math.PI / 2); ease(L.rl, Math.PI / 2);
       by = -1.2;
     } else if (a === "drive") {
       // za kierownicą: ręce do przodu, nogi jak przy siedzeniu
-      ease(L.la, HOLD * 0.8, -0.12); ease(L.ra, HOLD * 0.8, 0.12); ease(L.ll, -Math.PI / 2); ease(L.rl, -Math.PI / 2);
+      ease(L.la, HOLD * 0.8, -0.12); ease(L.ra, HOLD * 0.8, 0.12); ease(L.ll, Math.PI / 2); ease(L.rl, Math.PI / 2);
       by = -1.2;
     } else if (a === "skate") {
       // bokiem na desce, ugięte kolana, ręce na boki do równowagi

@@ -98,6 +98,12 @@ export async function pingServer(url = getServerUrl(), ms = 5000): Promise<{ has
 export const getToken = () => read(LS_TOKEN);
 export const setToken = (t: string | null) => write(LS_TOKEN, t);
 
+export interface SavedSkin {
+  id: number;
+  name: string;
+  avatar: Avatar;
+}
+
 /** szczegóły bana (ekran zbanowania) */
 export interface BanInfo {
   reason: string;
@@ -237,6 +243,10 @@ export const api = {
     req<{ trade: TradeInfo; user: PublicUser }>("POST", `/trades/${id}/${action}`),
   servers: (worldId: number) => req<PrivateServerInfo[]>("GET", `/worlds/${worldId}/servers`),
   createServer: (worldId: number, name: string) => req<PrivateServerInfo>("POST", `/worlds/${worldId}/servers`, { name }),
+  skins: () => req<SavedSkin[]>("GET", "/skins"),
+  saveSkin: (name: string) => req<SavedSkin[]>("POST", "/skins", { name }),
+  wearSkin: (id: number) => req<{ user: PublicUser }>("POST", `/skins/${id}/wear`),
+  deleteSkin: (id: number) => req("DELETE", "/skins/" + id),
   deleteServer: (id: number) => req("DELETE", "/servers/" + id),
   newServerCode: (id: number) => req<PrivateServerInfo>("POST", `/servers/${id}/code`),
   serverByCode: (code: string) => req<{ server: PrivateServerInfo; world: WorldInfo }>("GET", "/servers/code/" + encodeURIComponent(code)),

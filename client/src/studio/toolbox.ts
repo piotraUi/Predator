@@ -99,8 +99,9 @@ export const TOOLBOX: ToolboxModel[] = [
     icon: "🛋️",
     cat: "Pojazdy",
     parts: () => [
-      { name: "Siedzisko", kind: "seat", sx: 7, sy: 0.4, sz: 2.2, y: 1.8, color: WOOD },
-      { name: "Oparcie", sx: 7, sy: 1.6, sz: 0.3, y: 3, z: 0.95, color: WOOD },
+      // trzy osobne miejsca - na ławce siedzą trzy osoby
+      ...[-2.4, 0, 2.4].map((x) => ({ name: "Siedzisko", kind: "seat" as const, sx: 2.3, sy: 0.4, sz: 2.2, x, y: 1.8, color: WOOD })),
+      { name: "Oparcie", sx: 7.2, sy: 1.6, sz: 0.3, y: 3, z: 0.95, color: WOOD },
       { name: "Noga", sx: 0.4, sy: 1.6, sz: 2, x: -3, y: 0.8, color: "#424242", material: "metal" },
       { name: "Noga", sx: 0.4, sy: 1.6, sz: 2, x: 3, y: 0.8, color: "#424242", material: "metal" },
     ],

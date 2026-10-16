@@ -44,7 +44,7 @@ export class LocalRoom implements GameConnection {
     );
     this.timer = window.setInterval(() => this.sim.tick(), 50);
     queueMicrotask(() =>
-      this.sim.join(this.sid, { userId: 0, username: user.username, avatar: user.avatar ?? DEFAULT_AVATAR, isOwner: true }),
+      this.sim.join(this.sid, { userId: 1, username: user.username, avatar: user.avatar ?? DEFAULT_AVATAR, isOwner: true }),
     );
     for (const b of copy.badges ?? []) if (b.trigger === "join") setTimeout(() => this.testBadge(copy, b.id), 2500);
   }

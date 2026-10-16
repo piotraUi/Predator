@@ -16,7 +16,7 @@ export interface ScriptHost {
   log(text: string, error?: boolean): void;
   setPart(name: string, props: Record<string, unknown>): void;
   movePart(name: string, dx: number, dy: number, dz: number): void;
-  getPart(name: string): { x: number; y: number; z: number; sx: number; sy: number; sz: number } | null;
+  getPart(name: string): { x: number; y: number; z: number; sx: number; sy: number; sz: number; color?: string; transparency?: number; ry?: number; label?: string } | null;
   kill(player: string): void;
   teleport(player: string, x: number, y: number, z: number): void;
   playerName(player: string): string;
@@ -129,21 +129,115 @@ function __fireNet(name, a, b, c, d, e, f)
   end
 end
 
+-- every / after zwracają uchwyt; cancel(uchwyt) kończy powtarzanie
 function every(seconds, fn)
+  local h = { on = true }
   spawn(function()
-    while true do
+    while h.on do
       wait(seconds)
-      fn()
+      if h.on then fn() end
     end
   end)
+  return h
 end
 
 function after(seconds, fn)
+  local h = { on = true }
   spawn(function()
     wait(seconds)
-    fn()
+    if h.on then fn() end
   end)
+  return h
 end
+
+function cancel(h)
+  if type(h) == "table" then h.on = false end
+end
+
+-- ===== pomocnicze funkcje (matematyka, gracze, drużyny, czas) =====
+function clamp(x, a, b) if x < a then return a elseif x > b then return b end return x end
+function lerp(a, b, t) return a + (b - a) * t end
+function round(x, digits)
+  local m = 10 ^ (digits or 0)
+  return math.floor(x * m + 0.5) / m
+end
+function sign(x) if x > 0 then return 1 elseif x < 0 then return -1 end return 0 end
+function distance(x1, z1, x2, z2) local dx, dz = x2 - x1, z2 - z1 return math.sqrt(dx * dx + dz * dz) end
+function distance3(x1, y1, z1, x2, y2, z2) local dx, dy, dz = x2 - x1, y2 - y1, z2 - z1 return math.sqrt(dx * dx + dy * dy + dz * dz) end
+function choice(list) if #list == 0 then return nil end return list[math.random(1, #list)] end
+function shuffle(list)
+  for i = #list, 2, -1 do
+    local j = math.random(1, i)
+    list[i], list[j] = list[j], list[i]
+  end
+  return list
+end
+function contains(list, value) for _, v in ipairs(list) do if v == value then return true end end return false end
+function formatTime(seconds)
+  seconds = math.max(0, math.floor(seconds))
+  return string.format("%d:%02d", seconds // 60, seconds % 60)
+end
+function formatNumber(n)
+  local s = tostring(math.floor(n + 0.5))
+  local out = s:reverse():gsub("(%d%d%d)", "%1 "):reverse()
+  return (out:gsub("^ ", ""))
+end
+local cooldowns = {}
+-- cooldown("klucz", 3) - true, jeśli minęły 3 s od ostatniego razu (i od razu zaczyna odliczanie)
+function cooldown(key, seconds)
+  local t = now
+  if cooldowns[key] and t - cooldowns[key] < seconds then return false end
+  cooldowns[key] = t
+  return true
+end
+function playerCount() return #getPlayers() end
+function findPlayer(name)
+  local want = string.lower(tostring(name))
+  for _, p in ipairs(getPlayers()) do
+    if string.lower(playerName(p)) == want then return p end
+  end
+  return nil
+end
+function playersNear(x, y, z, radius)
+  local list = {}
+  for _, p in ipairs(getPlayers()) do
+    local px, py, pz = getPlayerPosition(p)
+    if px and distance3(x, y, z, px, py, pz) <= radius then list[#list + 1] = p end
+  end
+  return list
+end
+function nearestPlayer(x, y, z, maxDistance)
+  local best, bd = nil, maxDistance or 1e9
+  for _, p in ipairs(getPlayers()) do
+    local px, py, pz = getPlayerPosition(p)
+    if px then
+      local d = distance3(x, y, z, px, py, pz)
+      if d < bd then best, bd = p, d end
+    end
+  end
+  return best, bd
+end
+function topPlayers(n)
+  local list = getPlayers()
+  table.sort(list, function(a, b) return getScore(a) > getScore(b) end)
+  local out = {}
+  for i = 1, math.min(n or 3, #list) do out[i] = list[i] end
+  return out
+end
+function tellAll(text) for _, p in ipairs(getPlayers()) do tell(p, text) end end
+-- drużyny: setTeam(player, "Czerwoni"), getTeam(player), teamPlayers("Czerwoni"), teamCount("Czerwoni")
+local teams = {}
+function setTeam(p, team) teams[p] = team end
+function getTeam(p) return teams[p] end
+function teamPlayers(team)
+  local list = {}
+  for _, p in ipairs(getPlayers()) do if teams[p] == team then list[#list + 1] = p end end
+  return list
+end
+function teamCount(team) return #teamPlayers(team) end
+function clearTeams() teams = {} end
+-- dostęp do części (po nazwie)
+function partExists(name) return getPosition(name) ~= nil end
 
 function __fire(kind, a, b, c, d, e)
   for _, fn in ipairs(handlers[kind]) do spawn(fn, a, b, c, d, e) end
@@ -309,6 +403,39 @@ export class LuaEngine {
       lua.lua_pushnumber(L, p.y);
       lua.lua_pushnumber(L, p.z);
       return 3;
+    });
+    // rozmiar, kolor, przezroczystość, obrót i napis klocka (po nazwie)
+    def("getSize", (L) => {
+      const p = h.getPart(this.str(L, 1));
+      if (!p) return lua.lua_pushnil(L), 1;
+      lua.lua_pushnumber(L, p.sx);
+      lua.lua_pushnumber(L, p.sy);
+      lua.lua_pushnumber(L, p.sz);
+      return 3;
+    });
+    def("getColor", (L) => {
+      const p = h.getPart(this.str(L, 1));
+      if (!p) return lua.lua_pushnil(L), 1;
+      lua.lua_pushstring(L, to_luastring(p.color ?? "#ffffff"));
+      return 1;
+    });
+    def("getTransparency", (L) => {
+      const p = h.getPart(this.str(L, 1));
+      if (!p) return lua.lua_pushnil(L), 1;
+      lua.lua_pushnumber(L, p.transparency ?? 0);
+      return 1;
+    });
+    def("getRotation", (L) => {
+      const p = h.getPart(this.str(L, 1));
+      if (!p) return lua.lua_pushnil(L), 1;
+      lua.lua_pushnumber(L, p.ry ?? 0);
+      return 1;
+    });
+    def("getLabel", (L) => {
+      const p = h.getPart(this.str(L, 1));
+      if (!p) return lua.lua_pushnil(L), 1;
+      lua.lua_pushstring(L, to_luastring(p.label ?? ""));
+      return 1;
     });
     def("kill", (L) => {
       h.kill(this.str(L, 1));

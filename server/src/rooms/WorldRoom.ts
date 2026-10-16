@@ -8,7 +8,7 @@ import { creatorCut, GAME_PROTOCOL, REPORT_REASONS, type BadgeDef, type ProductD
 import { sanitizeWorld } from "../../../shared/world.ts";
 import { userFromToken } from "../auth.ts";
 import { config } from "../config.ts";
-import { alerts, badges, friends, gameData, purchases, toPublicUser, users, worlds, worldSaves, type UserRow, type WorldRow } from "../db.ts";
+import { alerts, badges, canEdit, friends, gameData, isModeratorName, isSuperAdmin, purchases, toPublicUser, users, worlds, worldBans, worldSaves, type UserRow, type WorldRow } from "../db.ts";
 import { presence } from "../presence.ts";
 import { areFriends, blocks, mutes, privacy, privateServers, reports, type PrivateServerRow } from "../social.ts";
 import { filterChat } from "../../../shared/chatFilter.ts";
@@ -96,6 +96,14 @@ export class WorldRoom extends Room {
           const j = this.joinedAt.get(sid);
           if (def && j) this.giveBadge(sid, j.userId, def);
         },
+        // skrypt: kick(player, "powód")
+        kick: (sid, reason) => {
+          const c = this.clients.find((x) => x.sessionId === sid);
+          if (c) {
+            c.send("chat", { from: "", text: "👢 Wyrzucono z gry" + (reason ? ": " + reason : ""), system: true });
+            c.leave(4000);
+          }
+        },
         // oszukiwanie ruchem: zgłoszenie do administratora (od konta Predator), przy uporczywym - wyrzucenie z gry
         cheat: (sid, reason, kick) => {
           const j = this.joinedAt.get(sid);
@@ -113,8 +121,9 @@ export class WorldRoom extends Room {
           : {}),
         // postęp graczy w tej grze zapisywany w bazie
         storage: {
-          load: (userId) => (userId > 0 ? (gameData.load(world.id, userId) as Record<string, never>) : {}),
-          save: (userId, d) => userId > 0 && gameData.save(world.id, userId, d),
+          // userId 0 = dane całej gry (saveGlobal); goście (ujemne id) nic nie zapisują
+          load: (userId) => (userId === 0 ? (gameData.loadGlobal(world.id) as Record<string, never>) : userId > 0 ? (gameData.load(world.id, userId) as Record<string, never>) : {}),
+          save: (userId, d) => (userId === 0 ? gameData.saveGlobal(world.id, d) : userId > 0 && gameData.save(world.id, userId, d)),
         },
       },
       {
@@ -148,6 +157,8 @@ export class WorldRoom extends Room {
         this.sim.handle(client.sessionId, type, msg);
       });
     this.onMessage("buy", (client, m: { id?: unknown }) => this.buy(client, String(m?.id ?? "")));
+    // administracja gry: wyrzucanie, bany, restart serwera, narzędzia, ogłoszenia
+    this.onMessage("gadmin", (client, m: Record<string, unknown>) => this.gameAdmin(client, m));
     // gracz z tego serwera: zgłoś / zablokuj / dodaj do znajomych
     this.onMessage("report", (client, m: { sid?: unknown; reason?: unknown; text?: unknown; voice?: unknown }) => this.report(client, m));
     this.onMessage("block", (client, m: { sid?: unknown }) => this.blockPlayer(client, String(m?.sid ?? "")));
@@ -187,6 +198,9 @@ export class WorldRoom extends Room {
     if (this.sim instanceof Sim2D && (Number(options.v) || 1) < GAME_PROTOCOL)
       throw new Error("To gra 2D - zaktualizuj aplikację Predator (nowy .exe / APK), żeby w nią zagrać");
     if (!this.world.published && user.id !== this.world.owner_id) throw new Error("Ta gra nie jest opublikowana");
+    const wb = worldBans.get(this.world.id, user.id);
+    if (wb)
+      throw new Error(`Masz bana w tej grze${wb.reason ? " (" + wb.reason + ")" : ""}${wb.by_name ? " - nadał: " + wb.by_name : ""}${wb.until ? ", do " + new Date(wb.until).toLocaleString("pl-PL") : ", na zawsze"}`);
     if (this.lobby?.code && String((options as { lobbyCode?: unknown }).lobbyCode ?? "").toUpperCase() !== this.lobby.code)
       throw new Error("To prywatny pokój - wpisz jego kod");
     if (this.priv) {
@@ -218,12 +232,90 @@ export class WorldRoom extends Room {
       username: user.username,
       avatar: toPublicUser(user).avatar,
       isOwner: user.id === this.world.owner_id,
+      admin: this.isStaff(user),
       emotes: (JSON.parse(user.inventory) as string[]).filter((id) => PAID_EMOTES.includes(id)),
       owned: this.products.length ? purchases.owned(this.world.id, user.id) : [],
     });
+    if (this.isStaff(user)) this.clock.setTimeout(() => client.send("gadmin", { on: true, tools: this.sim instanceof GameSim ? this.sim.toolNames() : [] }), 1500);
     // odznaki za samo wejście do gry (chwilę później, żeby gra zdążyła się wczytać)
     for (const def of this.badgeDefs)
       if (def.trigger === "join") this.clock.setTimeout(() => this.giveBadge(client.sessionId, user.id, def), 2500);
+  }
+
+  /** administracja tej gry: właściciel, współtwórcy i moderatorzy / admini Predatora */
+  private isStaff(user: UserRow) {
+    return canEdit(this.world, user.id) || isModeratorName(user.username);
+  }
+
+  /** polecenia administracji z okna 👥 (tylko dla administracji gry) */
+  private gameAdmin(client: Client, m: Record<string, unknown>) {
+    const me = this.joinedAt.get(client.sessionId);
+    const meUser = me ? users.byId(me.userId) : undefined;
+    if (!me || !meUser || !this.isStaff(meUser)) return;
+    const say = (text: string) => client.send("chat", { from: "", text: "🛡️ " + text, system: true });
+    const action = String(m.action ?? "");
+    const tsid = m.sid === "me" ? client.sessionId : String(m.sid ?? "");
+    const tj = this.joinedAt.get(tsid);
+    const tUser = tj ? users.byId(tj.userId) : undefined;
+    // nie ruszamy właściciela, współtwórców ani moderatorów (chyba że to my sami)
+    const protectedTarget = !!tUser && tUser.id !== meUser.id && this.isStaff(tUser);
+    switch (action) {
+      case "kick": {
+        if (!tUser || tUser.id === meUser.id) return say("Wybierz innego gracza");
+        if (protectedTarget) return say("Nie można wyrzucić administracji gry");
+        const reason = filterChat(String(m.reason ?? "").slice(0, 100));
+        this.clients.find((c) => c.sessionId === tsid)?.send("chat", { from: "", text: "👢 Wyrzucono Cię z gry" + (reason ? ": " + reason : ""), system: true });
+        this.clients.find((c) => c.sessionId === tsid)?.leave(4000);
+        this.broadcast("chat", { from: "", text: `👢 ${tUser.username} został wyrzucony z gry przez ${meUser.username}`, system: true });
+        break;
+      }
+      case "ban": {
+        if (!tUser || tUser.id === meUser.id) return say("Wybierz innego gracza");
+        if (protectedTarget) return say("Nie można zbanować administracji gry");
+        const minutes = Math.min(60 * 24 * 365, Math.max(0, Math.round(Number(m.minutes) || 0)));
+        const reason = filterChat(String(m.reason ?? "").slice(0, 100));
+        worldBans.add(this.world.id, tUser.id, minutes, reason, meUser.username);
+        this.clients.find((c) => c.sessionId === tsid)?.send("chat", { from: "", text: "⛔ Dostałeś bana w tej grze" + (reason ? ": " + reason : ""), system: true });
+        this.clients.find((c) => c.sessionId === tsid)?.leave(4000);
+        this.broadcast("chat", { from: "", text: `⛔ ${tUser.username} dostał bana w tej grze (${minutes ? minutes + " min" : "na zawsze"})`, system: true });
+        break;
+      }
+      case "unban": {
+        const target = users.byName(String(m.name ?? ""));
+        if (!target) return say("Nie ma takiego gracza");
+        worldBans.remove(this.world.id, target.id);
+        say(`Odbanowano: ${target.username}`);
+        break;
+      }
+      case "bans":
+        client.send("gbans", worldBans.list(this.world.id));
+        return;
+      case "give":
+      case "take": {
+        if (!(this.sim instanceof GameSim) || !tj) return say("Tej gry nie da się tak zmienić");
+        const name = String(m.tool ?? "");
+        if (action === "give") {
+          const n = this.sim.adminGiveTool(tsid, name);
+          say(n ? `Dano narzędzie${name === "*" ? "a" : ` „${name}”`}: ${tUser?.username}` : "Nie ma takiego narzędzia");
+        } else {
+          this.sim.adminTakeTool(tsid, name);
+          say("Zabrano narzędzie");
+        }
+        break;
+      }
+      case "announce": {
+        const text = filterChat(String(m.text ?? "").slice(0, 200)).trim();
+        if (text) this.announce(`${meUser.username}: ${text}`);
+        break;
+      }
+      case "restart": {
+        this.broadcast("chat", { from: "", text: `🔄 ${meUser.username} restartuje serwer - za 5 sekund wróćisz do menu. Wejdź ponownie, żeby grać na świeżym serwerze.`, system: true });
+        this.clock.setTimeout(() => {
+          for (const c of [...this.clients]) c.leave(4002);
+        }, 5000);
+        break;
+      }
+    }
   }
 
   /** przyznaje odznakę (raz na gracza) i wypłaca nagrodę w monetach */

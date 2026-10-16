@@ -1587,7 +1587,12 @@ export function studioScreen(
       });
     }
 
+    /** Testuj: zawsze osobna, lokalna gra (bez serwera) - nikt inny nie wchodzi do testu i nie psujesz prawdziwego serwera */
     async function test() {
+      testOffline();
+    }
+    /** zapisuje i gra na prawdziwym serwerze (dla zwykłych graczy też) */
+    async function testOnline() {
       if (!src.online) return testOffline();
       // test zaczyna się w miejscu, które edytujesz
       if (await save(true)) go("play", { worldId: params.worldId, ...(curPlace !== (data.startPlace ?? MAIN_PLACE) ? { place: curPlace } : {}), back: { screen: "studio", params: { worldId: params.worldId } } });
@@ -1605,6 +1610,7 @@ export function studioScreen(
       h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), exportFile()) }, "💾 Zapisz jako plik .pgame"),
       h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), openFile()) }, "📂 Otwórz plik .pgame"),
       h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), testOffline()) }, "🎮 Testuj bez serwera"),
+      src.online ? h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), void testOnline()) }, "🌐 Zapisz i zagraj na serwerze") : "",
       h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), openSettings()) }, "🎚 Ustawienia (kamera, czułość)"),
       !src.online
         ? h("button", { class: "dd-item", onClick: () => (fileMenu.classList.add("hidden"), upload()) }, "☁ Wyślij na serwer")
@@ -1697,7 +1703,7 @@ export function studioScreen(
       src.online ? editorsBtn : "",
       h(
         "button",
-        { class: "tb-btn play", onClick: () => test(), title: src.online ? "Zapisz i zagraj na serwerze" : "Zagraj bez serwera" },
+        { class: "tb-btn play", onClick: () => test(), title: "Zagraj w swoją grę w osobnym teście (bez serwera, tylko Ty)" },
         "▶",
         h("span", null, "Testuj"),
       ),

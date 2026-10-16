@@ -150,7 +150,7 @@ export function playScreen(
       else r.onMessage("init", (m: InitMsg) => start(r, m));
       r.onLeave((code) => {
         if (!leaving && !disposed) {
-          toast(code === 4000 ? "Wyrzucono z gry" : "Rozłączono z serwerem", "error");
+          toast(code === 4000 ? "Wyrzucono z gry" : code === 4002 ? "Serwer został zrestartowany - wejdź ponownie" : "Rozłączono z serwerem", "error");
           back();
         }
       });
@@ -1308,7 +1308,7 @@ export function playScreen(
       sendTimer += dt;
       if (sendTimer >= SEND_EVERY) {
         sendTimer = 0;
-        r.send("m", { x: body.x, y: body.y, z: body.z, ry, a: anim });
+        r.send("m", { x: body.x, y: body.y, z: body.z, ry: Math.atan2(Math.sin(ry), Math.cos(ry)), a: anim });
       }
     });
   }

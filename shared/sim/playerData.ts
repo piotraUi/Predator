@@ -74,7 +74,12 @@ export class PlayerDataStore {
     this.storage?.save(entry.userId, next);
   }
 
-  /** funkcje Lua: saveData / loadData / deleteData */
+  /** dane całej gry (nie jednego gracza) - np. rekordy, liczniki; zapisywane pod użytkownikiem 0 */
+  private ensureGlobal() {
+    if (!this.cache.has("@global")) this.attach("@global", 0);
+  }
+
+  /** funkcje Lua: saveData / loadData / deleteData / saveGlobal / loadGlobal */
   register(lua: LuaEngine) {
     const S = (v: LuaValue) => (typeof v === "string" ? v : String(v ?? ""));
     lua.defineFunctions({
@@ -88,6 +93,18 @@ export class PlayerDataStore {
         return v === undefined ? (def ?? null) : v;
       },
       deleteData: (player, key) => this.set(S(player), S(key), null),
+      // dane wspólne dla całej gry (rekord wszech czasów, licznik odwiedzin...)
+      saveGlobal: (key, value) => {
+        if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean")
+          throw new Error("saveGlobal: zapisać można liczbę, tekst albo true/false");
+        this.ensureGlobal();
+        this.set("@global", S(key), value);
+      },
+      loadGlobal: (key, def) => {
+        this.ensureGlobal();
+        const v = this.get("@global", S(key));
+        return v === undefined ? (def ?? null) : v;
+      },
     });
   }
 }

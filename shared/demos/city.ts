@@ -49,8 +49,8 @@ export function demoCity(): WorldData {
   }
   // ławki na placu
   const bench = (x: number, z: number, rotated = false) => {
-    const [sx, sz] = rotated ? [1.6, 6] : [6, 1.6];
-    box("Ławka", x, 1.6, z, sx, 0.4, sz, "#8d6e63");
+    // ławka ma trzy osobne miejsca do siedzenia
+    for (const d of [-2, 0, 2]) box("Ławka", rotated ? x : x + d, 1.6, rotated ? z + d : z, rotated ? 1.6 : 2, 0.4, rotated ? 2 : 1.6, "#8d6e63", { kind: "seat" });
     const bx = rotated ? x + (x > 0 ? 0.9 : -0.9) : x;
     const bz = rotated ? z : z + (z > 0 ? 0.9 : -0.9);
     box("Ławka", bx, 2.6, bz, rotated ? 0.4 : 6, 1.6, rotated ? 6 : 0.4, "#8d6e63");
