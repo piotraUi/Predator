@@ -10,7 +10,7 @@ import { boxMesh, cylinderMesh, frustumMesh, hemiMesh, sphereMesh, torusMesh, we
 import { partTextureCanvas } from "../engine/partTextures.ts";
 import type { VoxBucket, VoxGeo } from "../engine/voxelAtlas.ts";
 import { invert, lookAt, multiply, ortho, perspective, type Mat4, type V3 } from "./math.ts";
-import { TIERS, type QualityTier } from "./quality.ts";
+import { TIERS, detectTier, type QualityTier } from "./quality.ts";
 
 void SKYBOXES;
 
@@ -660,8 +660,21 @@ export interface DynLight {
 
 export interface ApexStats { draws: number; instances: number; tris: number; ms: number }
 
+/** wspólny interfejs silników rysujących (WebGL2: ApexRenderer, WebGPU: GpuRenderer) - reszta Apexa zna tylko to */
+export type Renderer = Pick<
+  ApexRenderer,
+  | "drawBox" | "drawDecal" | "addWorldDecal" | "makeTexture" | "deleteTexture" | "registerMesh" | "deleteMeshes" | "registerSkinMesh" | "deleteSkinMeshes" | "drawSkinned" | "texFor"
+  | "addPart" | "updatePart" | "removePart" | "clearParts" | "setTerrain" | "setGrass" | "setSky" | "setAtmosphere" | "setIndoor" | "indoorLevel" | "setLight" | "addLight"
+  | "followShadows" | "setQuality" | "resize" | "render" | "ray" | "project" | "inView" | "dispose" | "setVoxelAtlas" | "setVoxelChunk" | "removeVoxelChunk" | "clearVoxels"
+  | "setVoxelBrightness" | "tierHint" | "width" | "height" | "time" | "stats" | "onThunder" | "extent" | "reflActive" | "fxInfo" | "canvas"
+>;
+
 export class ApexRenderer {
   readonly gl: WebGL2RenderingContext;
+  /** poziom jakości startowy i maksymalny dla tego urządzenia */
+  tierHint() {
+    return detectTier(this.gl);
+  }
   private prog: Program;
   private depthProg: Program;
   private skyProg: Program;

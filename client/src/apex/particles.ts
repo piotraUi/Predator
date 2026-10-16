@@ -1,8 +1,8 @@
 // Apex: cząsteczki - ogień, dym, iskry, magia, kurz, plusk i błyski. Liczone na procesorze, rysowane jako małe kule
-// (świecące albo półprzezroczyste) przez ApexRenderer; ciągłe źródła (Part.emitter) i jednorazowe wybuchy (strzały, skrypty).
+// (świecące albo półprzezroczyste) przez Renderer; ciągłe źródła (Part.emitter) i jednorazowe wybuchy (strzały, skrypty).
 import type { EmitterCfg } from "../../../shared/types.ts";
 import type { V3 } from "./math.ts";
-import { MAT, rgb, type ApexRenderer } from "./renderer.ts";
+import { MAT, rgb, type Renderer } from "./renderer.ts";
 
 export type FxKind = "fire" | "smoke" | "sparks" | "magic" | "dust" | "splash" | "flash" | "hit" | "blood";
 export const FX_KINDS: FxKind[] = ["fire", "smoke", "sparks", "magic", "dust", "splash", "flash", "hit", "blood"];
@@ -118,7 +118,7 @@ export class Particles {
     }
   }
 
-  draw(r: ApexRenderer) {
+  draw(r: Renderer) {
     const id = [1, 0, 0, 0, 1, 0, 0, 0, 1];
     for (const p of this.list) {
       const t = p.age / p.life;

@@ -1,6 +1,6 @@
 // Apex: ślady na świecie w stylu kreskówki - dziury po kulach (z „gwiazdką” pęknięć) i plamy krwi (czerwone, bez makabry),
-// które rosną w kałużę pod pokonanym graczem. Tekstury rysowane na płótnie, naklejki trzyma ApexRenderer.
-import type { ApexRenderer } from "./renderer.ts";
+// które rosną w kałużę pod pokonanym graczem. Tekstury rysowane na płótnie, naklejki trzyma Renderer.
+import type { Renderer } from "./renderer.ts";
 import type { V3 } from "./math.ts";
 
 function canvas(draw: (g: CanvasRenderingContext2D, s: number) => void, s = 128) {
@@ -49,7 +49,7 @@ export class Gore {
   private puddle: HTMLCanvasElement;
   private cache = new Map<HTMLCanvasElement, WebGLTexture>();
 
-  constructor(private r: ApexRenderer) {
+  constructor(private r: Renderer) {
     this.holes = [0, 1].map((v) =>
       canvas((g, s) => {
         g.translate(s / 2, s / 2);

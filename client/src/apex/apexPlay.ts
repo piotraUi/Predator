@@ -39,7 +39,8 @@ import { openRoomsWindow } from "../game/rooms.ts";
 import { MAIN_PLACE } from "../../../shared/places.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
 import { ROBLOX_FOV } from "../engine/camera.ts";
-import { MAT, rgb, ApexRenderer } from "./renderer.ts";
+import { MAT, rgb, ApexRenderer, type Renderer } from "./renderer.ts";
+import { GpuRenderer, gpuTierHint, type GpuInit } from "./gpuRenderer.ts";
 import { lookRot, rotY, type V3 } from "./math.ts";
 import { isTouch } from "../ui/dom.ts";
 
@@ -66,6 +67,8 @@ interface Remote {
 }
 
 export interface ApexParams {
+  /** urządzenie WebGPU (gdy gracz wybrał WebGPU i przeglądarka je ma); brak = WebGL2 */
+  gpu?: GpuInit | null;
   conn: GameConnection;
   init: InitMsg;
   back?: { screen: string; params?: Record<string, unknown> };
@@ -87,10 +90,20 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const back = () => go(params.back?.screen ?? "home", params.back?.params);
   const me = session.user ?? { id: 0, username: "Gracz", coins: 0, avatar: DEFAULT_AVATAR, inventory: [] };
 
-  const rend = new ApexRenderer(canvas);
+  let rend: Renderer;
+  try {
+    if (params.gpu) {
+      const g = new GpuRenderer(canvas, params.gpu);
+      g.hint = gpuTierHint(params.gpu.adapter);
+      rend = g;
+    } else rend = new ApexRenderer(canvas);
+  } catch (e) {
+    wrap.remove();
+    throw e;
+  }
   if (localStorage.getItem("apexDebug")) (window as unknown as Record<string, unknown>).__apexRend = rend;
   // jakość grafiki: stały poziom albo automatyczny (dobór do urządzenia i obniżanie, gdy gra zwalnia)
-  const detected = detectTier(rend.gl);
+  const detected = rend.tierHint();
   let gov = new QualityGovernor(settings.quality, detected);
   const applyQuality = () => {
     let extra = {};
@@ -1062,7 +1075,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (fpsAcc >= 0.5) { fps = fpsN / fpsAcc; fpsAcc = fpsN = 0; }
     if (showDebug) {
       const s = rend.stats;
-      debug.textContent = `Apex (${TIERS[gov.tier].label}${settings.quality === "auto" ? ", auto" : ""}) · ${fps.toFixed(0)} FPS · rysowanie ${s.ms.toFixed(1)} ms\nwywołania ${s.draws} · instancje ${s.instances} · trójkąty ${(s.tris / 1000).toFixed(1)}k\nrozdzielczość ${rend.width}×${rend.height}`;
+      debug.textContent = `Apex ${params.gpu ? "WebGPU " : ""}(${TIERS[gov.tier].label}${settings.quality === "auto" ? ", auto" : ""}) · ${fps.toFixed(0)} FPS · rysowanie ${s.ms.toFixed(1)} ms\nwywołania ${s.draws} · instancje ${s.instances} · trójkąty ${(s.tris / 1000).toFixed(1)}k\nrozdzielczość ${rend.width}×${rend.height}`;
     }
   };
 

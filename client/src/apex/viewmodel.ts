@@ -1,7 +1,7 @@
 // Apex: widok z pierwszej osoby - ręce i trzymana broń przed kamerą (kołysanie przy chodzeniu, odrzut po strzale, zamach mieczem).
 import type { ToolDef } from "../../../shared/types.ts";
 import { cross, lookRot, norm, type V3 } from "./math.ts";
-import { MAT, type ApexRenderer } from "./renderer.ts";
+import { MAT, type Renderer } from "./renderer.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
 
 export interface ViewmodelState {
@@ -18,7 +18,7 @@ export interface ViewmodelState {
   sleeve?: [number, number, number];
 }
 
-export function drawViewmodel(r: ApexRenderer, v: ViewmodelState) {
+export function drawViewmodel(r: Renderer, v: ViewmodelState) {
   const fwd = norm([-v.dir[0], -v.dir[1], -v.dir[2]]);
   const right = norm(cross([0, 1, 0], fwd));
   const up = cross(fwd, right);

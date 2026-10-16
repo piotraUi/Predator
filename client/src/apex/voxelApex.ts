@@ -1,5 +1,5 @@
 // Apex: świat z bloków (Minecraft). Te same zasady co w silniku Babylon (voxelPlay.ts): celowanie, kopanie, stawianie, moby,
-// TNT, dzień i noc - ale rysowane przez ApexRenderer (siatki kawałków świata z atlasem tekstur, moby z brył).
+// TNT, dzień i noc - ale rysowane przez Renderer (siatki kawałków świata z atlasem tekstur, moby z brył).
 // Interfejs (pasek, ekwipunek, crafting) i dźwięki są wspólne z Babylonem (voxelUi.ts, voxelSfx.ts).
 import { AIR, BARRIER, block, breakTime, VoxelWorld, WATER } from "../../../shared/voxel.ts";
 import { rayBox, type Body } from "../../../shared/physics.ts";
@@ -13,14 +13,14 @@ import { createVoxelUi } from "../game/voxelUi.ts";
 import { h, isTouch, toast } from "../ui/dom.ts";
 import { ApexAvatar } from "./avatar.ts";
 import { mul3, rotX, rotY, apply3, type V3 } from "./math.ts";
-import { MAT, rgb, type ApexRenderer } from "./renderer.ts";
+import { MAT, rgb, type Renderer } from "./renderer.ts";
 
 const REACH = 5;
 const ID3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 type Rgb = [number, number, number];
 
 export interface ApexVoxelCtx {
-  rend: ApexRenderer;
+  rend: Renderer;
   canvas: HTMLCanvasElement;
   wrap: HTMLElement;
   conn: GameConnection;
@@ -46,7 +46,7 @@ class ChunkView {
   private readonly ncx: number;
   private readonly ncz: number;
 
-  constructor(private rend: ApexRenderer, private w: VoxelWorld) {
+  constructor(private rend: Renderer, private w: VoxelWorld) {
     const a = atlasData();
     rend.setVoxelAtlas(a.pixels, a.width, a.height);
     this.ncx = Math.ceil(w.sx / VOX_CH);

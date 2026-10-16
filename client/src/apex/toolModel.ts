@@ -2,7 +2,7 @@
 // Układ "w dłoni": uchwyt w (0,0,0), +Y to góra, -Z to przód (kierunek strzału / ostrze).
 import type { PartShape, ToolDef } from "../../../shared/types.ts";
 import { apply3, mul3, rotX, type V3 } from "./math.ts";
-import { MAT, rgb, type ApexRenderer } from "./renderer.ts";
+import { MAT, rgb, type Renderer } from "./renderer.ts";
 
 export interface ToolPrim {
   shape: PartShape;
@@ -111,7 +111,7 @@ export function cachedToolShape(tool: Pick<ToolDef, "model" | "color">): ToolSha
 }
 
 /** Rysuje narzędzie: obrót `rot` (3x3 wierszami), pozycja uchwytu `pos`, skala `s`. Zwraca koniec lufy w świecie. */
-export function drawTool(r: ApexRenderer, shape: ToolShape, rot: number[], pos: V3, s: number, tint?: (c: [number, number, number]) => [number, number, number]): V3 {
+export function drawTool(r: Renderer, shape: ToolShape, rot: number[], pos: V3, s: number, tint?: (c: [number, number, number]) => [number, number, number]): V3 {
   for (const p of shape.prims) {
     const lp = apply3(rot, [p.pos[0] * s, p.pos[1] * s, p.pos[2] * s]);
     const pr = p.rotX ? mul3(rot, rotX(p.rotX)) : rot;

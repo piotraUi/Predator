@@ -27,6 +27,7 @@
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/ios": "^8.5.2",
+    "@webgpu/types": "^0.1.74",
     "typescript": "^5.9.3",
     "vite": "^8.3.0"
   }

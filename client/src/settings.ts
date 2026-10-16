@@ -21,10 +21,12 @@ export interface Settings {
   apexBloom: boolean;
   /** jakość grafiki: automatyczna albo stały poziom */
   quality: QualityId;
+  /** interfejs graficzny silnika Apex: WebGL2 (pełny) albo WebGPU (eksperymentalny, mniej efektów) */
+  graphicsApi: "webgl2" | "webgpu";
 }
 
 const KEY = "predator.settings";
-const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", apexBloom: true, quality: "auto" };
+const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", apexBloom: true, quality: "auto", graphicsApi: "webgl2" };
 const listeners = new Set<(s: Settings) => void>();
 
 function load(): Settings {
@@ -156,6 +158,14 @@ export function openSettings() {
     (Object.keys(QUALITY_LABELS) as QualityId[]).map((q) => h("option", { value: q, selected: settings.quality === q }, QUALITY_LABELS[q])),
   ) as HTMLSelectElement;
   quality.addEventListener("change", () => updateSettings({ quality: quality.value as QualityId }));
+  const api = h(
+    "select",
+    null,
+    h("option", { value: "webgl2", selected: settings.graphicsApi === "webgl2" }, "WebGL2 (pełne efekty, zalecane)"),
+    h("option", { value: "webgpu", selected: settings.graphicsApi === "webgpu" }, "WebGPU (eksperymentalny, nowocześniejszy)"),
+  ) as HTMLSelectElement;
+  api.addEventListener("change", () => updateSettings({ graphicsApi: api.value as Settings["graphicsApi"] }));
+  const hasGpu = "gpu" in navigator;
   const close = modal(
     "Ustawienia",
     h(
@@ -167,6 +177,8 @@ export function openSettings() {
       h("div", { class: "prop-group" }, "Grafika w grach 3D"),
       h("label", null, h("span", null, "Jakość grafiki"), quality),
       check("apexBloom", "Poświata (bloom) wokół neonów i słońca"),
+      hasGpu ? h("label", null, h("span", null, "Silnik graficzny"), api) : null,
+      hasGpu ? h("p", { class: "muted", style: "font-size:12px;margin:0" }, "WebGPU działa od następnego wejścia do gry. Ma cienie, wodę, niebo, porę dnia i cząsteczki, ale jeszcze bez poświaty, odbić w wodzie, trawy, deszczu i animowanych modeli - gry z blokami (Minecraft) zawsze używają WebGL2.") : null,
       h("p", { class: "muted", style: "font-size:12px;margin:0" }, "Automatyczna sama dobiera jakość do Twojego urządzenia i obniża ją, gdy gra zwalnia. Zmiana działa od razu."),
       h("div", { class: "prop-group" }, "Wygląd Studia"),
       themePicker(),

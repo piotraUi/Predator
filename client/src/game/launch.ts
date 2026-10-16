@@ -110,9 +110,28 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
             }
             if (disposed) return;
             if (apex) {
+              // WebGPU (opcja w Ustawieniach): tylko dla gier bez światów z bloków; gdy się nie uda, od razu WebGL2
+              let gpu: Awaited<ReturnType<typeof import("../apex/gpuRenderer.ts").requestGpu>> = null;
+              if (settings.graphicsApi === "webgpu" && !(init as { world?: { blocks?: unknown } }).world?.blocks) {
+                try {
+                  gpu = await (await import("../apex/gpuRenderer.ts")).requestGpu();
+                } catch {
+                  gpu = null;
+                }
+                if (gpu === null) toast("WebGPU niedostępne w tej przeglądarce - używam WebGL2", "error");
+              }
+              if (disposed) return;
               try {
                 wrap.remove();
-                inner = apex.apexPlayScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode, worldId: params.worldId }, go);
+                const base = { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode, worldId: params.worldId };
+                try {
+                  inner = apex.apexPlayScreen(root, { ...base, gpu }, go);
+                } catch (e) {
+                  if (!gpu) throw e;
+                  console.warn("WebGPU nie wystartowało, WebGL2:", e);
+                  toast("Nie udało się uruchomić WebGPU - przełączam na WebGL2", "error");
+                  inner = apex.apexPlayScreen(root, base, go);
+                }
               } catch (e) {
                 // brak WebGL2 albo błąd shaderów - wracamy do Babylona
                 console.warn("Apex nie wystartował, awaryjnie silnik Babylon:", e);

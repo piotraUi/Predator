@@ -9,7 +9,7 @@ import { clothCanvas } from "../engine/clothes.ts";
 import { findItem } from "../../../shared/catalog.ts";
 import { Wear } from "./wear.ts";
 import { apply3, mul3, rotX, rotY, rotZ, type V3 } from "./math.ts";
-import { rgb, type ApexRenderer } from "./renderer.ts";
+import { rgb, type Renderer } from "./renderer.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
 import { Ragdoll, type Piece } from "./ragdoll.ts";
 import { GlbAnimator, pickClip } from "./glbAnim.ts";
@@ -66,7 +66,7 @@ export class ApexAvatar {
   private action: ActionAnim | null = null;
   private tool: Pick<ToolDef, "model" | "color"> | null = null;
 
-  constructor(private r: ApexRenderer, avatar: Avatar) {
+  constructor(private r: Renderer, avatar: Avatar) {
     this.setLook(avatar);
   }
 

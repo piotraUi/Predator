@@ -1,7 +1,7 @@
 // Apex: czapki, rzeczy na plecach i na szyi awatara - te same modele co w Babylonie (wearables.ts), rysowane jako bryły Apex.
 import type { Avatar } from "../../../shared/types.ts";
 import { apply3, mul3, rotX, rotY, rotZ, type V3 } from "./math.ts";
-import { MAT, rgb, type ApexRenderer } from "./renderer.ts";
+import { MAT, rgb, type Renderer } from "./renderer.ts";
 import { buildBack, buildHat, buildNeck } from "./wearables.ts";
 import { buildHair } from "./hair.ts";
 import { Mesh, Scene, StandardMaterial, TransformNode } from "./sceneShim.ts";
@@ -41,7 +41,7 @@ export class Wear {
     if (a.neck && a.neck !== "none") this.nodes.push({ node: buildNeck(scene, a.neck, torso as never, mat as never) as TransformNode, at: "torso" });
   }
 
-  draw(r: ApexRenderer, f: WearFrame) {
+  draw(r: Renderer, f: WearFrame) {
     // śmigło czapki / płomień plecaka odrzutowego
     for (const m of this.spins) {
       if (m.parent?.name === "back") m.scaling.y = 0.8 + Math.sin(f.time * 30) * 0.2;
@@ -50,7 +50,7 @@ export class Wear {
     for (const { node, at } of this.nodes) this.emit(r, node, at === "head" ? f.headRot : f.torsoRot, at === "head" ? f.headPos : f.torsoPos, f);
   }
 
-  private emit(r: ApexRenderer, node: TransformNode, rot: number[], pos: V3, f: WearFrame) {
+  private emit(r: Renderer, node: TransformNode, rot: number[], pos: V3, f: WearFrame) {
     const R = mul3(rot, euler(node.rotation.x, node.rotation.y, node.rotation.z));
     const lp = apply3(rot, [node.position.x * f.s, node.position.y * f.s, node.position.z * f.s]);
     const p: V3 = [pos[0] + lp[0], pos[1] + lp[1], pos[2] + lp[2]];
@@ -58,7 +58,7 @@ export class Wear {
     for (const c of node.children) this.emit(r, c, R, p, f);
   }
 
-  private prim(r: ApexRenderer, m: Mesh, R: number[], p: V3, f: WearFrame) {
+  private prim(r: Renderer, m: Mesh, R: number[], p: V3, f: WearFrame) {
     const sc = m.scaling, s = f.s, o = m.o, mt = m.material!;
     let shape = "box";
     let size: V3 = [0, 0, 0];
