@@ -20,7 +20,7 @@ import {
 } from "./auth.ts";
 import { config } from "./config.ts";
 import { live } from "./live.ts";
-import { alerts, badges, canEdit, db, editors, friends, isAdminName, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
+import { alerts, badges, canEdit, db, editors, friends, isAdminName, isSuperAdmin, models, purchases, messages, sessions, toPublicUser, users, votes, worlds, type MessageRow, type WorldListRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { blocks, mutes, privacy, sanitizePrivacy, stock, trades } from "./social.ts";
 import { beforePublish, moderateMessage, moderateName, queueWorldScan } from "./moderation.ts";
@@ -619,7 +619,7 @@ api.post("/chat/:id", requireAuth, async (req, res) => {
   if (muted) return fail(res, 403, muted);
   if (blocks.between(me.id, other)) return fail(res, 403, "Nie możesz pisać do tej osoby");
   if (privacy.get(other).messages === "none") return fail(res, 403, "Ta osoba wyłączyła wiadomości");
-  const text = filterChat(String(req.body?.text ?? ""));
+  const text = isSuperAdmin(me.username) ? String(req.body?.text ?? "").trim().slice(0, 300) : filterChat(String(req.body?.text ?? ""));
   if (!text) return fail(res, 400, "Pusta wiadomość");
   const mod = await moderateMessage(String(req.body?.text ?? ""), me.id, "wiadomość prywatna");
   if (!mod.ok) return fail(res, 400, "🛡️ Wiadomość zablokowana przez moderację: " + mod.reason);

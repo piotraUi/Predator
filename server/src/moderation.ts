@@ -9,7 +9,7 @@
 import crypto from "node:crypto";
 import type { WorldData } from "../../shared/types.ts";
 import { htmlContent } from "../../shared/htmlGame.ts";
-import { alerts, db, isModeratorName, users, worlds } from "./db.ts";
+import { alerts, db, isModeratorName, isSuperAdmin, users, worlds } from "./db.ts";
 import { kickUserEverywhere } from "./kick.ts";
 import { mutes } from "./social.ts";
 import { decodePng, makeSheet, type Rgba } from "./pngSheet.ts";
@@ -491,12 +491,22 @@ const strikes = new Map<number, number[]>();
 const STRIKES_TO_MUTE = 3;
 const MUTE_MINUTES = 10;
 
+/** konta Predator i Piotrek53_3 nie podlegają moderacji AI (ani czatu, ani nazw, ani gier) */
+const exemptUser = (userId: number | null) => {
+  const u = userId ? users.byId(userId) : undefined;
+  return !!u && isSuperAdmin(u.username);
+};
+const exemptWorld = (worldId: number) => {
+  const w = worlds.byId(worldId);
+  return !!w && exemptUser(w.owner_id);
+};
+
 /**
  * Wiadomość czatu (w grze, prywatna, w grupie). Czeka najwyżej chwilę - gdy Groq nie zdąży, wiadomość przechodzi
  * (i tak działa zwykły filtr słów).
  */
 export async function moderateMessage(text: string, userId: number, where: string, worldId: number | null = null): Promise<Verdict> {
-  if (!aiEnabled() || !text.trim()) return OK;
+  if (!aiEnabled() || !text.trim() || exemptUser(userId)) return OK;
   // bardzo krótkie wiadomości (gg, ok, 👍, liczby) nie zużywają limitu Groq - łapie je zwykły filtr słów
   if ((text.match(/\p{L}/gu) ?? []).length < 4) return OK;
   let v: Verdict;
@@ -545,7 +555,7 @@ function aiBanIfRepeated(userId: number, worldId: number | null) {
 
 /** nick, nazwa grupy / serwera / modelu - true = można użyć */
 export async function moderateName(text: string, userId: number | null, kind: string): Promise<Verdict> {
-  if (!aiEnabled() || !text.trim()) return OK;
+  if (!aiEnabled() || !text.trim() || exemptUser(userId)) return OK;
   try {
     const [v] = await Promise.race([checkTexts([`Nazwa (${kind}): ${text}`], 4000, "high"), sleep(5000).then(() => [OK])]);
     if (!v.ok) modLog.add(kind, userId, null, text, v.reason);
@@ -705,7 +715,7 @@ const scanning = new Set<number>();
  * Gra z problemem jest ukrywana, a twórca dostaje powiadomienie z powodem.
  */
 export function queueWorldScan(worldId: number, delayMs = 8000) {
-  if (!aiEnabled()) return;
+  if (!aiEnabled() || exemptWorld(worldId)) return;
   clearTimeout(scanTimers.get(worldId));
   scanTimers.set(
     worldId,
@@ -726,6 +736,15 @@ export async function runWorldScan(worldId: number): Promise<{ ok: boolean; prob
     const before = worlds.byId(worldId);
     if (!before) return null;
     const prev = worldMod.get(worldId);
+    if (exemptUser(before.owner_id)) {
+      // gry kont Predator / Piotrek53_3 nie są sprawdzane przez AI
+      if (prev && prev.status !== "ok") {
+        const want = !!before.published || !!prev.want_publish;
+        worldMod.set(worldId, "ok", "", false);
+        if (want && !before.published) worlds.setPublished(worldId, true);
+      }
+      return { ok: true, problems: [] };
+    }
     const wantPublish = !!before.published || !!prev?.want_publish;
     // gra zatwierdzona przez administratora i od tamtej pory niezmieniona - AI jej nie zatrzymuje
     if (prev?.approved_fp && prev.approved_fp === worldFingerprint(worldId)) {
@@ -769,7 +788,7 @@ export async function runWorldScan(worldId: number): Promise<{ ok: boolean; prob
  * Zwraca komunikat dla twórcy albo null.
  */
 export function beforePublish(worldId: number, wantPublish: boolean, wasPublished: boolean): { publish: boolean; message: string | null } {
-  if (!aiEnabled() || !wantPublish) return { publish: wantPublish, message: null };
+  if (!aiEnabled() || !wantPublish || exemptWorld(worldId)) return { publish: wantPublish, message: null };
   const m = worldMod.get(worldId);
   // pierwsza publikacja albo gra zatrzymana wcześniej - najpierw sprawdzenie, potem widoczna dla wszystkich
   if (!wasPublished || m?.status === "flagged" || m?.status === "pending") {

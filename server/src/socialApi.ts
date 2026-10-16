@@ -16,7 +16,7 @@ import { GROUP_COLORS, GROUP_ICONS, GROUP_PRICE, REPORT_REASONS } from "../../sh
 import { sanitizeWorld } from "../../shared/world.ts";
 import { infoById, parseAvatar } from "./api.ts";
 import { requireAuth, type AuthedRequest } from "./auth.ts";
-import { alerts, db, isAdminName, toPublicUser, users, worlds, type UserRow } from "./db.ts";
+import { alerts, db, isAdminName, isSuperAdmin, toPublicUser, users, worlds, type UserRow } from "./db.ts";
 import { presence } from "./presence.ts";
 import { moderateMessage, moderateName } from "./moderation.ts";
 import {
@@ -301,7 +301,7 @@ social.post("/groups/:id/chat", requireAuth, async (req, res) => {
   const now = Date.now();
   if (now - (lastGroupMsg.get(u.id) ?? 0) < 700) return fail(res, 429, "Za szybko - chwilę poczekaj");
   lastGroupMsg.set(u.id, now);
-  const text = filterChat(String(req.body?.text ?? ""));
+  const text = isSuperAdmin(u.username) ? String(req.body?.text ?? "").trim().slice(0, 300) : filterChat(String(req.body?.text ?? ""));
   if (!text) return fail(res, 400, "Pusta wiadomość");
   const mod = await moderateMessage(String(req.body?.text ?? ""), u.id, "czat grupy");
   if (!mod.ok) return fail(res, 400, "🛡️ Wiadomość zablokowana przez moderację: " + mod.reason);

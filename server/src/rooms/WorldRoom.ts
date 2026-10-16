@@ -217,6 +217,7 @@ export class WorldRoom extends Room {
 
   onJoin(client: Client, _options: unknown, user: UserRow) {
     worlds.addVisit(this.world.id);
+    if (isSuperAdmin(user.username)) this.sim.unfiltered.add(client.sessionId);
     if (user.id !== this.world.owner_id) {
       users.addCoins(this.world.owner_id, config.creatorCoinsPerVisit);
       this.visitMilestone();

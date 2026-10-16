@@ -117,6 +117,8 @@ const finite = (v: unknown, min = -LIMIT, max = LIMIT) =>
 
 export class Sim2D {
   readonly players = new Map<string, PlayerState>();
+  /** gracze bez filtra słów na czacie (konta Predator i Piotrek53_3 - ustawia serwer) */
+  readonly unfiltered = new Set<string>();
   private w: World2D;
   private objs = new Map<string, Obj2D>();
   private chars = new Map<string, Character2D>();
@@ -509,7 +511,7 @@ export class Sim2D {
     const now = Date.now();
     if (now - p.lastChat < 700) return;
     p.lastChat = now;
-    const text = filterChat(msg);
+    const text = this.unfiltered.has(p.sid) ? msg.trim().slice(0, 300) : filterChat(msg);
     if (!text) return;
     const out: ChatMsg = { from: p.username, text };
     this.t.broadcast("chat", out);

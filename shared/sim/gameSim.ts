@@ -113,6 +113,8 @@ const finite = (v: unknown, min: number, max: number): number | undefined =>
 
 export class GameSim {
   readonly players = new Map<string, PlayerState>();
+  /** gracze bez filtra słów na czacie (konta Predator i Piotrek53_3 - ustawia serwer) */
+  readonly unfiltered = new Set<string>();
   private partsById = new Map<string, Part>();
   private toolsById = new Map<string, ToolDef>();
   private collisions: CollisionWorld;
@@ -420,7 +422,7 @@ export class GameSim {
     const now = Date.now();
     if (now - p.lastChat < 700) return; // anty-spam
     p.lastChat = now;
-    const clean = filterChat(text);
+    const clean = this.unfiltered.has(sid) ? text.trim().slice(0, 300) : filterChat(text);
     if (!clean) return;
     this.chat({ from: p.username, text: clean });
     this.lua?.chat(sid, clean);
