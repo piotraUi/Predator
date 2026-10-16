@@ -4,6 +4,7 @@ import { api } from "./api.ts";
 import { safety } from "./safety.ts";
 import { session } from "./state.ts";
 import type { Privacy } from "../../shared/types.ts";
+import { QUALITY_LABELS, type QualityId } from "./apex/quality.ts";
 
 export interface Settings {
   /** mnożnik czułości kamery (1 = domyślna) */
@@ -18,10 +19,12 @@ export interface Settings {
   studioTheme: "predator" | "roblox";
   /** poświata (bloom) w silniku Apex */
   apexBloom: boolean;
+  /** jakość grafiki: automatyczna albo stały poziom */
+  quality: QualityId;
 }
 
 const KEY = "predator.settings";
-const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", apexBloom: true };
+const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", apexBloom: true, quality: "auto" };
 const listeners = new Set<(s: Settings) => void>();
 
 function load(): Settings {
@@ -147,6 +150,12 @@ export function openSettings() {
     box.addEventListener("change", () => updateSettings({ [key]: box.checked }));
     return h("label", { class: "check" }, box, h("span", null, label));
   };
+  const quality = h(
+    "select",
+    null,
+    (Object.keys(QUALITY_LABELS) as QualityId[]).map((q) => h("option", { value: q, selected: settings.quality === q }, QUALITY_LABELS[q])),
+  ) as HTMLSelectElement;
+  quality.addEventListener("change", () => updateSettings({ quality: quality.value as QualityId }));
   const close = modal(
     "Ustawienia",
     h(
@@ -155,9 +164,10 @@ export function openSettings() {
       h("label", null, h("span", null, "Czułość kamery: ", value), slider),
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", onClick: () => ((slider.value = "1"), show(), updateSettings({ sensitivity: 1 })) }, "Domyślna (1×)")),
       h("label", { class: "check" }, invert, h("span", null, "Odwróć oś Y kamery")),
-      h("div", { class: "prop-group" }, "Silnik gier 3D"),
+      h("div", { class: "prop-group" }, "Grafika w grach 3D"),
+      h("label", null, h("span", null, "Jakość grafiki"), quality),
       check("apexBloom", "Poświata (bloom) wokół neonów i słońca"),
-      h("p", { class: "muted", style: "font-size:12px;margin:0" }, "Silnik wybierasz dla siebie. Zmiana działa przy następnym wejściu do gry. Wszyscy gracze w jednej grze mogą używać różnych silników."),
+      h("p", { class: "muted", style: "font-size:12px;margin:0" }, "Automatyczna sama dobiera jakość do Twojego urządzenia i obniża ją, gdy gra zwalnia. Zmiana działa od razu."),
       h("div", { class: "prop-group" }, "Wygląd Studia"),
       themePicker(),
       h("div", { class: "prop-group" }, "Powiadomienia"),

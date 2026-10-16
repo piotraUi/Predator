@@ -7,6 +7,7 @@ import { boxMesh, cylinderMesh, frustumMesh, hemiMesh, sphereMesh, torusMesh, we
 import { partTextureCanvas } from "../engine/partTextures.ts";
 import type { VoxBucket, VoxGeo } from "../engine/voxelAtlas.ts";
 import { invert, lookAt, multiply, ortho, perspective, type Mat4, type V3 } from "./math.ts";
+import { TIERS, type QualityTier } from "./quality.ts";
 
 void SKYBOXES;
 
@@ -254,6 +255,8 @@ interface Post {
   w: number; h: number;
   /** scena (po rozmyciu MSAA): tekstura HDR */
   scene: Target;
+  /** liczba próbek MSAA, z jaką zbudowano bufory */
+  samples: number;
   /** wielopróbkowy bufor sceny (null = rysujemy wprost do `scene`) */
   ms: WebGLFramebuffer | null;
   msRb: WebGLRenderbuffer[];
@@ -285,6 +288,57 @@ class Program {
   }
 }
 
+/** VAO z atrybutami instancji (macierz, kolor, rozmiar) z bufora `buf` i siatką `mesh` */
+function instanceVao(gl: WebGL2RenderingContext, mesh: GpuMesh, buf: WebGLBuffer): WebGLVertexArrayObject {
+  const vao = gl.createVertexArray()!;
+  gl.bindVertexArray(vao);
+  mesh.bind(gl);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const bytes = STRIDE * 4;
+  for (let k = 0; k < 4; k++) {
+    gl.enableVertexAttribArray(3 + k);
+    gl.vertexAttribPointer(3 + k, 4, gl.FLOAT, false, bytes, k * 16);
+    gl.vertexAttribDivisor(3 + k, 1);
+  }
+  for (let k = 0; k < 2; k++) {
+    gl.enableVertexAttribArray(7 + k);
+    gl.vertexAttribPointer(7 + k, 4, gl.FLOAT, false, bytes, 64 + k * 16);
+    gl.vertexAttribDivisor(7 + k, 1);
+  }
+  gl.bindVertexArray(null);
+  return vao;
+}
+
+/** lista widocznych instancji (po ukryciu tego, czego nie widać) wysyłana do karty co klatkę */
+class InstList {
+  data = new Float32Array(STRIDE * 64);
+  count = 0;
+  cap = 0;
+  buf: WebGLBuffer;
+  vao: WebGLVertexArrayObject;
+  constructor(gl: WebGL2RenderingContext, readonly mesh: GpuMesh) {
+    this.buf = gl.createBuffer()!;
+    this.vao = instanceVao(gl, mesh, this.buf);
+  }
+  push(src: Float32Array, i: number) {
+    if ((this.count + 1) * STRIDE > this.data.length) {
+      const n = new Float32Array(this.data.length * 2);
+      n.set(this.data);
+      this.data = n;
+    }
+    this.data.set(src.subarray(i * STRIDE, (i + 1) * STRIDE), this.count * STRIDE);
+    this.count++;
+  }
+  upload(gl: WebGL2RenderingContext) {
+    if (!this.count) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    if (this.data.length > this.cap) {
+      gl.bufferData(gl.ARRAY_BUFFER, this.data, gl.DYNAMIC_DRAW);
+      this.cap = this.data.length;
+    } else gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data, 0, this.count * STRIDE);
+  }
+}
+
 /** paczka instancji jednego kształtu */
 class Batch {
   data = new Float32Array(STRIDE * 64);
@@ -296,24 +350,16 @@ class Batch {
   buf: WebGLBuffer;
   vao: WebGLVertexArrayObject;
   cap = 0;
+  /** stałe klocki świata: ukrywanie niewidocznych i uproszczone siatki z daleka */
+  cullable = false;
+  lowMesh: GpuMesh | null = null;
+  culled = false;
+  near: InstList | null = null;
+  far: InstList | null = null;
+  shadow: InstList | null = null;
   constructor(gl: WebGL2RenderingContext, readonly mesh: GpuMesh) {
     this.buf = gl.createBuffer()!;
-    this.vao = gl.createVertexArray()!;
-    gl.bindVertexArray(this.vao);
-    mesh.bind(gl);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
-    const bytes = STRIDE * 4;
-    for (let k = 0; k < 4; k++) {
-      gl.enableVertexAttribArray(3 + k);
-      gl.vertexAttribPointer(3 + k, 4, gl.FLOAT, false, bytes, k * 16);
-      gl.vertexAttribDivisor(3 + k, 1);
-    }
-    for (let k = 0; k < 2; k++) {
-      gl.enableVertexAttribArray(7 + k);
-      gl.vertexAttribPointer(7 + k, 4, gl.FLOAT, false, bytes, 64 + k * 16);
-      gl.vertexAttribDivisor(7 + k, 1);
-    }
-    gl.bindVertexArray(null);
+    this.vao = instanceVao(gl, mesh, this.buf);
   }
   grow() {
     if ((this.count + 1) * STRIDE <= this.data.length) return;
@@ -400,15 +446,22 @@ export class ApexRenderer {
   private texIds = new WeakMap<WebGLTexture, number>();
   private texCounter = 0;
   private quad: GpuMesh;
+  private shadowTexInit = false;
   /** stałe klocki świata (id -> miejsce w paczce) */
   private statics = new Map<string, Slot>();
   private staticBatches = new Map<string, Batch>();
   /** tymczasowe klocki rysowane co klatkę (awatary, narzędzia, cząstki) */
   private frameBatches = new Map<string, Batch>();
-  private shadowTex: WebGLTexture;
-  private shadowFbo: WebGLFramebuffer;
-  readonly shadowSize = 2048;
+  private shadowTex!: WebGLTexture;
+  private shadowFbo!: WebGLFramebuffer;
+  shadowSize = 2048;
   shadows = true;
+  /** bieżący poziom jakości (setQuality) */
+  q: QualityTier = TIERS.high;
+  msaa = 4;
+  private lowSphere!: GpuMesh;
+  private lowCyl!: GpuMesh;
+  private planes = new Float32Array(24);
   private terrain: GpuGrid | null = null;
   private water: GpuGrid | null = null;
   private vp: Mat4 = new Float32Array(16);
@@ -592,7 +645,8 @@ export class ApexRenderer {
       return;
     }
     const gl = this.gl;
-    if (this.post && this.post.w === this.width && this.post.h === this.height) return;
+    const want = Math.min(this.msaa, (gl.getParameter(gl.MAX_SAMPLES) as number) || 0);
+    if (this.post && this.post.w === this.width && this.post.h === this.height && this.post.samples === want) return;
     this.freePost();
     if (!gl.getExtension("EXT_color_buffer_float") && !gl.getExtension("EXT_color_buffer_half_float")) return void (this.postFailed = true);
     const w = this.width, h = this.height;
@@ -603,7 +657,7 @@ export class ApexRenderer {
     let scene = this.makeTarget(w, h, false);
     if (!scene) return void (this.postFailed = true);
     try {
-      const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) as number);
+      const samples = want;
       if (samples > 1) {
         const f = gl.createFramebuffer()!;
         gl.bindFramebuffer(gl.FRAMEBUFFER, f);
@@ -633,7 +687,7 @@ export class ApexRenderer {
     const b1 = [this.makeTarget(hw, hh), this.makeTarget(hw, hh)];
     const b2 = [this.makeTarget(qw, qh), this.makeTarget(qw, qh)];
     if (b1.some((t) => !t) || b2.some((t) => !t)) return void (this.postFailed = true);
-    this.post = { w, h, scene, ms, msRb, b1: b1 as Target[], b2: b2 as Target[] };
+    this.post = { w, h, samples: want, scene, ms, msRb, b1: b1 as Target[], b2: b2 as Target[] };
     if (!this.postProgs)
       this.postProgs = { bright: new Program(gl, POST_VS, BRIGHT_FS), blur: new Program(gl, POST_VS, BLUR_FS), compose: new Program(gl, POST_VS, COMPOSE_FS) };
     if (!this.emptyVao) this.emptyVao = gl.createVertexArray()!;
@@ -715,10 +769,31 @@ export class ApexRenderer {
     this.meshes.set("cylinder", new GpuMesh(gl, cylinderMesh()));
     this.meshes.set("wedge", new GpuMesh(gl, wedgeMesh()));
     this.quad = this.meshes.get("box")!;
-    // mapa cieni (głębia z porównaniem sprzętowym)
+    this.meshes.set("sphere:low", (this.lowSphere = new GpuMesh(gl, sphereMesh(8))));
+    this.meshes.set("cylinder:low", (this.lowCyl = new GpuMesh(gl, cylinderMesh(10))));
+    this.makeShadow(this.shadowSize);
+    // stałe atrybuty (teren): macierz jednostkowa
+    gl.vertexAttrib4f(3, 1, 0, 0, 0);
+    gl.vertexAttrib4f(4, 0, 1, 0, 0);
+    gl.vertexAttrib4f(5, 0, 0, 1, 0);
+    gl.vertexAttrib4f(6, 0, 0, 0, 1);
+    gl.frontFace(gl.CW);
+    gl.enable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST);
+  }
+
+  /** (re)tworzy mapę cieni (głębia z porównaniem sprzętowym) */
+  private makeShadow(size: number) {
+    const gl = this.gl;
+    if (this.shadowTexInit) {
+      gl.deleteTexture(this.shadowTex);
+      gl.deleteFramebuffer(this.shadowFbo);
+    }
+    this.shadowTexInit = true;
+    this.shadowSize = size;
     this.shadowTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, this.shadowSize, this.shadowSize);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, size, size);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -731,14 +806,15 @@ export class ApexRenderer {
     gl.drawBuffers([gl.NONE]);
     gl.readBuffer(gl.NONE);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    // stałe atrybuty (teren): macierz jednostkowa
-    gl.vertexAttrib4f(3, 1, 0, 0, 0);
-    gl.vertexAttrib4f(4, 0, 1, 0, 0);
-    gl.vertexAttrib4f(5, 0, 0, 1, 0);
-    gl.vertexAttrib4f(6, 0, 0, 0, 1);
-    gl.frontFace(gl.CW);
-    gl.enable(gl.CULL_FACE);
-    gl.enable(gl.DEPTH_TEST);
+  }
+
+  /** stosuje poziom jakości (cienie, MSAA, poświata, ukrywanie obiektów); `bloomUser` = ustawienie gracza */
+  setQuality(q: QualityTier, bloomUser = true) {
+    this.q = q;
+    this.shadows = q.shadows;
+    this.bloom = q.bloom && bloomUser;
+    this.msaa = q.msaa;
+    if (q.shadowSize !== this.shadowSize) this.makeShadow(q.shadowSize);
   }
 
   // ---------- rozmiar ----------
@@ -811,6 +887,8 @@ export class ApexRenderer {
       map.set(key, (b = new Batch(this.gl, this.meshFor(shape))));
       b.tex = tex;
       b.tile = tile;
+      b.cullable = map === this.staticBatches && !shape.startsWith("glb:");
+      b.lowMesh = shape === "sphere" ? this.lowSphere : shape === "cylinder" ? this.lowCyl : null;
     }
     return b;
   }
@@ -1136,6 +1214,9 @@ export class ApexRenderer {
 
     for (const b of this.staticBatches.values()) b.upload(gl);
     for (const b of this.frameBatches.values()) b.upload(gl);
+    this.eyePos = look.eye;
+    this.extractPlanes();
+    this.cullBatches(look.eye);
 
     // --- cienie ---
     if (this.shadows && light > 0.1) {
@@ -1293,6 +1374,67 @@ export class ApexRenderer {
     this.stats.tris += t.n / 3;
   }
 
+  /** czy kula (środek, promień) jest w kadrze (z poprzedniej klatki) i bliżej niż `maxDist` od kamery - do pomijania rysowania postaci */
+  inView(x: number, y: number, z: number, r: number, maxDist: number): boolean {
+    const e = this.eyePos;
+    if (Math.hypot(x - e[0], y - e[1], z - e[2]) - r > maxDist) return false;
+    const pl = this.planes;
+    for (let k = 0; k < 6; k++) if (pl[k * 4] * x + pl[k * 4 + 1] * y + pl[k * 4 + 2] * z + pl[k * 4 + 3] < -r) return false;
+    return true;
+  }
+  private eyePos: V3 = [0, 0, 0];
+
+  /** płaszczyzny widoczności z macierzy kamery (lewa, prawa, dół, góra, bliska, daleka) */
+  private extractPlanes() {
+    const m = this.vp, o = this.planes;
+    const row = (i: number) => [m[i], m[4 + i], m[8 + i], m[12 + i]];
+    const r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
+    const sets = [r3.map((v, k) => v + r0[k]), r3.map((v, k) => v - r0[k]), r3.map((v, k) => v + r1[k]), r3.map((v, k) => v - r1[k]), r3.map((v, k) => v + r2[k]), r3.map((v, k) => v - r2[k])];
+    sets.forEach((pl, i) => {
+      const l = Math.hypot(pl[0], pl[1], pl[2]) || 1;
+      o[i * 4] = pl[0] / l; o[i * 4 + 1] = pl[1] / l; o[i * 4 + 2] = pl[2] / l; o[i * 4 + 3] = pl[3] / l;
+    });
+  }
+
+  /** duże paczki stałych klocków: rysujemy tylko to, co w kadrze; z daleka małe rzeczy znikają, a kule i walce są uproszczone */
+  private cullBatches(eye: V3) {
+    const gl = this.gl, q = this.q, pl = this.planes, sc = this.shadowCenter;
+    const shR = this.extent * 1.5;
+    for (const b of this.staticBatches.values()) {
+      b.culled = false;
+      if (!q.cull || !b.cullable || b.count < 160) continue;
+      b.near ??= new InstList(gl, b.mesh);
+      b.shadow ??= new InstList(gl, b.mesh);
+      if (b.lowMesh) b.far ??= new InstList(gl, b.lowMesh);
+      b.near.count = b.shadow.count = 0;
+      if (b.far) b.far.count = 0;
+      const d = b.data;
+      for (let i = 0, n = b.count; i < n; i++) {
+        const o = i * STRIDE;
+        const x = d[o + 12], y = d[o + 13], z = d[o + 14];
+        const r = 0.5 * Math.hypot(d[o + 20], d[o + 21], d[o + 22]);
+        if (Math.hypot(x - sc[0], z - sc[2]) - r < shR) b.shadow.push(d, i);
+        const dist = Math.hypot(x - eye[0], y - eye[1], z - eye[2]);
+        if (dist - r > q.drawDist) continue;
+        if (r < 1 && dist > q.drawDist * 0.45) continue;
+        if (r < 3 && dist > q.drawDist * 0.8) continue;
+        let out = false;
+        for (let k = 0; k < 6; k++)
+          if (pl[k * 4] * x + pl[k * 4 + 1] * y + pl[k * 4 + 2] * z + pl[k * 4 + 3] < -r) {
+            out = true;
+            break;
+          }
+        if (out) continue;
+        if (b.far && dist > q.lodDist + r) b.far.push(d, i);
+        else b.near.push(d, i);
+      }
+      b.near.upload(gl);
+      b.shadow.upload(gl);
+      b.far?.upload(gl);
+      b.culled = true;
+    }
+  }
+
   private drawBatches(map: Map<string, Batch>, transparent: boolean, p?: Program) {
     const gl = this.gl;
     for (const [key, b] of map) {
@@ -1308,11 +1450,18 @@ export class ApexRenderer {
           gl.activeTexture(gl.TEXTURE0);
         }
       }
-      gl.bindVertexArray(b.vao);
-      gl.drawElementsInstanced(gl.TRIANGLES, b.mesh.n, b.mesh.type, 0, b.count);
-      this.stats.draws++;
-      this.stats.instances += b.count;
-      this.stats.tris += (b.mesh.n / 3) * b.count;
+      // po ukrywaniu niewidocznych: lista bliska + (uproszczona) daleka; w cieniach osobna lista
+      const lists = b.culled ? (p ? [b.near, b.far] : [b.shadow]) : [null];
+      for (const L of lists) {
+        const cnt = L ? L.count : b.count;
+        if (!cnt) continue;
+        const mesh = L ? L.mesh : b.mesh;
+        gl.bindVertexArray(L ? L.vao : b.vao);
+        gl.drawElementsInstanced(gl.TRIANGLES, mesh.n, mesh.type, 0, cnt);
+        this.stats.draws++;
+        this.stats.instances += cnt;
+        this.stats.tris += (mesh.n / 3) * cnt;
+      }
     }
   }
 

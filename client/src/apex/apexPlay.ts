@@ -14,7 +14,8 @@ import { GameAudio } from "../game/audio3d.ts";
 import type { GameConnection } from "../game/connection.ts";
 import { promptBox, type PromptMsg } from "../game/promptBox.ts";
 import type { InitMsg } from "../game/play.ts";
-import { openSettings, settings } from "../settings.ts";
+import { onSettingsChange, openSettings, settings } from "../settings.ts";
+import { detectTier, isMobile, QualityGovernor, TIERS } from "./quality.ts";
 import { safety } from "../safety.ts";
 import { session } from "../state.ts";
 import { GuiOverlay } from "../ui/guiOverlay.ts";
@@ -82,7 +83,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const me = session.user ?? { id: 0, username: "Gracz", coins: 0, avatar: DEFAULT_AVATAR, inventory: [] };
 
   const rend = new ApexRenderer(canvas);
-  rend.bloom = settings.apexBloom;
+  // jakość grafiki: stały poziom albo automatyczny (dobór do urządzenia i obniżanie, gdy gra zwalnia)
+  const detected = detectTier(rend.gl);
+  let gov = new QualityGovernor(settings.quality, detected);
+  const applyQuality = () => rend.setQuality(TIERS[gov.tier], settings.apexBloom);
+  applyQuality();
   const fx = new Particles();
   const padNav = new PadMenuNav();
   const input = new Input(wrap, (k) => (k === "ps" ? "✕ skok, prawa gałka kamera, Options menu" : "A skok, prawa gałka kamera, Menu = menu"));
@@ -911,8 +916,14 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   });
 
   // ---------- pętla gry ----------
-  const scale = () => Math.min(devicePixelRatio || 1, matchMedia("(pointer: coarse)").matches ? 1.5 : 2);
+  const scale = () => Math.min(devicePixelRatio || 1, TIERS[gov.tier].dprCap, isMobile() ? 1.5 : 3) * TIERS[gov.tier].renderScale;
   const fit = () => rend.resize(wrap.clientWidth || innerWidth, wrap.clientHeight || innerHeight, scale());
+  const offSettings = onSettingsChange((st) => {
+    if (st.quality !== gov.level) gov = new QualityGovernor(st.quality, detected);
+    applyQuality();
+    fit();
+  });
+  cleanups.push(offSettings);
   const ro = new ResizeObserver(fit);
   ro.observe(wrap);
   fit();
@@ -927,12 +938,17 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     rend.time += dt;
+    const nt = gov.sample(dt);
+    if (nt) {
+      applyQuality();
+      fit();
+    }
     tick(dt);
     fpsAcc += dt; fpsN++;
     if (fpsAcc >= 0.5) { fps = fpsN / fpsAcc; fpsAcc = fpsN = 0; }
     if (showDebug) {
       const s = rend.stats;
-      debug.textContent = `Apex · ${fps.toFixed(0)} FPS · rysowanie ${s.ms.toFixed(1)} ms\nwywołania ${s.draws} · instancje ${s.instances} · trójkąty ${(s.tris / 1000).toFixed(1)}k\nrozdzielczość ${rend.width}×${rend.height}`;
+      debug.textContent = `Apex (${TIERS[gov.tier].label}${settings.quality === "auto" ? ", auto" : ""}) · ${fps.toFixed(0)} FPS · rysowanie ${s.ms.toFixed(1)} ms\nwywołania ${s.draws} · instancje ${s.instances} · trójkąty ${(s.tris / 1000).toFixed(1)}k\nrozdzielczość ${rend.width}×${rend.height}`;
     }
   };
 
@@ -1230,7 +1246,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     vox?.draw();
     local.draw();
     for (const rm of remotes.values()) rm.av.draw();
-    for (const n of npcs.values()) n.draw();
+    for (const n of npcs.values()) if (rend.inView(n.x, n.y + 4 * n.scale, n.z, 8 * n.scale, TIERS[gov.tier].drawDist * 0.14)) n.draw();
     rend.render({ eye, target, fov: ROBLOX_FOV, near: fp ? 0.05 : 0.2, far: 2000 });
     if (shotPending) {
       shotPending = false;

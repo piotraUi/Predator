@@ -23,6 +23,9 @@ interface Limb { x: number; y: number; rx: number; ry: number; rz: number }
 const DEG = Math.PI / 180;
 const euler = (x: number, y: number, z: number) => mul3(rotY(y), mul3(rotX(x), rotZ(z)));
 let glbUid = 0;
+/** model .glb jest ładowany raz na renderer i współdzielony: 50 postaci z tym samym modelem to jedna paczka instancji, a nie 50 osobnych */
+interface SharedModel { uid: number; glb: GlbModel; tex: (WebGLTexture | null)[]; refs: number }
+const sharedModels = new WeakMap<object, Map<string, Promise<SharedModel>>>();
 
 export class ApexAvatar {
   x = 0; y = 0; z = 0; ry = 0;
@@ -51,7 +54,8 @@ export class ApexAvatar {
   private accessories: Accessory[] = [];
   /** model .glb postaci ze Studia */
   private modelDef: CharacterDef["model"] | null = null;
-  private model: { uid: number; glb: GlbModel; tex: (WebGLTexture | null)[] } | null = null;
+  private model: SharedModel | null = null;
+  private modelKey = "";
   private modelToken = 0;
   private bodyY = 0;
   private bodyRot = 0;
@@ -102,25 +106,40 @@ export class ApexAvatar {
     const token = ++this.modelToken;
     this.freeModel();
     if (!def) return;
-    loadGlb(def.data)
-      .then((glb) => {
-        if (token !== this.modelToken) return;
+    let cache = sharedModels.get(this.r);
+    if (!cache) sharedModels.set(this.r, (cache = new Map()));
+    let pr = cache.get(def.data);
+    if (!pr) {
+      const loading = loadGlb(def.data).then((glb): SharedModel => {
         const uid = ++glbUid;
         const tex = glb.prims.map((p, i) => {
           this.r.registerMesh(`glb:${uid}:${i}`, p.mesh);
           return p.image ? this.r.makeTexture(p.image) : null;
         });
-        this.model = { uid, glb, tex };
-      })
-      .catch((e) => console.warn("Nie udało się wczytać modelu postaci", e));
+        return { uid, glb, tex, refs: 0 };
+      });
+      pr = loading;
+      cache.set(def.data, loading);
+      loading.catch(() => cache!.delete(def.data));
+    }
+    const key = def.data;
+    pr.then((m) => {
+      if (token !== this.modelToken) return;
+      m.refs++;
+      this.model = m;
+      this.modelKey = key;
+    }).catch((e) => console.warn("Nie udało się wczytać modelu postaci", e));
   }
 
   private freeModel() {
     const m = this.model;
     if (!m) return;
+    this.model = null;
+    if (--m.refs > 0) return;
+    // ostatnia postać z tym modelem zniknęła - zwalniamy siatki i tekstury
     this.r.deleteMeshes(`glb:${m.uid}:`);
     for (const t of m.tex) if (t) this.r.deleteTexture(t);
-    this.model = null;
+    sharedModels.get(this.r)?.delete(this.modelKey);
   }
 
   /** wygląd postaci ze Studia: kolory, skala, dodatki i model 3D */
