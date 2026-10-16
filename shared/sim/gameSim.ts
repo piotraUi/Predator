@@ -8,6 +8,7 @@ import { TerrainGrid } from "../terrain.ts";
 import { PlayerDataStore, type GameStorage } from "./playerData.ts";
 import { CollisionWorld, rayBox, raycastParts, waterAt } from "../physics.ts";
 import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
+import { findItem } from "../catalog.ts";
 import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
 import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
 
@@ -72,6 +73,8 @@ interface PlayerState extends NetPlayer {
   isOwner: boolean;
   /** administracja gry */
   admin: boolean;
+  /** wygląd z konta (do przywrócenia po przymierzaniu ubrań przez skrypt) */
+  baseAvatar: Avatar;
   emotes?: Set<string>;
   score: number;
   lastTouch: Map<string, number>;
@@ -192,6 +195,7 @@ export class GameSim {
       avatar: user.avatar,
       isOwner: user.isOwner,
       admin: !!user.admin || user.isOwner,
+      baseAvatar: { ...user.avatar },
       emotes: user.emotes ? new Set(user.emotes) : undefined,
       ...spawn,
       ry: 0,
@@ -1008,6 +1012,38 @@ export class GameSim {
       kick: (sid, reason) => {
         const p = this.players.get(String(sid ?? ""));
         if (p && !p.admin) this.t.kick?.(p.sid, String(reason ?? "").slice(0, 120));
+      },
+      // przymierzalnia: ubranie z katalogu na graczu (tylko w tej grze, nie zmienia konta). Zwraca true, gdy się udało
+      tryOn: (sid, itemId) => {
+        const p = this.players.get(String(sid ?? ""));
+        const item = findItem(String(itemId ?? ""));
+        if (!p || !item || item.type === "emote") return false;
+        p.avatar = { ...p.avatar, [item.type]: item.id };
+        this.t.broadcast("wear", { sid: p.sid, avatar: p.avatar });
+        return true;
+      },
+      // zdejmij rzecz z miejsca: takeOff(player, "hat" | "face" | "shirt" | "pants" | "back" | "neck")
+      takeOff: (sid, slot) => {
+        const p = this.players.get(String(sid ?? ""));
+        const k = String(slot ?? "");
+        if (!p || !["hat", "face", "shirt", "pants", "back", "neck"].includes(k)) return;
+        p.avatar = { ...p.avatar, [k]: k === "face" ? "smile" : "none" };
+        this.t.broadcast("wear", { sid: p.sid, avatar: p.avatar });
+      },
+      // kolor części ciała: setAvatarColor(player, "head" | "torso" | "arms" | "legs", "#ff8800")
+      setAvatarColor: (sid, part, color) => {
+        const p = this.players.get(String(sid ?? ""));
+        const k = String(part ?? "");
+        if (!p || !["head", "torso", "arms", "legs"].includes(k) || !COLOR_RE.test(String(color ?? ""))) return;
+        p.avatar = { ...p.avatar, [k]: String(color) };
+        this.t.broadcast("wear", { sid: p.sid, avatar: p.avatar });
+      },
+      // przywraca wygląd z konta
+      resetAvatar: (sid) => {
+        const p = this.players.get(String(sid ?? ""));
+        if (!p) return;
+        p.avatar = { ...p.baseAvatar };
+        this.t.broadcast("wear", { sid: p.sid, avatar: p.avatar });
       },
       awardBadge: (sid, name) => this.t.badge?.(String(sid ?? ""), String(name ?? "")),
       playSound: (target, name) => to(target, "sound", { name: soundName(name) }),

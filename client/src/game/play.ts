@@ -860,9 +860,15 @@ export function playScreen(
       setRemoteHp(rm, m.hp, m.max);
       if (m.hp > 0 && before !== rm.hpFill.width) rm.model.flash();
     });
+    // przymierzanie ubrań przez skrypt gry (tryOn): tymczasowy wygląd gracza w tej grze
+    const worn = new Map<string, Avatar>();
+    r.onMessage("wear", (m: { sid: string; avatar: Avatar }) => {
+      worn.set(m.sid, m.avatar);
+      (m.sid === init.you ? local : remotes.get(m.sid)?.model)?.setAvatar(m.avatar);
+    });
     r.onMessage("char", (m: { sid: string; character: string | null }) => {
       const model = m.sid === init.you ? local : remotes.get(m.sid)?.model;
-      const avatar = m.sid === init.you ? me.avatar : (remotes.get(m.sid)?.avatar ?? me.avatar);
+      const avatar = worn.get(m.sid) ?? (m.sid === init.you ? me.avatar : (remotes.get(m.sid)?.avatar ?? me.avatar));
       model?.setLook(avatar, charFor(m.character));
     });
     r.onMessage("panim", (m: { sid: string; anim: string | null }) => {

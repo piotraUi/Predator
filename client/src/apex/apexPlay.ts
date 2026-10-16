@@ -807,10 +807,17 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     remotes.get(m.sid)?.av.playAction(m.type);
     if (m.from && m.to) addTracer(m.from as V3, m.to as V3, toolsById.get(m.tool)?.color);
   });
+  // przymierzanie ubrań przez skrypt gry (tryOn): tymczasowy wygląd gracza w tej grze
+  const worn = new Map<string, Avatar>();
+  r.onMessage("wear", (m: { sid: string; avatar: Avatar }) => {
+    worn.set(m.sid, m.avatar);
+    const av = m.sid === init.you ? local : remotes.get(m.sid)?.av;
+    if (av) applyLook(av, m.avatar, null);
+  });
   r.onMessage("char", (m: { sid: string; character: string | null }) => {
-    if (m.sid === init.you) return applyLook(local, me.avatar, m.character);
+    if (m.sid === init.you) return applyLook(local, worn.get(m.sid) ?? me.avatar, m.character);
     const rm = remotes.get(m.sid);
-    if (rm) applyLook(rm.av, rm.av.avatar, m.character);
+    if (rm) applyLook(rm.av, worn.get(m.sid) ?? rm.av.avatar, m.character);
   });
   // animacje z edytora animacji włączone przez skrypt (gracz i inni)
   r.onMessage("panim", (m: { sid: string; anim: string | null }) => {

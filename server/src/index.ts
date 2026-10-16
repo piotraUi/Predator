@@ -9,10 +9,12 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { WorldData } from "../../shared/types.ts";
-import { demoArena, demoObby, sanitizeWorld, welcomeBadge } from "../../shared/world.ts";
+import { demoArena, demoObby, emptyWorld, sanitizeWorld, welcomeBadge } from "../../shared/world.ts";
 import { upgradeAngles, upgradeLudzikCharacters, upgradeLudzikPart2, upgradeOwnMenu } from "../../shared/import/upgrades.ts";
 import { demoCity } from "../../shared/demos/city.ts";
 import { MINIGAMES } from "../../shared/demos/minigames.ts";
+import { demoAvatarCatalog } from "../../shared/demos/avatarCatalog.ts";
+import { CATALOG } from "../../shared/catalog.ts";
 import { api } from "./api.ts";
 import { admin } from "./admin.ts";
 import { assistantRouter } from "./assistant.ts";
@@ -119,6 +121,14 @@ for (const [file, thumb] of [["Tacos World", "tacos"], ["Tunnel Escape", "tunnel
   fileHashes.set(file, crypto.createHash("sha1").update(text).digest("hex"));
   demos.push([file, parseGameFile(text).description, fromFile(file + ".pgame"), thumb]);
 }
+// Katalog Avatara: natywna gra 3D z całym katalogiem (przymierzalnia); aktualizuje się, gdy zmieni się katalog
+fileHashes.set("Katalog Avatara", crypto.createHash("sha1").update("v1:" + CATALOG.map((i) => i.id).join(",")).digest("hex"));
+demos.push([
+  "Katalog Avatara",
+  "Przymierzalnia wszystkich rzeczy ze sklepu: czapki, twarze, koszulki, spodnie, plecy i szyja. Klikaj w katalog, zakładaj na siebie, sprawdzaj w lustrze i losuj stylizacje.",
+  demoAvatarCatalog,
+  "katalog",
+]);
 const versionsFile = path.join(config.dataDir, "demo-versions.json");
 const versions: Record<string, string> = (() => {
   try {
@@ -129,7 +139,7 @@ const versions: Record<string, string> = (() => {
 })();
 /** kategorie przykładowych gier */
 const DEMO_GENRES: Record<string, string> = {
-  "Tor przeszkód": "obby", Arena: "fight", "Predator City": "roleplay", "Ludzik 4": "platform", "Ludzik 3 & Nero": "platform",
+  "Tor przeszkód": "obby", "Katalog Avatara": "roleplay", Arena: "fight", "Predator City": "roleplay", "Ludzik 4": "platform", "Ludzik 3 & Nero": "platform",
   "Pizzeria Tycoon": "tycoon", "Fabryka Słodyczy Tycoon": "tycoon", Chowany: "minigames", "Wyścigi": "race", "Wieża Piekieł": "obby",
   "Tacos World": "adventure", "Tunnel Escape": "horror", "Spelling Bee": "puzzle",
 };

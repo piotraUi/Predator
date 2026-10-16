@@ -423,3 +423,14 @@ npm run typecheck
 - **Trailer Predatora** (`server/assets/trailer.mp4`, 720p) pokazuje się na pełnym ekranie raz: nowemu graczowi (na stronie i w aplikacji) oraz każdemu po wgraniu nowego trailera. Przycisk „Pomiń”; gdy przeglądarka blokuje dźwięk, film gra bez niego i prosi o dotknięcie. Potem startuje zwykły Predator.
 - **Strona internetowa**: na Androidzie pokazuje pasek z pobraniem APK, na Windows - z instalatorem aplikacji na komputer, na iOS i reszcie nic (pasek można ukryć na tydzień). W samych aplikacjach paska nie ma.
 - **Panel admina → Aplikacje**: wgrywanie i podmiana trailera (.mp4), APK (.apk) i instalatora (.exe) z paskiem postępu. Pliki leżą w `data/downloads`; adresy publiczne: `/download/predator.apk`, `/download/predator-setup.exe`, `/media/trailer.mp4`, informacje: `/api/app-info`. Jeśli przed serwerem stoi proxy (nginx / Caddy), musi pozwalać na duże żądania (kilkaset MB).
+
+## Nowości: administracja, serwery, katalog avatara, API
+
+- **Prywatne serwery** otwiera się tylko kodem zaproszenia (też znajomi); kod widzi tylko właściciel. Przycisk „Graj" wybiera **najmniej zapełniony serwer** z zapasem miejsc (miękki limit ≈ 60% graczy), więc jeden serwer nie jest napełniany do pełna, zanim powstanie następny (`/api/worlds/:id/pick`).
+- **Role**: Predator i Piotrek53_3 nadają rolę **moderatora** albo **admina** (panel → zakładka *Moderacja*). Moderator ma zakładkę *Moderacja* z zgłoszeniami, graczami (ban, wyciszenie, wyrzucenie) i listą zbanowanych. Ban ma powód, czas (dni albo na zawsze) i podpis moderatora - gracz widzi to na **ekranie zbanowania**. Moderacja AI też banuje (3 automatyczne wyciszenia w dobie → ban 1/3/7/30 dni, podpis „Moderacja AI").
+- **Administracja gier** (okno 👥 w grze, dla właściciela, współtwórców i moderatorów): wyrzucanie, ban w grze (minuty / na zawsze, lista i odbanowanie), dawanie i zabieranie narzędzi, ogłoszenia, restart serwera. Skrypty: `isOwner`, `isAdmin`, `getUserId`, `kick`.
+- **Asystent AI**: przedłużenie limitu na dziś za monety (➕ przy liczniku kroków), pełne pogrupowane API w instrukcji, uczciwa odpowiedź, gdy czegoś nie da się zrobić.
+- **Nowe API Lua**: `setRotation`, `getSize/getColor/getTransparency/getRotation/getLabel/partExists`, `saveGlobal/loadGlobal`, `every/after` zwracają uchwyt (`cancel`), drużyny (`setTeam`…), `cooldown`, `findPlayer`, `playersNear`, `nearestPlayer`, `topPlayers`, `tellAll`, matematyka i formatowanie, oraz przymierzalnia: `tryOn`, `takeOff`, `setAvatarColor`, `resetAvatar`.
+- **Katalog Avatara**: natywna gra 3D z całym katalogiem sklepu do przymierzania (jak Catalog Creator w Robloxie).
+- **Zestaw w Studiu**: samoloty, statki, Kukirin, wille, zamek, pałac, meble, pojazdy i więcej (ponad 40 modeli).
+- **Skiny**: zapis i zakładanie własnych wyglądów (Awatar → Zapisane skiny). „Testuj" w Studiu uruchamia zawsze osobną grę lokalną (bez serwera).

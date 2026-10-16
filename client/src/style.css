@@ -1728,3 +1728,5 @@ body[data-screen="play"] .dl-banner, body[data-screen="studio"] .dl-banner { dis
 .players-admin .players-actions { flex-wrap: wrap; margin-top: 6px; }
 
 .help-group > summary { cursor: pointer; font-weight: 700; padding: 6px 4px; color: var(--accent, #8ab4ff); }
+
+.pv-promo { margin-top: auto; padding: 10px 12px; font-size: 12px; color: var(--muted, #8a93b5); opacity: .75; text-align: center; }

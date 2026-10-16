@@ -113,6 +113,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
       icon("logout", 22),
       h("span", null, "Wyloguj"),
     ),
+    h("div", { class: "pv-promo" }, "Też spróbuj Voxelio! 🧱"),
   );
   const backdrop = h("div", { class: "pv-backdrop", onClick: () => toggleDrawer(false) });
   const toggleDrawer = (open: boolean) => {

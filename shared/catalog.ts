@@ -111,6 +111,22 @@ export const CATALOG: CatalogItem[] = [
   face("robot", "Robot", 90, "🤖", { ...N, rarity: "epic" }),
   face("clown", "Klaun", 80, "🤡", { ...N, rarity: "rare" }),
 
+  // nowe czapki
+  hat("hardhat", "Kask budowlany", 35, "👷", "#ffc300", N),
+  hat("police", "Czapka policyjna", 45, "👮", "#1d3557", N),
+  hat("sailor", "Czapka marynarska", 30, "⚓", "#f1f1f1", N),
+  hat("bucket", "Kapelusz wędkarski", 30, "🎣", "#7a8450", N),
+  hat("witch", "Kapelusz wiedźmy", 60, "🧙‍♀️", "#2b1b3d", { ...N, rarity: "rare" }),
+  hat("jester", "Czapka błazna", 55, "🃏", "#d62828", { ...N, rarity: "rare" }),
+  hat("mohawk", "Irokez", 40, "🤘", "#ff2d95", N),
+  hat("afro", "Afro", 50, "👩‍🦱", "#3b2418", N),
+  hat("mushroom", "Grzybek", 60, "🍄", "#e63946", { ...N, rarity: "rare" }),
+  hat("bee", "Czułki pszczoły", 45, "🐝", "#ffd60a", N),
+  hat("fedora", "Fedora", 50, "🕵️", "#5c4033", N),
+  hat("beret", "Beret", 30, "🎨", "#c1121f", N),
+  hat("strawhat", "Słomkowy kapelusz", 30, "👒", "#e9c46a", N),
+  hat("icecream", "Lody na głowie", 70, "🍦", "#ffb3d9", { ...N, rarity: "epic" }),
+
   // ---------- koszulki ----------
   shirt("tshirt-red", "Czerwona koszulka", 0, "👕", { color: "#d62828", accent: "#ffffff", pattern: "plain", short: true }),
   shirt("tshirt-blue", "Niebieska koszulka", 0, "👕", { color: "#1d4ed8", accent: "#ffffff", pattern: "plain", short: true }),
@@ -136,6 +152,38 @@ export const CATALOG: CatalogItem[] = [
   shirt("gold-shirt", "Złota zbroja", 500, "🏆", { color: "#e9b91c", accent: "#fff3b0", pattern: "gold" }, { ...N, rarity: "legendary" }),
   shirt("predator-shirt", "Koszulka Predator", 150, "🔥", { color: "#111111", accent: "#e63946", pattern: "predator" }, { ...N, rarity: "epic" }),
 
+  // nowe koszulki
+  shirt("tshirt-green", "Zielona koszulka", 0, "👕", { color: "#2d9d4a", accent: "#ffffff", pattern: "plain", short: true }),
+  shirt("tshirt-yellow", "Żółta koszulka", 0, "👕", { color: "#f4c20d", accent: "#ffffff", pattern: "plain", short: true }),
+  shirt("tshirt-black", "Czarna koszulka", 10, "👕", { color: "#161616", accent: "#ffffff", pattern: "plain", short: true }),
+  shirt("tshirt-white", "Biała koszulka", 10, "👕", { color: "#f5f5f5", accent: "#222222", pattern: "plain", short: true }),
+  shirt("stripes-red", "Czerwone paski", 30, "🔴", { color: "#ffffff", accent: "#d62828", pattern: "stripes", short: true }, N),
+  shirt("hawaii", "Hawajska", 40, "🌺", { color: "#00b4d8", accent: "#ff6b6b", accent2: "#ffd60a", pattern: "dots", short: true }, N),
+  shirt("jersey-blue", "Koszulka piłkarska (niebieska)", 60, "⚽", { color: "#1d4ed8", accent: "#ffffff", pattern: "jersey", short: true }, N),
+  shirt("jersey-green", "Koszulka piłkarska (zielona)", 60, "⚽", { color: "#2d9d4a", accent: "#ffffff", pattern: "jersey", short: true }, N),
+  shirt("hoodie-blue", "Niebieska bluza z kapturem", 60, "🧥", { color: "#2a6fdb", accent: "#7fb0ff", pattern: "hoodie" }, N),
+  shirt("hoodie-red", "Czerwona bluza z kapturem", 60, "🧥", { color: "#c62828", accent: "#ff8a80", pattern: "hoodie" }, N),
+  shirt("hoodie-green", "Zielona bluza z kapturem", 60, "🧥", { color: "#2e7d32", accent: "#81c784", pattern: "hoodie" }, N),
+  shirt("hoodie-purple", "Fioletowa bluza z kapturem", 60, "🧥", { color: "#7b2cbf", accent: "#c77dff", pattern: "hoodie" }, N),
+  shirt("flannel-blue", "Koszula w kratę (niebieska)", 55, "🧵", { color: "#2b5fa8", accent: "#14233d", pattern: "flannel" }, N),
+  shirt("flannel-green", "Koszula w kratę (zielona)", 55, "🧵", { color: "#3a7d44", accent: "#16301b", pattern: "flannel" }, N),
+  shirt("sport-red", "Bluza sportowa (czerwona)", 70, "🏃", { color: "#d62828", accent: "#ffffff", pattern: "sport" }, N),
+  shirt("sport-black", "Bluza sportowa (czarna)", 70, "🏃", { color: "#1b1b1b", accent: "#e63946", pattern: "sport" }, N),
+  shirt("heart-black", "Serce na czarnym", 40, "🖤", { color: "#161616", accent: "#ff3366", pattern: "heart", short: true }, N),
+  shirt("star-red", "Gwiazda na czerwonym", 40, "⭐", { color: "#b71c1c", accent: "#ffd60a", pattern: "star", short: true }, N),
+  shirt("cat-black", "Czarny kot", 50, "🐈‍⬛", { color: "#2b2b2b", accent: "#ffd60a", pattern: "cat", short: true }, N),
+  shirt("dino-blue", "Niebieski dinozaur", 50, "🦖", { color: "#4cc9f0", accent: "#1d4e89", pattern: "dino", short: true }, N),
+  shirt("pizza-dark", "Pizza (ciemna)", 45, "🍕", { color: "#1b1b1b", accent: "#e63946", accent2: "#f4a261", pattern: "pizza", short: true }, N),
+  shirt("tuxedo-white", "Biały smoking", 130, "🤵", { color: "#f5f5f5", accent: "#1b1b1b", accent2: "#d62828", pattern: "tuxedo" }, { ...N, rarity: "rare" }),
+  shirt("robot-gold", "Złoty robot", 140, "🤖", { color: "#e9b91c", accent: "#b8860b", pattern: "robot" }, { ...N, rarity: "epic" }),
+  shirt("hero-red", "Superbohater (czerwony)", 160, "🦸", { color: "#d62828", accent: "#1d4ed8", accent2: "#ffd60a", pattern: "hero" }, { ...N, rarity: "epic" }),
+  shirt("hero-green", "Superbohater (zielony)", 160, "🦸", { color: "#1b8a3a", accent: "#111111", accent2: "#ffd60a", pattern: "hero" }, { ...N, rarity: "epic" }),
+  shirt("galaxy-pink", "Różowa galaktyka", 200, "🌌", { color: "#3a0f4a", accent: "#ff80c8", pattern: "galaxy" }, { ...N, rarity: "epic" }),
+  shirt("camo-desert", "Moro pustynne", 65, "🪖", { color: "#c2a878", accent: "#8a7448", accent2: "#e3d3a8", pattern: "camo" }, N),
+  shirt("camo-arctic", "Moro zimowe", 65, "🪖", { color: "#e8eef2", accent: "#a9b8c4", accent2: "#cfd9e0", pattern: "camo" }, N),
+  shirt("unicorn-blue", "Jednorożec (niebieski)", 130, "🦄", { color: "#d9ecff", accent: "#4a90e2", pattern: "unicorn", short: true }, { ...N, rarity: "epic" }),
+  shirt("rainbow-black", "Tęcza na czarnym", 110, "🌈", { color: "#161616", accent: "#ff4d6d", pattern: "rainbow", short: true }, { ...N, rarity: "rare" }),
+
   // ---------- spodnie ----------
   pants("jeans", "Dżinsy", 0, "👖", { color: "#3d5a80", accent: "#98c1d9", pattern: "plain" }),
   pants("black-pants", "Czarne spodnie", 0, "👖", { color: "#1f1f1f", accent: "#444444", pattern: "plain" }, N),
@@ -149,6 +197,27 @@ export const CATALOG: CatalogItem[] = [
   pants("rainbow-pants", "Tęczowe", 100, "🌈", { color: "#ffffff", accent: "#ff4d6d", pattern: "rainbow" }, { ...N, rarity: "rare" }),
   pants("galaxy-pants", "Galaktyka", 180, "🌌", { color: "#1a1040", accent: "#b388ff", pattern: "galaxy" }, { ...N, rarity: "epic" }),
   pants("gold-pants", "Złote", 400, "🏆", { color: "#e9b91c", accent: "#fff3b0", pattern: "gold" }, { ...N, rarity: "legendary" }),
+
+  // nowe spodnie
+  pants("jeans-dark", "Ciemne dżinsy", 15, "👖", { color: "#1b2b4a", accent: "#4a6fa5", pattern: "plain" }, N),
+  pants("jeans-light", "Jasne dżinsy", 15, "👖", { color: "#7aa5d6", accent: "#b9d3ee", pattern: "plain" }, N),
+  pants("khaki", "Spodnie khaki", 20, "👖", { color: "#a8956b", accent: "#d8c9a0", pattern: "plain" }, N),
+  pants("white-pants", "Białe spodnie", 20, "👖", { color: "#f1f1f1", accent: "#cccccc", pattern: "plain" }, N),
+  pants("red-pants", "Czerwone spodnie", 20, "👖", { color: "#c62828", accent: "#ff8a80", pattern: "plain" }, N),
+  pants("green-pants", "Zielone spodnie", 20, "👖", { color: "#2d9d4a", accent: "#8fd9a0", pattern: "plain" }, N),
+  pants("shorts-black", "Czarne szorty", 20, "🩳", { color: "#161616", accent: "#ffffff", pattern: "plain", short: true }, N),
+  pants("shorts-green", "Zielone szorty", 20, "🩳", { color: "#2d9d4a", accent: "#ffffff", pattern: "plain", short: true }, N),
+  pants("shorts-yellow", "Żółte szorty", 20, "🩳", { color: "#f4c20d", accent: "#ffffff", pattern: "plain", short: true }, N),
+  pants("shorts-camo", "Szorty moro", 35, "🩳", { color: "#6b705c", accent: "#3a3f2e", accent2: "#a5a58d", pattern: "camo", short: true }, N),
+  pants("tracksuit-blue", "Dresy niebieskie", 40, "🏃", { color: "#1d4ed8", accent: "#ffffff", pattern: "sport" }, N),
+  pants("tracksuit-red", "Dresy czerwone", 40, "🏃", { color: "#b71c1c", accent: "#ffffff", pattern: "sport" }, N),
+  pants("overalls-green", "Ogrodniczki zielone", 50, "👷", { color: "#2d9d4a", accent: "#ffd60a", pattern: "overalls" }, N),
+  pants("overalls-red", "Ogrodniczki czerwone", 50, "👷", { color: "#d62828", accent: "#ffd60a", pattern: "overalls" }, N),
+  pants("flannel-pants", "Spodnie w kratę", 45, "🧵", { color: "#b5332e", accent: "#1b1b1b", pattern: "flannel" }, N),
+  pants("stars-blue", "Spodnie w gwiazdki", 45, "⭐", { color: "#1b263b", accent: "#ffd60a", pattern: "star" }, N),
+  pants("dots-pink", "Spodnie w kropki", 40, "🔴", { color: "#ffd6e7", accent: "#ff4d8d", pattern: "dots" }, N),
+  pants("hero-pants", "Spodnie superbohatera", 120, "🦸", { color: "#1d4ed8", accent: "#d62828", accent2: "#ffd60a", pattern: "hero" }, { ...N, rarity: "rare" }),
+  pants("robot-pants", "Nogi robota", 90, "🤖", { color: "#9aa3ad", accent: "#3a86ff", pattern: "robot" }, { ...N, rarity: "rare" }),
 
   // ---------- plecy ----------
   back("backpack", "Plecak", 30, "🎒", "#e76f51", N),
@@ -166,6 +235,13 @@ export const CATALOG: CatalogItem[] = [
   back("rainbow-wings", "Tęczowe skrzydła", 400, "🌈", "#ff4d6d", { ...N, rarity: "legendary" }),
   back("predator-wings", "Skrzydła Predatora", 0, "🔥", "#e63946", { offsale: true, rarity: "legendary" }),
 
+  back("surfboard", "Deska surfingowa", 70, "🏄", "#00b4d8", N),
+  back("quiver", "Kołczan ze strzałami", 60, "🏹", "#6b4430", N),
+  back("balloons", "Balony", 80, "🎈", "#ff4d6d", { ...N, rarity: "rare" }),
+  back("shield-back", "Tarcza na plecach", 75, "🛡️", "#3a86ff", N),
+  back("scooter-back", "Kukirin na plecach", 90, "🛴", "#00e676", { ...N, rarity: "rare" }),
+  back("wings-fairy", "Skrzydełka wróżki", 120, "🧚", "#c8f4ff", { ...N, rarity: "epic" }),
+
   // ---------- szyja ----------
   neck("bowtie", "Muszka", 20, "🎀", "#d62828", N),
   neck("tie", "Krawat", 25, "👔", "#1d3557", N),
@@ -173,6 +249,13 @@ export const CATALOG: CatalogItem[] = [
   neck("necklace", "Złoty łańcuch", 90, "📿", "#ffc300", { ...N, rarity: "rare" }),
   neck("medal", "Medal mistrza", 120, "🥇", "#ffc300", { ...N, rarity: "epic" }),
   neck("bandana", "Chusta", 25, "🤠", "#c1121f", N),
+
+  neck("pearls", "Perły", 70, "🦪", "#f8f4ec", { ...N, rarity: "rare" }),
+  neck("lei", "Hawajskie kwiaty", 40, "🌺", "#ff6b9d", N),
+  neck("bellcollar", "Obroża z dzwonkiem", 35, "🔔", "#e63946", N),
+  neck("stethoscope", "Stetoskop", 50, "🩺", "#3a3a3a", N),
+  neck("scarf-blue", "Niebieski szalik", 30, "🧣", "#3a86ff", N),
+  neck("headphones-neck", "Słuchawki na szyi", 45, "🎧", "#1f1f1f", N),
 
   // ---------- limitowane (po wyprzedaniu tylko wymiana) ----------
   hat("ltd-icecrown", "Lodowa korona", 400, "❄️", "#8fe3ff", { ...N, rarity: "legendary", limited: 100 }),

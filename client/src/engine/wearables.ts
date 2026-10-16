@@ -257,6 +257,79 @@ export function buildHat(scene: Scene, hat: string, parent: TransformNode, mat: 
       }
       k.box(0.3, 0.3, 0.05, "#e63946", 0, 0.12, -0.58, true).rotation.z = 0.2;
       break;
+    case "hardhat":
+      k.sphere(1.3, "#ffc300", 0, -0.1, 0, false, 0.5);
+      k.box(1.1, 0.08, 0.5, "#ffc300", 0, -0.1, -0.75);
+      k.box(0.2, 0.12, 1.1, "#e0a800", 0, 0.52, 0);
+      break;
+    case "police":
+      k.cyl(1.3, 1.3, 0.6, "#1d3557", 0, 0.1, 0);
+      k.box(1.3, 0.08, 0.6, "#111111", 0, -0.12, -0.7);
+      k.cyl(0.4, 0.4, 0.06, "#ffd60a", 0, 0.1, -0.66).rotation.x = Math.PI / 2;
+      break;
+    case "sailor":
+      k.cyl(1.35, 1.2, 0.5, "#f1f1f1", 0, 0, 0);
+      k.torus(1.3, 0.1, "#1d3557", 0, -0.08, 0);
+      k.sphere(0.2, "#d62828", 0, 0.32, 0);
+      break;
+    case "bucket":
+      k.cyl(1.0, 1.25, 0.7, "#7a8450", 0, 0.15, 0);
+      k.cyl(2.0, 2.0, 0.06, "#7a8450", 0, -0.18, 0);
+      k.torus(1.2, 0.1, "#4a5230", 0, -0.12, 0);
+      break;
+    case "witch":
+      k.cyl(2.1, 2.1, 0.06, "#2b1b3d", 0, 0, 0);
+      k.cyl(0, 1.1, 1.8, "#2b1b3d", 0, 0.9, 0).rotation.z = -0.2;
+      k.torus(1.1, 0.14, "#8e44ad", 0, 0.1, 0);
+      k.box(0.3, 0.3, 0.1, "#ffd60a", 0, 0.1, -0.58, true);
+      break;
+    case "jester": {
+      for (const [s, c] of [[-1, "#d62828"], [1, "#3a86ff"]] as const) {
+        const a = k.cyl(0.1, 0.4, 1.0, c, s * 0.5, 0.55, 0);
+        a.rotation.z = s * 0.8;
+        k.sphere(0.22, "#ffd60a", s * 1.0, 1.0, 0, true);
+      }
+      k.torus(1.25, 0.14, "#ffd60a", 0, -0.05, 0);
+      break;
+    }
+    case "mohawk":
+      for (let i = 0; i < 6; i++) k.cyl(0, 0.3, 0.8 - Math.abs(i - 2.5) * 0.08, "#ff2d95", 0, 0.4, -0.5 + i * 0.2, true, 4);
+      break;
+    case "afro":
+      k.sphere(2.1, "#3b2418", 0, 0.35, 0.05);
+      break;
+    case "mushroom":
+      k.sphere(2.0, "#e63946", 0, 0.1, 0, false, 0.5);
+      for (const [x, z] of [[0.5, -0.4], [-0.55, 0.1], [0.1, 0.6], [-0.2, -0.7]]) k.sphere(0.34, "#ffffff", x, 0.45 - Math.hypot(x, z) * 0.25, z);
+      k.cyl(0.9, 1.0, 0.25, "#f5e6c8", 0, -0.15, 0);
+      break;
+    case "bee":
+      k.torus(1.1, 0.08, "#222222", 0, 0, 0);
+      for (const s of [-1, 1]) {
+        k.cyl(0.05, 0.05, 0.7, "#222222", s * 0.3, 0.35, 0).rotation.z = s * 0.3;
+        k.sphere(0.24, "#ffd60a", s * 0.46, 0.72, 0, true);
+      }
+      break;
+    case "fedora":
+      k.cyl(0.95, 1.0, 0.55, "#5c4033", 0, 0.2, 0);
+      k.cyl(1.9, 1.9, 0.07, "#5c4033", 0, -0.05, 0);
+      k.torus(1.0, 0.1, "#2b2b2b", 0, 0.0, 0);
+      break;
+    case "beret":
+      k.sphere(1.5, "#c1121f", 0.12, 0.0, 0, false, 0.5).scaling.y = 0.55;
+      k.cyl(0.08, 0.08, 0.25, "#c1121f", 0.12, 0.35, 0);
+      break;
+    case "strawhat":
+      k.cyl(1.0, 1.15, 0.6, "#e9c46a", 0, 0.15, 0);
+      k.cyl(2.3, 2.3, 0.06, "#e9c46a", 0, -0.12, 0);
+      k.torus(1.15, 0.1, "#d62828", 0, 0.0, 0);
+      break;
+    case "icecream":
+      k.cyl(0.9, 0.0, 0.9, "#e9b872", 0, 0.45, 0).rotation.x = Math.PI;
+      k.sphere(0.9, "#ffb3d9", 0, 1.05, 0);
+      k.sphere(0.7, "#8fe3ff", 0, 1.6, 0);
+      k.sphere(0.22, "#d62828", 0, 2.05, 0, true);
+      break;
     default:
       break;
   }
@@ -355,6 +428,48 @@ export function buildBack(scene: Scene, id: string, torso: TransformNode, mat: M
     case "ltd-diamondwings":
       wings("#b9f2ff", "#ffffff", "angel");
       break;
+    case "surfboard": {
+      const b = k.sphere(1.2, "#00b4d8", 0, 0.1, 0.2);
+      b.scaling.set(0.45, 1.9, 0.12);
+      k.box(0.12, 1.8, 0.04, "#ffffff", 0, 0.1, 0.34);
+      break;
+    }
+    case "quiver": {
+      const q = k.cyl(0.4, 0.4, 1.5, "#6b4430", 0.2, 0, 0.25);
+      q.rotation.z = 0.35;
+      for (let i = 0; i < 3; i++) {
+        const a = k.box(0.05, 0.6, 0.05, "#c9d1d9", 0.1 + i * 0.12, 0.9 + i * 0.05, 0.25);
+        a.rotation.z = 0.35;
+        k.cyl(0, 0.16, 0.16, "#d62828", 0.1 + i * 0.12 - 0.12, 1.25 + i * 0.05, 0.25);
+      }
+      break;
+    }
+    case "balloons":
+      for (const [x, y, c] of [[-0.5, 2.2, "#ff4d6d"], [0.1, 2.7, "#ffd60a"], [0.6, 2.1, "#3a86ff"]] as const) {
+        k.sphere(0.8, c, x, y, 0.3).scaling.y = 1.15;
+        k.cyl(0.015, 0.015, y, "#dddddd", x * 0.5, y / 2 - 0.2, 0.3);
+      }
+      break;
+    case "shield-back":
+      k.cyl(1.4, 1.4, 0.12, "#3a86ff", 0, 0, 0.1).rotation.x = Math.PI / 2;
+      k.cyl(0.8, 0.8, 0.14, "#ffd60a", 0, 0, 0.12).rotation.x = Math.PI / 2;
+      k.sphere(0.3, "#c9d1d9", 0, 0, 0.22);
+      break;
+    case "scooter-back": {
+      const d = k.box(0.35, 0.1, 1.8, "#111111", 0.3, -0.1, 0.35);
+      d.rotation.x = 1.2;
+      k.box(0.06, 1.6, 0.06, "#263238", 0.3, 0.55, 0.15);
+      k.box(0.7, 0.07, 0.07, "#263238", 0.3, 1.35, 0.15);
+      k.cyl(0.38, 0.38, 0.16, "#212121", 0.3, -0.9, 0.35).rotation.z = Math.PI / 2;
+      k.box(0.3, 0.08, 0.4, "#00e676", 0.3, -0.05, 0.4, true);
+      break;
+    }
+    case "wings-fairy":
+      for (const s of [-1, 1]) {
+        k.sphere(1.0, "#c8f4ff", s * 0.7, 0.55, 0.2).scaling.set(1, 1.5, 0.06);
+        k.sphere(0.7, "#ffc8f0", s * 0.55, -0.35, 0.2).scaling.set(1, 1.4, 0.06);
+      }
+      break;
     case "jetpack":
       for (const s of [-1, 1]) {
         k.cyl(0.55, 0.55, 1.5, "#9aa3ad", s * 0.35, -0.05, 0.35);
@@ -407,6 +522,34 @@ export function buildNeck(scene: Scene, id: string, torso: TransformNode, mat: M
       b.scaling.y = 0.1;
       break;
     }
+    case "pearls":
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 8) * Math.PI - Math.PI / 2;
+        k.sphere(0.14, "#f8f4ec", Math.sin(a) * 0.5, -0.1 - Math.cos(a) * 0.3 + 0.2, -0.55, true);
+      }
+      break;
+    case "lei":
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 9) * Math.PI - Math.PI / 2;
+        k.sphere(0.2, ["#ff6b9d", "#ffd60a", "#ffffff", "#ff9f1c"][i % 4], Math.sin(a) * 0.62, -0.12 - Math.cos(a) * 0.32 + 0.2, -0.56);
+      }
+      break;
+    case "bellcollar":
+      k.torus(1.05, 0.1, "#e63946", 0, -0.04, -0.05).scaling.z = 1.1;
+      k.sphere(0.28, "#ffc300", 0, -0.3, -0.56, true);
+      break;
+    case "stethoscope":
+      k.torus(0.95, 0.06, "#3a3a3a", 0, -0.25, -0.5).scaling.z = 0.3;
+      k.cyl(0.3, 0.3, 0.08, "#b0bec5", 0, -0.95, -0.55).rotation.x = Math.PI / 2;
+      break;
+    case "scarf-blue":
+      k.box(1.4, 0.3, 1.1, "#3a86ff", 0, -0.02, 0);
+      k.box(0.3, 0.9, 0.12, "#3a86ff", -0.35, -0.5, -0.56);
+      break;
+    case "headphones-neck":
+      k.torus(1.2, 0.12, "#1f1f1f", 0, -0.05, 0);
+      for (const s of [-1, 1]) k.cyl(0.4, 0.4, 0.28, "#d62828", s * 0.62, -0.1, 0).rotation.z = Math.PI / 2;
+      break;
     default:
       break;
   }

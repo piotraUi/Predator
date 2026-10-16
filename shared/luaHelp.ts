@@ -93,6 +93,10 @@ export const LUA_HELP: [string, string][] = [
   ["setTime(0.25) / getTime() / isNight()", "pora dnia: 0 wschód, 0.25 południe, 0.5 zachód, 0.75 północ"],
   ['spawnMob("zombie", x, y, z)', "stwórz moba: zombie, creeper, pig, sheep, cow"],
   ["explode(x, y, z, 3)", "wybuch jak TNT (promień w blokach)"],
+  ['tryOn(player, "hardhat")', "przymierz rzecz z katalogu (id przedmiotu) - tylko w tej grze, bez zmiany konta; zwraca true/false"],
+  ['takeOff(player, "hat")', "zdejmij rzecz: hat, face, shirt, pants, back, neck"],
+  ['setAvatarColor(player, "torso", "#ff8800")', "kolor części ciała (head, torso, arms, legs)"],
+  ["resetAvatar(player)", "przywróć wygląd z konta gracza"],
   // ---- nowe: administracja, dane gry, odczyt klocków, drużyny, pomocnicze ----
   ["isOwner(player) / isAdmin(player)", "czy gracz jest właścicielem gry / administracją gry (właściciel, współtwórca, moderator Predatora)"],
   ["getUserId(player)", "stały numer konta gracza (do własnych list banów, VIP-ów itp.)"],
@@ -184,7 +188,7 @@ export const LUA_HELP_2D: [string, string][] = [
 const GROUPS: [string, RegExp][] = [
   ["Zdarzenia", /^(onPlayer|onTouch|onChat|onRespawn|onDied|onToolUse|onAnswer|onSit|onUnsit|onPurchase|onGuiClick|onClientEvent|onBlock|onLevelEnter|-- skrypt GRACZA)/],
   ["Czas i timery", /^(every|after|wait|time|local t = every|cooldown|formatTime)/],
-  ["Gracze", /^(kill|teleport|playerName|getPlayers|getPlayerPosition|getPlayerLook|addScore|setSpeed|setJump|setSpeed|giveTool|removeTool|hasTool|damage|heal|getHealth|setCharacter|playAnimation|stopAnimation|chooseCharacter|isOwner|getUserId|kick|setTeam|playerCount|playersNear|topPlayers|hidePlayer|getCoins|setPlayerAnimation|resetPlayerAnimations|autoWalk|setForce|jump|lockCamera|exitGame|setLevel|getLevel|getPlayersOnLevel)/],
+  ["Gracze", /^(tryOn|takeOff|setAvatarColor|resetAvatar|kill|teleport|playerName|getPlayers|getPlayerPosition|getPlayerLook|addScore|setSpeed|setJump|setSpeed|giveTool|removeTool|hasTool|damage|heal|getHealth|setCharacter|playAnimation|stopAnimation|chooseCharacter|isOwner|getUserId|kick|setTeam|playerCount|playersNear|topPlayers|hidePlayer|getCoins|setPlayerAnimation|resetPlayerAnimations|autoWalk|setForce|jump|lockCamera|exitGame|setLevel|getLevel|getPlayersOnLevel)/],
   ["Klocki i obiekty", /^(setColor|setPosition|move|setSize|setVisible|setTransparency|setCollide|getPosition|getSize|getColor|partExists|tweenPart|tweenMove|setPhysics|pushPart|setLabel|setRotation|npcAnimation|setAnimation|setText|hideObject|moveObject|flipObject|showFor|countObjects|createObject|deleteObject|setVisibleFor)/],
   ["Okienka (GUI)", /^(showGui|setGuiText|isGuiOpen|prompt|speak)/],
   ["Dźwięk, światło, niebo", /^(playSound|setMusic|setSky|setSkybox|setLight|flicker|effect|setBackground|setSkyFor)/],
