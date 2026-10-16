@@ -100,19 +100,13 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
             wrap.remove();
             inner = play2dScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode, worldId: params.worldId }, go);
           } else {
-            // silnik Apex (eksperymentalny): gdy gra czegoś jeszcze nie obsługuje, wchodzimy w Babylonie
+            // wszystkie gry 3D działają na silniku Apex; Babylon zostaje tylko awaryjnie (np. przeglądarka bez WebGL2)
             let apex: typeof import("../apex/apexPlay.ts") | null = null;
-            if (settings.engine === "apex") {
-              try {
-                apex = await import("../apex/apexPlay.ts");
-                const why = apex.apexUnsupported(init as never);
-                if (why) {
-                  toast(`Apex: ${why} - uruchamiam w silniku Babylon`, "info");
-                  apex = null;
-                }
-              } catch {
-                apex = null;
-              }
+            try {
+              apex = await import("../apex/apexPlay.ts");
+              if (apex.apexUnsupported(init as never)) apex = null;
+            } catch {
+              apex = null;
             }
             if (disposed) return;
             if (apex) {
@@ -121,7 +115,8 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
                 inner = apex.apexPlayScreen(root, { conn: c, init: init as never, back: params.back, offline: !!params.offline, privateCode: params.privateCode, worldId: params.worldId }, go);
               } catch (e) {
                 // brak WebGL2 albo błąd shaderów - wracamy do Babylona
-                toast("Apex nie wystartował (" + (e as Error).message + ") - uruchamiam w silniku Babylon", "error");
+                console.warn("Apex nie wystartował, awaryjnie silnik Babylon:", e);
+                toast("Nie udało się uruchomić nowego silnika (" + (e as Error).message + ") - włączam tryb awaryjny", "error");
                 root.append(wrap);
                 apex = null;
               }

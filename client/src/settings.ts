@@ -16,14 +16,12 @@ export interface Settings {
   notifyPlaying: boolean;
   /** wygląd Studia: "predator" = oryginalny, "roblox" = jak w Roblox Studio */
   studioTheme: "predator" | "roblox";
-  /** silnik gier 3D: "babylon" = obecny, "apex" = nasz własny (eksperymentalny) */
-  engine: "babylon" | "apex";
   /** poświata (bloom) w silniku Apex */
   apexBloom: boolean;
 }
 
 const KEY = "predator.settings";
-const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", engine: "babylon", apexBloom: true };
+const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", apexBloom: true };
 const listeners = new Set<(s: Settings) => void>();
 
 function load(): Settings {
@@ -130,36 +128,6 @@ export function themePicker(onPick?: () => void) {
   return box;
 }
 
-/** wybór silnika gier 3D: obecny (Babylon) albo nasz własny Apex (eksperymentalny) */
-export function enginePicker() {
-  const box = h("div", { class: "theme-pick" });
-  const render = () =>
-    box.replaceChildren(
-      ...(
-        [
-          ["babylon", "Babylon (obecny)", "Stabilny silnik, w którym działają wszystkie gry i funkcje."],
-          ["apex", "Apex (eksperymentalny)", "Nasz własny silnik na WebGL2: cienie, poświata, cząsteczki, fizyka brył, pojazdy, tekstury, niebo i woda."],
-        ] as const
-      ).map(([id, name, desc]) =>
-        h(
-          "button",
-          {
-            type: "button",
-            class: "theme-card engine-" + id + (settings.engine === id ? " on" : ""),
-            onClick: () => {
-              updateSettings({ engine: id });
-              render();
-            },
-          },
-          h("b", null, (id === "apex" ? "⚡ " : "🧊 ") + name),
-          h("span", { class: "muted small" }, desc),
-        ),
-      ),
-    );
-  render();
-  return box;
-}
-
 export function openSettings() {
   const value = h("b", null);
   const slider = h("input", { type: "range", min: "0.1", max: "3", step: "0.05" });
@@ -188,8 +156,7 @@ export function openSettings() {
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", onClick: () => ((slider.value = "1"), show(), updateSettings({ sensitivity: 1 })) }, "Domyślna (1×)")),
       h("label", { class: "check" }, invert, h("span", null, "Odwróć oś Y kamery")),
       h("div", { class: "prop-group" }, "Silnik gier 3D"),
-      enginePicker(),
-      check("apexBloom", "Apex: poświata (bloom) wokół neonów i słońca"),
+      check("apexBloom", "Poświata (bloom) wokół neonów i słońca"),
       h("p", { class: "muted", style: "font-size:12px;margin:0" }, "Silnik wybierasz dla siebie. Zmiana działa przy następnym wejściu do gry. Wszyscy gracze w jednej grze mogą używać różnych silników."),
       h("div", { class: "prop-group" }, "Wygląd Studia"),
       themePicker(),

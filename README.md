@@ -188,15 +188,14 @@ Gra 3D może mieć **świat z bloków**: Twórz → Nowa gra → **⛏️ Świat
 - **Lua:** `getBlock`, `setBlock`, `blockAt`, `getSurface`, `giveItem`, `takeItem`, `countItem`, `onBlockBreak`, `onBlockPlace`, `setTime`, `getTime`, `isNight`, `spawnMob`, `explode`.
 - **Klawisze:** 1-9 i kółko myszy zmieniają przedmiot, V przełącza pierwszą i trzecią osobę, Q wyrzuca przedmiot.
 
-## Silnik Apex (eksperymentalny) i fizyka brył
+## Silnik Apex i fizyka brył
 
-W **Ustawieniach → Silnik gier 3D** wybierasz, na czym uruchamiają się gry 3D (dla siebie, na tym urządzeniu):
+Wszystkie gry 3D działają na **Apexie** - to jedyny silnik gier (nie ma już przełącznika w Ustawieniach). Babylon zostaje tylko w Studiu (podgląd i edycja) oraz jako awaryjny tryb, gdy przeglądarka nie ma WebGL2.
 
-- **Babylon** (domyślny) - sprawdzony silnik, obsługuje wszystko.
 - **Apex** - własny silnik Predatora na WebGL2 (`client/src/apex/`): klocki rysowane instancjami, miękkie cienie (12 próbek na piksel), niebo liczone w shaderze, mgła, teren i woda, **poświata (bloom)** na buforze HDR (do wyłączenia w Ustawieniach), światła dynamiczne (latarka z gry jako reflektor, błyski strzałów), **tekstury klocków** (Studio → *Wzór (Apex)*: cegły, deski, kamień, bruk, trawa, piasek, ziemia, szachownica, kafelki, blacha, beton, pasy), **cząsteczki** (Studio → *Cząsteczki (Apex)*: ogień, dym, iskry, magia, kurz, fontanna; w Lua `effect("fire", x, y, z, ilość)`; błyski i iskry przy strzałach, kurz spod kół i plusk za łódką). F3 w grze pokazuje FPS i liczbę wywołań rysowania.
 - Apex ma też: narzędzia i bronie (model w ręku, pasek przedmiotów, strzały ze śladem, miecze, podnoszenie z pól), siedzenia i pojazdy (auto, łódź, deskorolka), miejsca z teleportem i pokoje, czapki / plecy / szyję / koszulki / spodnie awatara, postacie ze Studia (dodatki, modele .glb bez animacji szkieletowych, własne animacje i emotki), menu emotek, listę graczy, czat głosowy, sklep w grze, konsolę twórcy (F9), tabelę wyników, zrzut ekranu (F2), blokadę myszy w pierwszej osobie i obsługę pada w menu.
 
-Apex rysuje też **światy z bloków** (Minecraft: kawałki świata z atlasem tekstur i cieniowaniem rogów, moby, TNT, dzień i noc). Apex jest eksperymentalny: gdy przeglądarka nie ma WebGL2, gra uruchamia się sama w Babylonie i pokazuje, dlaczego.
+Apex rysuje też **światy z bloków** (Minecraft: kawałki świata z atlasem tekstur i cieniowaniem rogów, moby, TNT, dzień i noc). Gdy przeglądarka nie ma WebGL2, gra uruchamia się awaryjnie w Babylonie.
 
 **Fizyka brył** (oba silniki, liczona na serwerze): zaznacz klocek → ⚽ *Fizyka*. Kula toczy się i odbija (sprężystość 0-1), pudło spada i ślizga się, gracze mogą je popychać. Maks. 100 takich klocków w grze. W Lua: `setPhysics("Kula", true, 0.6)` i `pushPart("Kula", 0, 40, 30)`.
 

@@ -1171,8 +1171,15 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     for (const [id, base] of spinning) {
       const p = parts.get(id);
       if (!p) continue;
+      const angle = base + ((performance.now() / 1000) * 90) % 360;
+      // NPC: kręci się postać, a nie klocek-podstawka (ten jest niewidoczny)
+      const npc = npcs.get(id);
+      if (npc) {
+        npc.ry = (angle * Math.PI) / 180;
+        continue;
+      }
       const saved = p.ry;
-      p.ry = base + ((performance.now() / 1000) * 90) % 360;
+      p.ry = angle;
       rend.updatePart(p, rot(p));
       p.ry = saved;
     }
