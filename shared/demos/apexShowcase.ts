@@ -2,7 +2,7 @@
 // z rampami i kulami z fizyką brył. Skrypty: serwerowy (powitanie, kopanie kul) i gracza (klawisz K, napis).
 import { TerrainGrid } from "../terrain.ts";
 import type { Part, WorldData } from "../types.ts";
-import { baseplate, emptyWorld } from "../world.ts";
+import { baseplate, emptyWorld, makeTool } from "../world.ts";
 
 function rng(seed: number) {
   return () => {
@@ -186,6 +186,7 @@ export function demoApexShowcase(): WorldData {
     skybox: "day",
     atmosphere: { hour: 15, cycle: 360, wind: 0.3 },
     nature: { trees: 0.25 },
+    tools: [makeTool("Pistolet", { starter: true }), makeTool("Karabin", { starter: true }), makeTool("Miecz", { starter: true })],
     pvp: false,
     scripts: [
       { id: "ax-s", name: "Serwer", type: "lua", enabled: true, source: SERVER },

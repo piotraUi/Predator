@@ -43,15 +43,28 @@ layout(location=5) in vec4 iM2;
 layout(location=6) in vec4 iM3;
 layout(location=7) in vec4 iCol;
 layout(location=8) in vec4 iMisc;
+layout(location=9) in vec4 aJ;
+layout(location=10) in vec4 aWt;
+uniform highp sampler2D uJT; uniform float uSkin;
+mat4 joint(float i){ int k = int(i) * 4; return mat4(texelFetch(uJT, ivec2(k, 0), 0), texelFetch(uJT, ivec2(k + 1, 0), 0), texelFetch(uJT, ivec2(k + 2, 0), 0), texelFetch(uJT, ivec2(k + 3, 0), 0)); }
 uniform mat4 uVP;
 uniform mat4 uLightVP; uniform mat4 uLightVP2;
 uniform float uTile;
 out vec3 vN; out vec3 vW; out vec2 vUv; out vec4 vCol; out float vMat; out vec4 vL; out vec4 vL2; out vec2 vT;
 void main(){
   mat4 M = mat4(iM0,iM1,iM2,iM3);
-  vec4 w = M * vec4(aPos,1.0);
+  vec3 P0 = aPos, N0 = aNrm;
+  if (uSkin > 0.5) {
+    // skóra: pozycja i normalna przez cztery kości (układ glTF), potem odbicie z -> -z do układu lewoskrętnego
+    mat4 sk = aWt.x * joint(aJ.x) + aWt.y * joint(aJ.y) + aWt.z * joint(aJ.z) + aWt.w * joint(aJ.w);
+    vec4 sp = sk * vec4(aPos, 1.0);
+    P0 = vec3(sp.x, sp.y, -sp.z);
+    vec3 sn = mat3(sk) * aNrm;
+    N0 = vec3(sn.x, sn.y, -sn.z);
+  }
+  vec4 w = M * vec4(P0,1.0);
   vec3 s = max(iMisc.xyz, vec3(1e-3));
-  vN = mat3(M) * (aNrm / (s*s));
+  vN = mat3(M) * (N0 / (s*s));
   vW = w.xyz; vUv = aUv; vCol = iCol; vMat = iMisc.w;
   // tekstura kafelkowana w jednostkach świata: rzut wzdłuż dominującej osi normalnej
   vec3 lp = aPos * s; vec3 an = abs(aNrm);
@@ -203,8 +216,20 @@ layout(location=3) in vec4 iM0;
 layout(location=4) in vec4 iM1;
 layout(location=5) in vec4 iM2;
 layout(location=6) in vec4 iM3;
+layout(location=9) in vec4 aJ;
+layout(location=10) in vec4 aWt;
+uniform highp sampler2D uJT; uniform float uSkin;
+mat4 joint(float i){ int k = int(i) * 4; return mat4(texelFetch(uJT, ivec2(k, 0), 0), texelFetch(uJT, ivec2(k + 1, 0), 0), texelFetch(uJT, ivec2(k + 2, 0), 0), texelFetch(uJT, ivec2(k + 3, 0), 0)); }
 uniform mat4 uVP;
-void main(){ gl_Position = uVP * (mat4(iM0,iM1,iM2,iM3) * vec4(aPos,1.0)); }`;
+void main(){
+  vec3 P0 = aPos;
+  if (uSkin > 0.5) {
+    mat4 sk = aWt.x * joint(aJ.x) + aWt.y * joint(aJ.y) + aWt.z * joint(aJ.z) + aWt.w * joint(aJ.w);
+    vec4 sp = sk * vec4(aPos, 1.0);
+    P0 = vec3(sp.x, sp.y, -sp.z);
+  }
+  gl_Position = uVP * (mat4(iM0,iM1,iM2,iM3) * vec4(P0,1.0));
+}`;
 const DEPTH_FS = `#version 300 es
 precision mediump float;
 out vec4 o;
@@ -1276,6 +1301,121 @@ export class ApexRenderer {
     this.decals.push({ tex, m });
   }
 
+  // ---------- siatki ze skórą (animowane modele .glb) ----------
+  private skinMeshes = new Map<string, { vao: WebGLVertexArrayObject; mesh: GpuMesh; jb: WebGLBuffer; wb: WebGLBuffer; joints: number }>();
+  private skinQueue: { key: string; joints: Float32Array; m: Float32Array; k: number; color: [number, number, number]; alpha: number; tex: WebGLTexture | null }[] = [];
+  private jointTex: WebGLTexture | null = null;
+  registerSkinMesh(key: string, m: Mesh, joints: Float32Array, weights: Float32Array) {
+    if (this.skinMeshes.has(key)) return;
+    const gl = this.gl;
+    const mesh = new GpuMesh(gl, m);
+    const vao = gl.createVertexArray()!;
+    gl.bindVertexArray(vao);
+    mesh.bind(gl);
+    const jb = gl.createBuffer()!, wb = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, jb);
+    gl.bufferData(gl.ARRAY_BUFFER, joints, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(9);
+    gl.vertexAttribPointer(9, 4, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, wb);
+    gl.bufferData(gl.ARRAY_BUFFER, weights, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(10);
+    gl.vertexAttribPointer(10, 4, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    this.skinMeshes.set(key, { vao, mesh, jb, wb, joints: 0 });
+  }
+  deleteSkinMeshes(prefix: string) {
+    const gl = this.gl;
+    for (const [k, m] of this.skinMeshes)
+      if (k.startsWith(prefix)) {
+        gl.deleteVertexArray(m.vao);
+        gl.deleteBuffer(m.mesh.vb);
+        gl.deleteBuffer(m.mesh.ib);
+        gl.deleteBuffer(m.jb);
+        gl.deleteBuffer(m.wb);
+        this.skinMeshes.delete(k);
+      }
+  }
+  /** rysuje animowaną siatkę w tej klatce: `m` = macierz 4x4 modelu (obrót*skala, położenie), `joints` = macierze kości (16 liczb na kość) */
+  drawSkinned(key: string, joints: Float32Array, m: Float32Array, color: [number, number, number], alpha: number, tex: WebGLTexture | null) {
+    if (this.skinMeshes.has(key)) this.skinQueue.push({ key, joints, m, k: 1, color, alpha, tex });
+  }
+  /** tekstura z macierzami kości (unit 6); sampler musi wskazywać prawidłową teksturę także wtedy, gdy nic nie jest ze skórą */
+  private bindJointTex(p: Program) {
+    const gl = this.gl;
+    if (!this.jointTex) {
+      this.jointTex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, this.jointTex);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, 1024, 1);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    }
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, this.jointTex);
+    gl.uniform1i(p.loc("uJT"), 6);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+  private drawSkinQueue(p: Program, depthOnly: boolean) {
+    const q = this.skinQueue;
+    if (!q.length) return;
+    const gl = this.gl;
+    this.bindJointTex(p);
+    gl.uniform1f(p.loc("uSkin"), 1);
+    for (const it of q) {
+      const sm = this.skinMeshes.get(it.key)!;
+      gl.activeTexture(gl.TEXTURE6);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, Math.min(1024, (it.joints.length / 4) | 0), 1, gl.RGBA, gl.FLOAT, it.joints.length > 4096 ? it.joints.subarray(0, 4096) : it.joints);
+      // stałe atrybuty instancji (jak teren): macierz modelu, kolor i rozmiar
+      const m = it.m;
+      gl.vertexAttrib4f(3, m[0], m[1], m[2], 0);
+      gl.vertexAttrib4f(4, m[4], m[5], m[6], 0);
+      gl.vertexAttrib4f(5, m[8], m[9], m[10], 0);
+      gl.vertexAttrib4f(6, m[12], m[13], m[14], 1);
+      if (!depthOnly) {
+        const k = Math.hypot(m[0], m[1], m[2]);
+        gl.vertexAttrib4f(7, it.color[0], it.color[1], it.color[2], it.alpha);
+        gl.vertexAttrib4f(8, k, k, k, 0);
+        gl.uniform1f(p.loc("uBevel"), 0);
+        gl.uniform1f(p.loc("uUseTex"), it.tex ? 1 : 0);
+        if (it.tex) {
+          gl.uniform1f(p.loc("uTile"), -4);
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, it.tex);
+          gl.activeTexture(gl.TEXTURE6);
+        }
+      }
+      gl.bindVertexArray(sm.vao);
+      gl.drawElements(gl.TRIANGLES, sm.mesh.n, sm.mesh.type, 0);
+      this.stats.draws++;
+      this.stats.tris += sm.mesh.n / 3;
+    }
+    gl.uniform1f(p.loc("uSkin"), 0);
+    gl.vertexAttrib4f(3, 1, 0, 0, 0);
+    gl.vertexAttrib4f(4, 0, 1, 0, 0);
+    gl.vertexAttrib4f(5, 0, 0, 1, 0);
+    gl.vertexAttrib4f(6, 0, 0, 0, 1);
+    gl.bindVertexArray(null);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /** trwałe naklejki na świecie (ślady po kulach, plamy krwi): znikają po `ttl` sekundach, najstarsze wypadają przy nadmiarze */
+  private worldDecals: { tex: WebGLTexture; m: Float32Array; born: number; ttl: number; grow: number }[] = [];
+  addWorldDecal(tex: WebGLTexture, pos: V3, normal: V3, size: number, spin: number, ttl: number, grow = 0) {
+    // baza stycznych do powierzchni: t ⟂ n, b = n × t
+    const up: V3 = Math.abs(normal[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    let t = norm3([up[1] * normal[2] - up[2] * normal[1], up[2] * normal[0] - up[0] * normal[2], up[0] * normal[1] - up[1] * normal[0]]);
+    let b = norm3([normal[1] * t[2] - normal[2] * t[1], normal[2] * t[0] - normal[0] * t[2], normal[0] * t[1] - normal[1] * t[0]]);
+    const c = Math.cos(spin), sn = Math.sin(spin);
+    [t, b] = [norm3([t[0] * c + b[0] * sn, t[1] * c + b[1] * sn, t[2] * c + b[2] * sn]), norm3([-t[0] * sn + b[0] * c, -t[1] * sn + b[1] * c, -t[2] * sn + b[2] * c])];
+    const m = new Float32Array(16);
+    m[0] = t[0] * size; m[1] = t[1] * size; m[2] = t[2] * size;
+    m[4] = b[0] * size; m[5] = b[1] * size; m[6] = b[2] * size;
+    m[8] = normal[0] * 0.001; m[9] = normal[1] * 0.001; m[10] = normal[2] * 0.001;
+    m[12] = pos[0] + normal[0] * 0.04; m[13] = pos[1] + normal[1] * 0.04; m[14] = pos[2] + normal[2] * 0.04; m[15] = 1;
+    this.worldDecals.push({ tex, m, born: this.time, ttl, grow });
+    if (this.worldDecals.length > 160) this.worldDecals.shift();
+  }
+
   /** tekstura z płótna (np. twarz awatara) */
   makeTexture(canvas: HTMLCanvasElement, repeat = false): WebGLTexture {
     const gl = this.gl;
@@ -1676,6 +1816,7 @@ export class ApexRenderer {
     gl.uniform1f(p.loc("uTime"), this.time);
     gl.uniform1f(p.loc("uClipY"), mirrorY ?? -1e9);
     gl.uniform1i(p.loc("uRefl"), 5);
+    this.bindJointTex(p);
     gl.uniform3fv(p.loc("uEnvTop"), sc3(sky.top));
     gl.uniform3fv(p.loc("uEnvHor"), sc3(sky.hor));
     gl.uniform1f(p.loc("uShadowOn"), this.shadows && light > 0.1 ? 1 : 0);
@@ -1695,6 +1836,7 @@ export class ApexRenderer {
     if (this.terrain) this.drawTerrain(this.terrain);
     this.drawBatches(this.staticBatches, false, p);
     this.drawBatches(this.frameBatches, false, p);
+    this.drawSkinQueue(p, false);
     if (mirrorY === null) this.drawGrass(vp, eye, fc, light);
     if (mirrorY === null) this.drawVoxels(["opaque", "cutout", "glow"], eye, fc);
   }
@@ -1753,6 +1895,7 @@ export class ApexRenderer {
     if (this.shadows && light > 0.1) {
       gl.viewport(0, 0, this.shadowSize, this.shadowSize);
       gl.useProgram(this.depthProg.p);
+      this.bindJointTex(this.depthProg);
       gl.enable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(1.5, 4);
       const pass = (fbo: WebGLFramebuffer, vp: Mat4) => {
@@ -1761,6 +1904,7 @@ export class ApexRenderer {
         gl.uniformMatrix4fv(this.depthProg.loc("uVP"), false, vp);
         this.drawBatches(this.staticBatches, false);
         this.drawBatches(this.frameBatches, false);
+        this.drawSkinQueue(this.depthProg, true);
         if (this.terrain) this.drawTerrain(this.terrain);
       };
       pass(this.shadowFbo, this.lightVp2);
@@ -1844,8 +1988,8 @@ export class ApexRenderer {
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
     gl.useProgram(p.p);
-    // naklejki (twarze)
-    if (this.decals.length) {
+    // naklejki (twarze) i trwałe ślady na świecie
+    if (this.decals.length || this.worldDecals.length) {
       const dp = this.decalProg;
       gl.useProgram(dp.p);
       gl.uniformMatrix4fv(dp.loc("uVP"), false, this.vp);
@@ -1859,6 +2003,26 @@ export class ApexRenderer {
         gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, this.quadIndexOffset);
         this.stats.draws++;
       }
+      if (this.worldDecals.length) {
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(-2, -4);
+        const lit = Math.min(1, 0.35 + light * 0.65);
+        this.worldDecals = this.worldDecals.filter((d) => this.time - d.born < d.ttl);
+        for (const d of this.worldDecals) {
+          const age = this.time - d.born;
+          const fade = Math.min(1, (d.ttl - age) / 3);
+          // plama rośnie przez pierwsze sekundy (kałuża krwi)
+          const k = d.grow > 0 ? Math.min(1, 0.25 + (age / d.grow) * 0.75) : 1;
+          const m = d.m.slice() as Float32Array;
+          for (const i of [0, 1, 2, 4, 5, 6]) m[i] *= k;
+          gl.uniform4f(dp.loc("uTint"), lit, lit, lit, fade);
+          gl.bindTexture(gl.TEXTURE_2D, d.tex);
+          gl.uniformMatrix4fv(dp.loc("uM"), false, m);
+          gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, this.quadIndexOffset);
+          this.stats.draws++;
+        }
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+      }
       gl.activeTexture(gl.TEXTURE0);
     }
     this.drawWeather(look.eye, fc);
@@ -1871,6 +2035,7 @@ export class ApexRenderer {
 
     // czyścimy rzeczy tylko-na-klatkę
     for (const b of this.frameBatches.values()) b.count = 0;
+    this.skinQueue.length = 0;
     this.decals.length = 0;
     this.lights.length = 0;
     this.stats.ms = performance.now() - t0;

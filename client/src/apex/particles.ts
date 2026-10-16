@@ -3,8 +3,8 @@
 import type { V3 } from "./math.ts";
 import { MAT, rgb, type ApexRenderer } from "./renderer.ts";
 
-export type FxKind = "fire" | "smoke" | "sparks" | "magic" | "dust" | "splash" | "flash" | "hit";
-export const FX_KINDS: FxKind[] = ["fire", "smoke", "sparks", "magic", "dust", "splash", "flash", "hit"];
+export type FxKind = "fire" | "smoke" | "sparks" | "magic" | "dust" | "splash" | "flash" | "hit" | "blood";
+export const FX_KINDS: FxKind[] = ["fire", "smoke", "sparks", "magic", "dust", "splash", "flash", "hit", "blood"];
 
 interface P {
   x: number; y: number; z: number;
@@ -40,6 +40,7 @@ const SPECS: Record<FxKind, Spec> = {
   dust: { life: [0.6, 1.1], speed: [1.5, 4], up: 0.5, spread: 1, size: [0.5, 0.9], grow: 2.2, c0: "#b9a789", c1: "#d8cdb8", alpha: 0.5, grav: 0, drag: 2, neon: false },
   splash: { life: [0.45, 0.85], speed: [5, 11], up: 1, spread: 0.55, size: [0.3, 0.5], grow: 0.3, c0: "#e8f6ff", c1: "#7fc4f0", alpha: 0.8, grav: 38, drag: 0.3, neon: false },
   flash: { life: [0.08, 0.14], speed: [0, 1], up: 0, spread: 1, size: [1.4, 2.2], grow: 0.4, c0: "#fff7c2", c1: "#ffb347", alpha: 1, grav: 0, drag: 1, neon: true },
+  blood: { life: [0.35, 0.7], speed: [4, 10], up: 0.5, spread: 1, size: [0.2, 0.38], grow: -0.2, c0: "#e0252d", c1: "#7a0a10", alpha: 1, grav: 34, drag: 0.4, neon: false },
   hit: { life: [0.25, 0.5], speed: [6, 14], up: 0.3, spread: 1, size: [0.15, 0.28], grow: 0, c0: "#ffffff", c1: "#ffd27a", alpha: 1, grav: 25, drag: 0.5, neon: true },
 };
 
@@ -88,7 +89,7 @@ export class Particles {
   update(dt: number) {
     // ciągłe źródła
     for (const e of this.emitters.values()) {
-      const rate = ({ fire: 26, smoke: 9, sparks: 14, magic: 18, dust: 8, splash: 18, flash: 0, hit: 0 })[e.kind] * Math.min(2.5, 0.5 + (e.size[0] * e.size[2]) / 6);
+      const rate = ({ fire: 26, smoke: 9, sparks: 14, magic: 18, dust: 8, splash: 18, flash: 0, hit: 0, blood: 0 })[e.kind] * Math.min(2.5, 0.5 + (e.size[0] * e.size[2]) / 6);
       e.acc += rate * dt;
       while (e.acc >= 1) {
         e.acc -= 1;

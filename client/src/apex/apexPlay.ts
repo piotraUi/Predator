@@ -6,6 +6,8 @@ import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Rid
 import { CollisionWorld, PLAYER_HEIGHT, PLAYER_RADIUS, rayBox, raycastParts, rotationMatrix, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
 import { WeatherAudio } from "./weatherAudio.ts";
 import { buildGrass, scatterTrees } from "./nature.ts";
+import { Gore, surfaceNormal } from "./gore.ts";
+import { drawViewmodel } from "./viewmodel.ts";
 import { findSkybox } from "../../../shared/skybox.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
 import type { ActionAnim, Anim, Atmosphere, WeatherId, Avatar, ChatMsg, NetPlayer, Part, ToolDef } from "../../../shared/types.ts";
@@ -228,6 +230,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const body: Body = { ...init.spawn, vx: 0, vy: 0, vz: 0, onGround: false };
   const mePlayer = init.players.find((p) => p.sid === init.you);
   const local = new ApexAvatar(rend, me.avatar);
+  const groundAt = (x: number, z: number) => {
+    const g = raycastParts(collisions, x, local.y + 8, z, 0, -1, 0, 120);
+    return g ? local.y + 8 - g.dist : local.y - 6;
+  };
+  local.groundAt = groundAt;
   const toolsById = new Map<string, ToolDef>(init.world.tools.map((t) => [t.id, t]));
   const toolDefs = (ids: string[]) => ids.map((id) => toolsById.get(id)).filter((t): t is ToolDef => !!t);
   const charFor = (id: string | null) => charsById.get(id ?? "") ?? charsById.get(init.world.playerCharacter ?? "") ?? null;
@@ -379,6 +386,10 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const addRemote = (p: NetPlayer) => {
     if (p.sid === init.you || remotes.has(p.sid)) return;
     const av = new ApexAvatar(rend, p.avatar as Avatar);
+    av.groundAt = (x, z) => {
+      const g = raycastParts(collisions, x, av.y + 8, z, 0, -1, 0, 120);
+      return g ? av.y + 8 - g.dist : av.y - 6;
+    };
     applyLook(av, p.avatar as Avatar, p.character);
     av.x = p.x; av.y = p.y; av.z = p.z; av.ry = p.ry;
     av.setTool(p.tool ? (toolsById.get(p.tool) ?? null) : null);
@@ -454,6 +465,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     hpText.textContent = String(Math.round(hp));
     if (hp < lastHp) vox?.hurt();
     if (hp < lastHp && hp > 0) {
+      bleed(body.x, body.y, body.z, 5);
       local.flash();
       hurt.classList.remove("on");
       void hurt.offsetWidth;
@@ -523,6 +535,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   topbar.insertBefore(h("button", { class: "hud-btn", onClick: () => emoteMenu.classList.toggle("hidden"), title: "Emotki" }, "😀"), topbar.querySelector(".hud-title"));
   const crosshair = h("div", { class: "fp-cross hidden" });
   const lastUse = new Map<string, number>();
+  let lastUseAt = 0;
   const actionBtn = h("div", { class: "action-btn hidden" }, "⚔️");
   actionBtn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
@@ -674,6 +687,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (!fromServer) r.send("died");
     hotbar.select(null);
     setHp(0, maxHp);
+    gore.pool(groundUnder(body.x, body.y, body.z) ?? [body.x, body.y, body.z]);
     setTimeout(() => {
       if (disposed) return;
       Object.assign(body, spawnPoint(), { vx: 0, vy: 0, vz: 0 });
@@ -694,8 +708,42 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const tracers: { from: V3; to: V3; color: string; until: number }[] = [];
   /** błyski strzałów: krótkie światło w lufie i w miejscu trafienia */
   const flashes: { pos: V3; until: number; color: [number, number, number] }[] = [];
+  const gore = new Gore(rend);
+  /** miejsce pod punktem: wysokość ziemi (raycast w dół) do plam krwi */
+  const groundUnder = (x: number, y: number, z: number): V3 | null => {
+    const g = raycastParts(collisions, x, y + 1, z, 0, -1, 0, 40);
+    return g ? [x, y + 1 - g.dist, z] : null;
+  };
+  const bleed = (x: number, y: number, z: number, n = 8) => {
+    fx.burst("blood", [x, y + 3, z], n);
+    const g = groundUnder(x, y, z);
+    if (g) gore.splat([g[0] + (Math.random() - 0.5) * 2.5, g[1], g[2] + (Math.random() - 0.5) * 2.5]);
+  };
   const addTracer = (from: V3, to: V3, color = "#ffe066") => {
     tracers.push({ from, to, color, until: performance.now() + 110 });
+    {
+      // ślad po kuli w miejscu trafienia w klocek / teren albo krew, gdy trafiony został gracz
+      const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const dir: V3 = [dx / len, dy / len, dz / len];
+      let hitPlayer = false;
+      for (const rm of remotes.values()) {
+        if (rm.av.anim === "dead") continue;
+        const t = rayBox(from[0], from[1], from[2], dir[0], dir[1], dir[2], rm.av.x - PLAYER_RADIUS, rm.av.y, rm.av.z - PLAYER_RADIUS, rm.av.x + PLAYER_RADIUS, rm.av.y + PLAYER_HEIGHT, rm.av.z + PLAYER_RADIUS);
+        if (t !== null && Math.abs(t - len) < 1.2) {
+          hitPlayer = true;
+          bleed(rm.av.x, rm.av.y, rm.av.z, 7);
+        }
+      }
+      if (!hitPlayer) {
+        const w = raycastParts(collisions, from[0], from[1], from[2], dir[0], dir[1], dir[2], len + 1);
+        if (w && Math.abs(w.dist - len) < 1) {
+          const hp: V3 = [from[0] + dir[0] * w.dist, from[1] + dir[1] * w.dist, from[2] + dir[2] * w.dist];
+          const isT = w.part.id === "__terrain";
+          gore.bullet(hp, surfaceNormal(w.part, hp, dir, isT, isT ? terrain?.slopeAt(hp[0], hp[2]) : undefined));
+        }
+      }
+    }
     fx.burst("flash", from, 2);
     fx.burst("hit", to, 7);
     const c = rgb(color);
@@ -720,6 +768,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const now = performance.now();
     if (now - (lastUse.get(def.id) ?? 0) < def.cooldown * 1000) return;
     lastUse.set(def.id, now);
+    lastUseAt = now;
     hotbar.cooldown(def.id, def.cooldown);
     const dir = rend.ray(sx / wrap.clientWidth, sy / wrap.clientHeight, eye);
     const aim = aimPoint(dir, def.range);
@@ -846,6 +895,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (!rm) return;
     setRemoteHp(rm, m.hp, m.max);
     if (m.hp > 0) rm.av.flash();
+    else gore.pool(groundUnder(rm.av.x, rm.av.y, rm.av.z) ?? [rm.av.x, rm.av.y, rm.av.z]);
   });
   r.onMessage("inv", (ids: string[]) => hotbar.set(toolDefs(ids)));
   r.onMessage("picked", (id: string) => {
@@ -1304,6 +1354,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     fx.draw(rend);
     vox?.draw();
     local.draw();
+    if (fp && !dead && !myRide && !vox) drawViewmodel(rend, { eye, dir, tool: hotbar.current ?? null, arm: local.armColor(), time: rend.time, moving, sinceUse: (now - lastUseAt) / 1000 });
     for (const rm of remotes.values()) rm.av.draw();
     for (const n of npcs.values()) if (rend.inView(n.x, n.y + 4 * n.scale, n.z, 8 * n.scale, TIERS[gov.tier].drawDist * 0.14)) n.draw();
     rend.render({ eye, target, fov: ROBLOX_FOV, near: fp ? 0.05 : 0.2, far: 2000 });

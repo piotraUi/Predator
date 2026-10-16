@@ -11,6 +11,8 @@ import { Wear } from "./wear.ts";
 import { apply3, mul3, rotX, rotY, rotZ, type V3 } from "./math.ts";
 import { rgb, type ApexRenderer } from "./renderer.ts";
 import { cachedToolShape, drawTool } from "./toolModel.ts";
+import { Ragdoll, type Piece } from "./ragdoll.ts";
+import { GlbAnimator, pickClip } from "./glbAnim.ts";
 
 const HOLD = Math.PI / 2;
 const ACTION_TIME: Record<ActionAnim, number> = { swing: 0.35, shoot: 0.18, use: 0.6 };
@@ -113,7 +115,8 @@ export class ApexAvatar {
       const loading = loadGlb(def.data).then((glb): SharedModel => {
         const uid = ++glbUid;
         const tex = glb.prims.map((p, i) => {
-          this.r.registerMesh(`glb:${uid}:${i}`, p.mesh);
+          if (p.skinned) this.r.registerSkinMesh(`glbs:${uid}:${i}`, p.mesh, p.skinned.joints, p.skinned.weights);
+          else this.r.registerMesh(`glb:${uid}:${i}`, p.mesh);
           return p.image ? this.r.makeTexture(p.image) : null;
         });
         return { uid, glb, tex, refs: 0 };
@@ -128,6 +131,7 @@ export class ApexAvatar {
       m.refs++;
       this.model = m;
       this.modelKey = key;
+      this.animator = m.glb.rig && m.glb.rig.clips.length + m.glb.rig.joints.length > 0 ? new GlbAnimator(m.glb) : null;
     }).catch((e) => console.warn("Nie udało się wczytać modelu postaci", e));
   }
 
@@ -135,9 +139,11 @@ export class ApexAvatar {
     const m = this.model;
     if (!m) return;
     this.model = null;
+    this.animator = null;
     if (--m.refs > 0) return;
     // ostatnia postać z tym modelem zniknęła - zwalniamy siatki i tekstury
     this.r.deleteMeshes(`glb:${m.uid}:`);
+    this.r.deleteSkinMeshes(`glbs:${m.uid}:`);
     for (const t of m.tex) if (t) this.r.deleteTexture(t);
     sharedModels.get(this.r)?.delete(this.modelKey);
   }
@@ -200,6 +206,11 @@ export class ApexAvatar {
     return [f.pos[0] + t[0], f.pos[1] + t[1], f.pos[2] + t[2]];
   }
 
+  /** kolor skóry rąk (do rąk widocznych z pierwszej osoby) */
+  armColor(): Rgb {
+    return this.colors.arms;
+  }
+
   /** punkt nad głową do nazwy gracza */
   headPoint(): V3 {
     return [this.x, this.y + 6.1 * this.scale, this.z];
@@ -214,8 +225,22 @@ export class ApexAvatar {
     this.freeModel();
   }
 
+  /** wysokość ziemi pod punktem (do ragdolla); brak = ragdoll wyłączony */
+  groundAt: ((x: number, z: number) => number) | null = null;
+  private rag: Ragdoll | null = null;
+  /** animacje szkieletowe modelu .glb tej postaci (null = model bez szkieletu) */
+  private animator: GlbAnimator | null = null;
+
   update(dt: number) {
     this.t += dt;
+    if (this.anim === "dead" && this.groundAt) {
+      this.rag ??= new Ragdoll([this.x, this.y, this.z], this.ry + this.bodyRot, this.scale, this.groundAt);
+      this.rag.step(dt);
+    } else this.rag = null;
+    if (this.animator) {
+      this.animator.play(pickClip(this.animator.rig, this.anim));
+      this.animator.update(dt, this.anim === "walk" ? 1.15 : 1);
+    }
     const L = this.limbs;
     const ease = (l: Limb, rx: number, rz = 0, k = 14) => {
       const f = Math.min(1, dt * k);
@@ -331,7 +356,7 @@ export class ApexAvatar {
     const c = this.colors;
     const C = this.cloth;
     const hidden = !!(this.modelDef?.hideBody && this.model);
-    const hr = mul3(root, this.headRot);
+    let hr = mul3(root, this.headRot);
     const frames: Record<Joint, { rot: number[]; pos: V3 }> = {
       head: { rot: hr, pos: place(0, 4.6, 0) },
       torso: { rot: root, pos: place(0, 3, 0) },
@@ -340,8 +365,14 @@ export class ApexAvatar {
       leftLeg: { rot: root, pos: [0, 0, 0] },
       rightLeg: { rot: root, pos: [0, 0, 0] },
     };
+    const rag = this.rag;
+    if (rag) {
+      frames.torso = { rot: rag.pieces.torso.R, pos: rag.pieces.torso.p };
+      frames.head = { rot: rag.pieces.head.R, pos: rag.pieces.head.p };
+      hr = rag.pieces.head.R;
+    }
     if (!hidden) {
-      r.drawBox("box", root, frames.torso.pos, [2 * s, 2 * s, s], tint(C.torso ? [1, 1, 1] : c.torso), 1, 0, C.torso, -2);
+      r.drawBox("box", frames.torso.rot, frames.torso.pos, [2 * s, 2 * s, s], tint(C.torso ? [1, 1, 1] : c.torso), 1, 0, C.torso, -2);
       r.drawBox("box", hr, frames.head.pos, [1.2 * s, 1.2 * s, 1.2 * s], tint(c.head));
       if (this.face) {
         const fo = apply3(hr, [0, 0, -0.61 * s]);
@@ -351,16 +382,21 @@ export class ApexAvatar {
     for (const [k, col, j] of [["la", c.arms, "leftArm"], ["ra", c.arms, "rightArm"], ["ll", c.legs, "leftLeg"], ["rl", c.legs, "rightLeg"]] as const) {
       const l = this.limbs[k];
       const lr = euler(l.rx, l.ry, l.rz);
-      const rot = mul3(root, lr);
+      let rot = mul3(root, lr);
       // środek kończyny: staw + obrót * (0, -1, 0)
       const off: V3 = [lr[1] * -1, lr[4] * -1, lr[7] * -1];
       const ct = k === "la" || k === "ra" ? C.arms : C.legs;
-      const pos = place(l.x + off[0], l.y + off[1], off[2]);
+      let pos = place(l.x + off[0], l.y + off[1], off[2]);
+      if (rag) {
+        const pc = rag.pieces[k as Piece];
+        rot = pc.R;
+        pos = pc.p;
+      }
       frames[j] = { rot, pos };
       if (!hidden) r.drawBox("box", rot, pos, [s, 2 * s, s], tint(ct ? [1, 1, 1] : col), 1, 0, ct, -3);
     }
     if (!hidden) {
-      this.wear?.draw(r, { headRot: hr, headPos: frames.head.pos, torsoRot: root, torsoPos: frames.torso.pos, s, tint, time: this.t });
+      this.wear?.draw(r, { headRot: hr, headPos: frames.head.pos, torsoRot: frames.torso.rot, torsoPos: frames.torso.pos, s, tint, time: this.t });
       for (const a of this.accessories) {
         const f = frames[a.joint];
         const lp = apply3(f.rot, [a.x * s, a.y * s, a.z * s]);
@@ -373,12 +409,34 @@ export class ApexAvatar {
       const mr = mul3(root, rotY(md.ry * DEG));
       const base = place(md.x, md.y, md.z);
       const k = md.scale * s;
+      const an = this.animator;
       mdl.glb.prims.forEach((p, i) => {
+        if (p.skinned && an) {
+          // siatka ze skórą: macierz modelu (obrót * skala, położenie) i macierze kości
+          const m = new Float32Array(16);
+          m[0] = mr[0] * k; m[1] = mr[3] * k; m[2] = mr[6] * k;
+          m[4] = mr[1] * k; m[5] = mr[4] * k; m[6] = mr[7] * k;
+          m[8] = mr[2] * k; m[9] = mr[5] * k; m[10] = mr[8] * k;
+          m[12] = base[0]; m[13] = base[1]; m[14] = base[2]; m[15] = 1;
+          r.drawSkinned(`glbs:${mdl.uid}:${i}`, an.joints, m, tint(p.color), p.alpha, mdl.tex[i]);
+          return;
+        }
+        if (an && !p.skinned) {
+          // sztywna część przyczepiona do (animowanego) węzła: świat węzła -> układ lewoskrętny
+          const W = an.world, o16 = p.node * 16;
+          const Z = (a: number) => a;
+          const w = [W[o16], W[o16 + 1], -W[o16 + 2], 0, W[o16 + 4], W[o16 + 5], -W[o16 + 6], 0, -W[o16 + 8], -W[o16 + 9], W[o16 + 10], 0, W[o16 + 12], W[o16 + 13], -W[o16 + 14], 1].map(Z);
+          const sx = Math.hypot(w[0], w[1], w[2]) || 1, sy = Math.hypot(w[4], w[5], w[6]) || 1, sz = Math.hypot(w[8], w[9], w[10]) || 1;
+          const rot = [w[0] / sx, w[4] / sy, w[8] / sz, w[1] / sx, w[5] / sy, w[9] / sz, w[2] / sx, w[6] / sy, w[10] / sz];
+          const o = apply3(mr, [w[12] * k, w[13] * k, w[14] * k]);
+          r.drawBox(`glb:${mdl.uid}:${i}`, mul3(mr, rot), [base[0] + o[0], base[1] + o[1], base[2] + o[2]], [sx * k, sy * k, sz * k], tint(p.color), p.alpha, 0, mdl.tex[i], -4);
+          return;
+        }
         const o = apply3(mr, [p.pos[0] * k, p.pos[1] * k, p.pos[2] * k]);
         r.drawBox(`glb:${mdl.uid}:${i}`, mul3(mr, p.rot), [base[0] + o[0], base[1] + o[1], base[2] + o[2]], [p.scale[0] * k, p.scale[1] * k, p.scale[2] * k], tint(p.color), p.alpha, 0, mdl.tex[i], -4);
       });
     }
-    if (this.tool) {
+    if (this.tool && !rag) {
       const f = this.toolFrame(this.ry);
       drawTool(r, cachedToolShape(this.tool), f.rot, f.pos, s, (c) => tint(c));
     }

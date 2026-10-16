@@ -5156,7 +5156,47 @@
   "skyColor": "#8ec8ff",
   "skybox": "day",
   "gravity": 196.2,
-  "tools": [],
+  "tools": [
+   {
+    "name": "Pistolet",
+    "type": "ranged",
+    "model": "pistol",
+    "color": "#2b2d31",
+    "damage": 15,
+    "range": 120,
+    "cooldown": 0.4,
+    "heal": 0,
+    "boost": 0,
+    "starter": true,
+    "id": "mvbghasi2df6q"
+   },
+   {
+    "name": "Karabin",
+    "type": "ranged",
+    "model": "rifle",
+    "color": "#3d4a2f",
+    "damage": 20,
+    "range": 250,
+    "cooldown": 0.25,
+    "heal": 0,
+    "boost": 0,
+    "starter": true,
+    "id": "mvbghasi3nakr"
+   },
+   {
+    "name": "Miecz",
+    "type": "melee",
+    "model": "sword",
+    "color": "#c9d1d9",
+    "damage": 25,
+    "range": 7,
+    "cooldown": 0.6,
+    "heal": 0,
+    "boost": 0,
+    "starter": true,
+    "id": "mvbghasi4n1u2"
+   }
+  ],
   "pvp": false,
   "characters": [],
   "animations": [],

@@ -1,5 +1,6 @@
 // Apex: prosty czytnik modeli glTF / GLB (postacie ze Studia): siatki, przekształcenia węzłów, kolor i tekstura bazowa.
-// Bez szkieletów i animacji - model stoi w pozie z pliku. Dane przeliczane do układu lewoskrętnego (tak jak robi to Babylon).
+// Szkielet i animacje (skiny, JOINTS/WEIGHTS, kanały translation/rotation/scale) są wczytywane do `rig`; odtwarza je `glbAnim.ts`.
+// Dane przeliczane do układu lewoskrętnego (tak jak robi to Babylon).
 import type { Mesh } from "./geometry.ts";
 import type { V3 } from "./math.ts";
 
@@ -13,8 +14,28 @@ export interface GlbPrim {
   rot: number[];
   scale: V3;
   pos: V3;
+  /** indeks węzła glTF, do którego należy siatka (do animacji sztywnych części) */
+  node: number;
+  /** siatka ze skórą: wierzchołki w układzie glTF (bez przekształcenia węzła), przeliczane w shaderze przez kości */
+  skinned?: { joints: Float32Array; weights: Float32Array };
+}
+export interface GlbNodeInfo { parent: number; children: number[]; t: V3; r: [number, number, number, number]; s: V3 }
+export interface GlbClip {
+  name: string;
+  duration: number;
+  /** path: 0 = translation, 1 = rotation, 2 = scale */
+  channels: { node: number; path: 0 | 1 | 2; times: Float32Array; values: Float32Array; step: boolean; cubic: boolean }[];
+}
+export interface GlbRig {
+  nodes: GlbNodeInfo[];
+  roots: number[];
+  /** węzły-kości skóry i macierze odwrotne (16 liczb na kość, kolumnami) */
+  joints: number[];
+  ibm: Float32Array;
+  clips: GlbClip[];
 }
 export interface GlbModel {
+  rig?: GlbRig;
   prims: GlbPrim[];
   /** obwiednia modelu (po przeliczeniu) */
   min: V3;
@@ -24,7 +45,9 @@ export interface GlbModel {
 interface Json {
   scene?: number;
   scenes?: { nodes?: number[] }[];
-  nodes?: { mesh?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }[];
+  nodes?: { name?: string; mesh?: number; skin?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }[];
+  skins?: { joints: number[]; inverseBindMatrices?: number; skeleton?: number }[];
+  animations?: { name?: string; samplers: { input: number; output: number; interpolation?: string }[]; channels: { sampler: number; target: { node?: number; path: string } }[] }[];
   meshes?: { primitives: { attributes: Record<string, number>; indices?: number; material?: number; mode?: number }[] }[];
   accessors?: { bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string; normalized?: boolean }[];
   bufferViews?: { buffer: number; byteOffset?: number; byteLength: number; byteStride?: number }[];
@@ -95,7 +118,7 @@ export async function loadGlb(dataUrl: string): Promise<GlbModel> {
   const accessor = (idx: number): Float32Array | Uint32Array => {
     const a = json.accessors![idx];
     const n = NCOMP[a.type];
-    const out = a.componentType === 5126 ? new Float32Array(a.count * n) : new Uint32Array(a.count * n);
+    const out = a.componentType === 5126 || a.normalized ? new Float32Array(a.count * n) : new Uint32Array(a.count * n);
     if (a.bufferView === undefined) return out;
     const bv = json.bufferViews![a.bufferView];
     const buf = buffers[bv.buffer];
@@ -197,12 +220,23 @@ export async function loadGlb(dataUrl: string): Promise<GlbModel> {
             verts[i * 8 + 3] = acc[i * 3] / l; verts[i * 8 + 4] = acc[i * 3 + 1] / l; verts[i * 8 + 5] = acc[i * 3 + 2] / l;
           }
         }
+        const skinDef = n.skin !== undefined ? json.skins?.[n.skin] : undefined;
+        let skinned: GlbPrim["skinned"];
+        if (skinDef && pr.attributes.JOINTS_0 !== undefined && pr.attributes.WEIGHTS_0 !== undefined) {
+          const J = accessor(pr.attributes.JOINTS_0), Wt = accessor(pr.attributes.WEIGHTS_0);
+          skinned = { joints: Float32Array.from(J), weights: Float32Array.from(Wt) };
+          // wierzchołki zostają w układzie glTF (kości działają w nim); z-flip robi shader, a trójkąty są już odwrócone
+          for (let i = 0; i < count; i++) {
+            verts[i * 8] = P[i * 3]; verts[i * 8 + 1] = P[i * 3 + 1]; verts[i * 8 + 2] = P[i * 3 + 2];
+            if (N) { verts[i * 8 + 3] = N[i * 3]; verts[i * 8 + 4] = N[i * 3 + 1]; verts[i * 8 + 5] = N[i * 3 + 2]; }
+          }
+        }
         const m = pr.material !== undefined ? json.materials?.[pr.material] : undefined;
         const pbr = m?.pbrMetallicRoughness;
         const f = pbr?.baseColorFactor ?? [1, 1, 1, 1];
         const texIdx = pbr?.baseColorTexture ? json.textures?.[pbr.baseColorTexture.index]?.source : undefined;
         const img = texIdx !== undefined && UV ? await image(texIdx) : null;
-        prims.push({ mesh: { verts, index: index as never }, color: [f[0], f[1], f[2]], alpha: m?.alphaMode === "BLEND" ? f[3] : 1, image: img, rot, scale: [sx, sy, sz], pos: [w[12], w[13], w[14]] });
+        prims.push({ mesh: { verts, index: index as never }, color: [f[0], f[1], f[2]], alpha: m?.alphaMode === "BLEND" ? f[3] : 1, image: img, rot, scale: [sx, sy, sz], pos: [w[12], w[13], w[14]], node: ni, skinned });
         // obwiednia (z grubsza: wierzchołki po przekształceniu)
         for (let i = 0; i < count; i += Math.max(1, Math.floor(count / 400))) {
           const x = verts[i * 8] * sx, y = verts[i * 8 + 1] * sy, z = verts[i * 8 + 2] * sz;
@@ -215,6 +249,53 @@ export async function loadGlb(dataUrl: string): Promise<GlbModel> {
     for (const c of n.children ?? []) await visit(c, world);
   };
   const id = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-  for (const ni of json.scenes?.[json.scene ?? 0]?.nodes ?? []) await visit(ni, id);
-  return { prims, min, max };
+  const roots = json.scenes?.[json.scene ?? 0]?.nodes ?? [];
+  for (const ni of roots) await visit(ni, id);
+  // szkielet i animacje (tylko gdy plik ma skórę albo animacje)
+  let rig: GlbRig | undefined;
+  if ((json.skins?.length || json.animations?.length) && json.nodes) {
+    const nodes: GlbNodeInfo[] = json.nodes.map((n) => {
+      let t: V3 = [0, 0, 0], r: GlbNodeInfo["r"] = [0, 0, 0, 1], sc: V3 = [1, 1, 1];
+      if (n.matrix) {
+        const m = n.matrix;
+        t = [m[12], m[13], m[14]];
+        sc = [Math.hypot(m[0], m[1], m[2]) || 1, Math.hypot(m[4], m[5], m[6]) || 1, Math.hypot(m[8], m[9], m[10]) || 1];
+        const r00 = m[0] / sc[0], r10 = m[1] / sc[0], r20 = m[2] / sc[0], r01 = m[4] / sc[1], r11 = m[5] / sc[1], r21 = m[6] / sc[1], r02 = m[8] / sc[2], r12 = m[9] / sc[2], r22 = m[10] / sc[2];
+        const tr = r00 + r11 + r22;
+        if (tr > 0) { const q = Math.sqrt(tr + 1) * 2; r = [(r21 - r12) / q, (r02 - r20) / q, (r10 - r01) / q, q / 4]; }
+        else if (r00 > r11 && r00 > r22) { const q = Math.sqrt(1 + r00 - r11 - r22) * 2; r = [q / 4, (r01 + r10) / q, (r02 + r20) / q, (r21 - r12) / q]; }
+        else if (r11 > r22) { const q = Math.sqrt(1 + r11 - r00 - r22) * 2; r = [(r01 + r10) / q, q / 4, (r12 + r21) / q, (r02 - r20) / q]; }
+        else { const q = Math.sqrt(1 + r22 - r00 - r11) * 2; r = [(r02 + r20) / q, (r12 + r21) / q, q / 4, (r10 - r01) / q]; }
+      } else {
+        if (n.translation) t = [n.translation[0], n.translation[1], n.translation[2]];
+        if (n.rotation) r = [n.rotation[0], n.rotation[1], n.rotation[2], n.rotation[3]];
+        if (n.scale) sc = [n.scale[0], n.scale[1], n.scale[2]];
+      }
+      return { parent: -1, children: n.children ?? [], t, r, s: sc };
+    });
+    nodes.forEach((n, i) => n.children.forEach((c) => (nodes[c].parent = i)));
+    const skin = json.skins?.[0];
+    const clips: GlbClip[] = (json.animations ?? []).map((a, i) => {
+      let duration = 0;
+      const channels: GlbClip["channels"] = [];
+      for (const ch of a.channels) {
+        const path = ({ translation: 0, rotation: 1, scale: 2 } as Record<string, 0 | 1 | 2>)[ch.target.path];
+        if (path === undefined || ch.target.node === undefined) continue;
+        const sm = a.samplers[ch.sampler];
+        const times = accessor(sm.input) as Float32Array;
+        const values = accessor(sm.output) as Float32Array;
+        if (times.length) duration = Math.max(duration, times[times.length - 1]);
+        channels.push({ node: ch.target.node, path, times, values, step: sm.interpolation === "STEP", cubic: sm.interpolation === "CUBICSPLINE" });
+      }
+      return { name: a.name ?? "anim" + i, duration, channels };
+    });
+    rig = {
+      nodes, roots,
+      joints: skin?.joints ?? [],
+      ibm: skin?.inverseBindMatrices !== undefined ? (accessor(skin.inverseBindMatrices) as Float32Array) : new Float32Array((skin?.joints.length ?? 0) * 16),
+      clips,
+    };
+    if (skin && skin.inverseBindMatrices === undefined) for (let i = 0; i < skin.joints.length; i++) { rig.ibm[i * 16] = rig.ibm[i * 16 + 5] = rig.ibm[i * 16 + 10] = rig.ibm[i * 16 + 15] = 1; }
+  }
+  return { prims, min, max, rig };
 }
