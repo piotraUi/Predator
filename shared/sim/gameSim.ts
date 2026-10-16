@@ -9,8 +9,8 @@ import { PlayerDataStore, type GameStorage } from "./playerData.ts";
 import { CollisionWorld, rayBox, raycastParts, waterAt } from "../physics.ts";
 import { LuaEngine, type ScriptHost } from "../scripting/lua.ts";
 import { findItem } from "../catalog.ts";
-import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WorldData } from "../types.ts";
-import { EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, type ShopEmote } from "../types.ts";
+import type { ActionAnim, Anim, Atmosphere, Avatar, ChatMsg, NetPlayer, Part, ToolDef, WeatherId, WorldData } from "../types.ts";
+import { DEFAULT_ATMOSPHERE, EMOTES, MAX_HP, MAX_INVENTORY, SHOP_EMOTES, WEATHERS, type ShopEmote } from "../types.ts";
 
 import { MAX_LABEL } from "../world.ts";
 import { clientGuiAction, GuiRuntime, guiLuaFunctions, roomLuaFunctions, type RoomInfo } from "../gui.ts";
@@ -138,6 +138,9 @@ export class GameSim {
   readonly shop: GameShop;
   /** gotowe niebo (skybox) - pusty = zwykły kolor */
   private skybox: string;
+  /** pora dnia i pogoda (Apex): godzina liczona od chwili `atmAt` */
+  private atm: Required<Atmosphere> & { has: boolean };
+  private atmAt = Date.now();
   /** GUI graczy (które okienka są otwarte) */
   readonly gui: GuiRuntime;
   /** świat z bloków (Minecraft) */
@@ -158,6 +161,7 @@ export class GameSim {
     this.shop = new GameShop(data.products ?? [], (sid, type, msg) => this.t.send(sid, type, msg));
     this.sky = data.skyColor;
     this.skybox = data.skybox ?? "";
+    this.atm = { ...DEFAULT_ATMOSPHERE, ...(data.atmosphere ?? {}), has: !!data.atmosphere };
     this.gui = new GuiRuntime(data.guis ?? [], (sid, msg) => this.t.send(sid, "gui", msg));
     if (data.blocks)
       this.vox = new VoxelGame(data.blocks, {
@@ -234,6 +238,7 @@ export class GameSim {
         ...publicData,
         skyColor: this.sky,
         skybox: this.skybox || undefined,
+        ...(this.atm.has ? { atmosphere: this.atmosphereNow() } : {}),
         parts: [...this.partsById.values()],
         ...(this.vox ? { blocks: { ...this.vox.cfg, edits: this.vox.editsForJoin() } } : {}),
       },
@@ -1235,6 +1240,33 @@ export class GameSim {
         if (target === undefined || target === null || target === "") this.skybox = id;
         to(target, "skybox", id);
       },
+      // pora dnia: setHour(18.5) ustawia godzinę (0-24), setDayCycle(300) = doba trwa 300 s (0 = czas stoi), getHour()
+      setHour: (h) => {
+        if (typeof h !== "number" || !Number.isFinite(h)) return;
+        this.atm.hour = ((h % 24) + 24) % 24;
+        this.atmAt = Date.now();
+        this.sendAtmosphere();
+      },
+      setDayCycle: (secs) => {
+        const v = typeof secs === "number" && secs > 0 ? Math.min(7200, Math.max(20, secs)) : 0;
+        this.atm.hour = this.hourNow();
+        this.atmAt = Date.now();
+        this.atm.cycle = v;
+        this.sendAtmosphere();
+      },
+      getHour: () => Math.round(this.hourNow() * 100) / 100,
+      // pogoda: setWeather("rain") - clear, rain, snow, storm; setWind(0..1)
+      setWeather: (w) => {
+        if (typeof w !== "string" || !(WEATHERS as readonly string[]).includes(w)) return this.log(`setWeather: pogoda to ${WEATHERS.join(", ")}`, true);
+        this.atm.weather = w as WeatherId;
+        this.sendAtmosphere();
+      },
+      getWeather: () => this.atm.weather,
+      setWind: (v) => {
+        if (typeof v !== "number" || !Number.isFinite(v)) return;
+        this.atm.wind = Math.min(1, Math.max(0, v));
+        this.sendAtmosphere();
+      },
       // latarka mruga (horror): flicker(player, sekundy) albo flicker(nil, sekundy) dla wszystkich
       flicker: (target, secs) => to(target, "flicker", typeof secs === "number" ? Math.min(10, Math.max(0.1, secs)) : 1),
       setSkyFor: (sid, color) => {
@@ -1247,6 +1279,21 @@ export class GameSim {
         }),
     });
     for (const s of scripts) this.lua.runScript(s.name, s.source);
+  }
+
+  /** aktualna godzina (0-24) */
+  private hourNow() {
+    const a = this.atm;
+    if (!a.cycle) return a.hour;
+    return (((a.hour + ((Date.now() - this.atmAt) / 1000 / a.cycle) * 24) % 24) + 24) % 24;
+  }
+  private atmosphereNow(): Atmosphere {
+    const { has: _h, ...a } = this.atm;
+    return { ...a, hour: this.hourNow() };
+  }
+  private sendAtmosphere() {
+    this.atm.has = true;
+    this.t.broadcast("atmosphere", this.atmosphereNow());
   }
 
   private log(text: string, error: boolean) {

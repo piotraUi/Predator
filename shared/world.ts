@@ -26,9 +26,11 @@ import type {
   WorldData,
   WorldScript,
   WorldLight,
+  Atmosphere,
+  WeatherId,
   WorldSound,
 } from "./types.ts";
-import { PART_EMITTERS, PART_TEXTURES } from "./types.ts";
+import { PART_EMITTERS, PART_TEXTURES, WEATHERS } from "./types.ts";
 import { findGenre, VEHICLE_TYPES, type VehicleType, JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
 
 export const MAX_PARTS = 5000;
@@ -505,8 +507,8 @@ export const MAX_SOUND_CHARS = 4_200_000;
 const SOUND_URL_RE = /^(data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+|\/game-assets\/[A-Za-z0-9_./-]+)$/;
 
 /** dźwięki, muzyka i światło gry 3D */
-export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, "sounds" | "music" | "light"> {
-  const out: Pick<WorldData, "sounds" | "music" | "light"> = {};
+export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, "sounds" | "music" | "light" | "atmosphere"> {
+  const out: Pick<WorldData, "sounds" | "music" | "light" | "atmosphere"> = {};
   const sounds: WorldSound[] = [];
   let total = 0;
   for (const raw of Array.isArray(w.sounds) ? w.sounds.slice(0, MAX_SOUNDS) : []) {
@@ -527,5 +529,19 @@ export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, 
     if (l.flicker === true && light.flashlight) light.flicker = true;
     if (light.brightness !== 1 || light.fog || light.flashlight) out.light = light;
   }
+  const atm = sanitizeAtmosphere(w.atmosphere);
+  if (atm) out.atmosphere = atm;
   return out;
+}
+
+/** pora dnia i pogoda: tylko to, co różni się od domyślnych wartości */
+export function sanitizeAtmosphere(raw: unknown): Atmosphere | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const a = raw as Record<string, unknown>;
+  const out: Atmosphere = {};
+  if (typeof a.hour === "number" && Number.isFinite(a.hour)) out.hour = num(a.hour, 0, 24, 12);
+  if (typeof a.cycle === "number" && a.cycle > 0) out.cycle = num(a.cycle, 20, 7200, 600);
+  if (typeof a.weather === "string" && (WEATHERS as readonly string[]).includes(a.weather) && a.weather !== "clear") out.weather = a.weather as WeatherId;
+  if (typeof a.wind === "number") out.wind = num(a.wind, 0, 1, 0.15);
+  return Object.keys(out).length ? out : undefined;
 }

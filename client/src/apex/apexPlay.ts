@@ -4,9 +4,10 @@
 import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride, type RideHost } from "../game/vehicles.ts";
 import { CollisionWorld, PLAYER_HEIGHT, PLAYER_RADIUS, rayBox, raycastParts, rotationMatrix, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
+import { WeatherAudio } from "./weatherAudio.ts";
 import { findSkybox } from "../../../shared/skybox.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
-import type { ActionAnim, Anim, Avatar, ChatMsg, NetPlayer, Part, ToolDef } from "../../../shared/types.ts";
+import type { ActionAnim, Anim, Atmosphere, WeatherId, Avatar, ChatMsg, NetPlayer, Part, ToolDef } from "../../../shared/types.ts";
 import { DEFAULT_LIGHT, EMOTES, FREE_EMOTES, SHOP_EMOTES, type Emote } from "../../../shared/types.ts";
 import { Input } from "../engine/input.ts";
 import { chatBox } from "../game/chatBox.ts";
@@ -164,6 +165,22 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const setSkybox = (id: string | null | undefined) => rend.setSky(skyColor, findSkybox(id));
   setSkybox(init.world.skybox);
   rend.setLight(light.brightness, light.fog);
+  // pora dnia i pogoda: serwer podaje godzinę, my liczymy upływ czasu sami
+  const atm = { on: false, hour: 12, cycle: 0, weather: "clear" as WeatherId, wind: 0.15, t0: performance.now() };
+  const setAtm = (a: Atmosphere | undefined) => {
+    if (!a) return;
+    atm.on = true;
+    atm.hour = a.hour ?? atm.hour;
+    atm.cycle = a.cycle ?? 0;
+    atm.weather = a.weather ?? "clear";
+    atm.wind = a.wind ?? 0.15;
+    atm.t0 = performance.now();
+  };
+  setAtm(init.world.atmosphere);
+  const weatherAudio = new WeatherAudio();
+  rend.onThunder = () => weatherAudio.thunder(rend.indoorLevel());
+  cleanups.push(() => weatherAudio.dispose());
+  let nextRoofCheck = 0;
   // mruganie latarki: samo z siebie co jakiś czas (light.flicker) albo na polecenie skryptu
   let nextFlicker = performance.now() + 8000 + Math.random() * 12000;
   let flickerUntil = 0;
@@ -878,6 +895,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   });
   r.onMessage("sky", (c: string) => ((skyColor = c), setSkybox(null)));
   r.onMessage("skybox", (id: string) => setSkybox(id || null));
+  r.onMessage("atmosphere", (a: Atmosphere) => setAtm(a));
   r.onMessage("light", (l: { brightness?: number; fog?: number }) => {
     if (typeof l.brightness === "number") light.brightness = l.brightness;
     if (typeof l.fog === "number") light.fog = l.fog;
@@ -938,6 +956,16 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     rend.time += dt;
+    if (atm.on) {
+      const hour = atm.cycle ? (((atm.hour + ((now - atm.t0) / 1000 / atm.cycle) * 24) % 24) + 24) % 24 : atm.hour;
+      rend.setAtmosphere({ hour, weather: atm.weather, wind: atm.wind });
+      if (now >= nextRoofCheck) {
+        nextRoofCheck = now + 250;
+        const roof = raycastParts(collisions, eye[0], eye[1], eye[2], 0, 1, 0, 60);
+        rend.setIndoor(roof ? 1 : 0);
+      }
+      weatherAudio.update(atm.weather, atm.wind, rend.indoorLevel());
+    }
     const nt = gov.sample(dt);
     if (nt) {
       applyQuality();

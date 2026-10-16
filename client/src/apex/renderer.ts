@@ -1,6 +1,8 @@
 // Apex: własny renderer WebGL2 Predatora. Klocki rysowane instancjami (jedna paczka na kształt), cienie z mapy głębi
 // z filtrem PCF, niebo liczone w shaderze, mgła, woda, teren. Bez żadnych bibliotek.
 import { SKYBOXES, type SkyboxDef } from "../../../shared/skybox.ts";
+import type { WeatherId } from "../../../shared/types.ts";
+import { OVERCAST, skyAt } from "./atmosphere.ts";
 import { TERRAIN_MATERIALS, type TerrainGrid } from "../../../shared/terrain.ts";
 import type { Part, PartShape } from "../../../shared/types.ts";
 import { boxMesh, cylinderMesh, frustumMesh, hemiMesh, sphereMesh, torusMesh, wedgeMesh, type Mesh } from "./geometry.ts";
@@ -165,7 +167,7 @@ void main(){ vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2)); vP 
 const SKY_FS = `#version 300 es
 precision highp float;
 in vec2 vP; uniform mat4 uInvVP; uniform vec3 uCam; uniform vec3 uTop; uniform vec3 uHor; uniform vec3 uBot;
-uniform vec3 uSun; uniform vec4 uSunDisc; uniform float uStars; uniform vec4 uClouds; uniform float uTime;
+uniform vec3 uSun; uniform vec4 uSunDisc; uniform float uStars; uniform vec4 uClouds; uniform float uTime; uniform float uCover;
 out vec4 o;
 float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y); }
@@ -174,26 +176,74 @@ void main(){
   vec3 d = normalize(w.xyz / w.w - uCam);
   float t = d.y;
   vec3 c = t > 0.0 ? mix(uHor, uTop, pow(t, 0.55)) : mix(uHor, uBot, pow(-t, 0.45));
-  if (uStars > 0.5 && t > -0.05) {
+  if (uStars > 0.02 && t > -0.05) {
     // małe, migoczące gwiazdy: w każdej kratce nieba najwyżej jedna, w losowym miejscu
     vec2 sp = d.xz / (abs(d.y) + 0.35) * 70.0;
     vec2 id = floor(sp), f = fract(sp) - 0.5;
     float r = h21(id);
     vec2 o = (vec2(h21(id + 3.1), h21(id + 7.7)) - 0.5) * 0.6;
     float star = step(0.9, r) * smoothstep(0.075, 0.012, length(f - o)) * (0.55 + 0.45 * sin(uTime * 2.5 + r * 60.0));
-    c += vec3(star) * smoothstep(0.0, 0.2, t) * (0.6 + 0.4 * h21(id + 1.7));
+    c += vec3(star) * smoothstep(0.0, 0.2, t) * (0.6 + 0.4 * h21(id + 1.7)) * uStars;
   }
   float sd = dot(d, uSun);
-  if (uSunDisc.w > 0.5) {
-    c += uSunDisc.rgb * (smoothstep(0.9975, 0.9992, sd) * 1.4 + pow(max(sd,0.0), 24.0) * 0.28);
+  if (uSunDisc.w > 0.01) {
+    c += uSunDisc.rgb * uSunDisc.w * (smoothstep(0.9975, 0.9992, sd) * 1.4 + pow(max(sd,0.0), 24.0) * 0.28);
   }
-  if (uClouds.w > 0.5 && t > 0.02) {
+  if (uClouds.w > 0.02 && t > 0.02) {
     vec2 cp = d.xz / (t + 0.25) * 1.2 + vec2(uTime*0.012, 0.0);
     float n = vn(cp*2.0)*0.55 + vn(cp*4.3)*0.3 + vn(cp*9.0)*0.15;
-    float a = smoothstep(0.52, 0.78, n) * uClouds.w * smoothstep(0.02, 0.25, t);
+    float a = smoothstep(0.52 - 0.34 * uCover, 0.78 - 0.2 * uCover, n) * uClouds.w * smoothstep(0.02, 0.25, t);
     c = mix(c, uClouds.rgb, a);
   }
   o = vec4(c, 1.0);
+}`;
+
+const WEATHER_VS = `#version 300 es
+precision highp float;
+uniform mat4 uVP; uniform vec3 uCam; uniform float uTime; uniform vec2 uWind; uniform float uSnow; uniform vec2 uRes;
+out float vA;
+vec3 h3(float n){ return fract(sin(vec3(n*12.9898, n*78.233, n*37.719)) * 43758.5453); }
+void main(){
+  const float BOX = 70.0; const float H = 48.0;
+  bool snow = uSnow > 0.5;
+  int id = snow ? gl_VertexID : gl_VertexID / 6;
+  vec3 r = h3(float(id) + 1.0);
+  float fall = snow ? (2.2 + 1.6 * r.z) : (62.0 + 20.0 * r.z);
+  float y = mod(r.y * H - uTime * fall, H);
+  vec3 p = vec3(uCam.x + mod(r.x * BOX - uCam.x + BOX * 0.5, BOX) - BOX * 0.5, uCam.y - 10.0 + y, uCam.z + mod(r.z * BOX * 1.37 - uCam.z + BOX * 0.5, BOX) - BOX * 0.5);
+  float drift = snow ? 6.0 : 0.55;
+  p.xz += uWind * (snow ? (y * 0.25 + sin(uTime * 0.8 + r.x * 40.0) * 1.2) : (y - H * 0.5) * drift * 0.18);
+  float d = length(p - uCam);
+  vA = (1.0 - smoothstep(BOX * 0.35, BOX * 0.5, d)) * smoothstep(0.0, 2.0, y) * smoothstep(0.0, 1.5, H - y);
+  if (snow) {
+    vec4 c = uVP * vec4(p, 1.0);
+    gl_Position = c;
+    gl_PointSize = clamp(uRes.y * 0.0075 * (0.6 + r.z) / max(c.w * 0.12, 0.15), 1.5, 9.0);
+    return;
+  }
+  vec3 dir = normalize(vec3(uWind.x * 6.0, -fall, uWind.y * 6.0));
+  int k = gl_VertexID - id * 6;
+  int c = k == 0 ? 0 : k == 1 ? 1 : k == 2 ? 2 : k == 3 ? 2 : k == 4 ? 1 : 3;
+  float endF = float(c >> 1);
+  float side = float(c & 1) * 2.0 - 1.0;
+  vec4 a = uVP * vec4(p, 1.0);
+  vec4 b = uVP * vec4(p - dir * 1.5, 1.0);
+  vec4 q = endF > 0.5 ? b : a;
+  vec2 sa = a.xy / max(a.w, 0.01), sb = b.xy / max(b.w, 0.01);
+  vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+  vec2 dd = (sb - sa) * asp;
+  vec2 pr = length(dd) > 1e-5 ? normalize(vec2(-dd.y, dd.x)) / asp : vec2(0.0, 1.0);
+  q.xy += pr * side * (1.1 / uRes.y) * q.w * 2.0;
+  gl_Position = q;
+  vA *= 0.5 * (1.0 - endF * 0.7);
+}`;
+const WEATHER_FS = `#version 300 es
+precision highp float;
+in float vA; uniform float uSnow; uniform vec3 uCol; out vec4 o;
+void main(){
+  float a = vA;
+  if (uSnow > 0.5) { vec2 pc = gl_PointCoord - 0.5; a *= smoothstep(0.5, 0.2, length(pc)) * 0.9; o = vec4(vec3(1.0), a); }
+  else o = vec4(uCol, a);
 }`;
 
 const DECAL_VS = `#version 300 es
@@ -476,6 +526,20 @@ export class ApexRenderer {
   // otoczenie
   private sky = { top: [0.24, 0.56, 0.88] as number[], hor: [0.73, 0.88, 1] as number[], bot: [0.85, 0.92, 1] as number[], fog: [0.73, 0.88, 1] as number[], tint: [1, 1, 1] as number[], ground: [0.55, 0.55, 0.6] as number[], stars: 0, clouds: [1, 1, 1, 0] as number[], sunDisc: [1, 0.97, 0.8, 0] as number[], sunDir: norm3([0.4, 0.8, 0.35]) };
   private brightness = 1;
+  private fogE = 700;
+  private fogS = 250;
+  // --- pora dnia i pogoda ---
+  private atm: { hour: number; weather: WeatherId; wind: number } | null = null;
+  private cover = 0;
+  private flash = 0;
+  private nextBolt = 6;
+  private boltQueue: number[] = [];
+  private lastRender = 0;
+  /** 0 = na dworze, 1 = pod dachem (wygasza deszcz i śnieg) */
+  private indoor = 0;
+  private indoorGoal = 0;
+  /** piorun uderzył (do dźwięku grzmotu) */
+  onThunder: ((flash: number) => void) | null = null;
   private fogEnd = 700;
   private fogStart = 250;
   private shadowCenter: V3 = [0, 0, 0];
@@ -563,7 +627,7 @@ export class ApexRenderer {
     gl.uniformMatrix4fv(p.loc("uVP"), false, this.vp);
     gl.uniform3fv(p.loc("uCam"), eye);
     gl.uniform3fv(p.loc("uFogCol"), fogCol);
-    gl.uniform2f(p.loc("uFog"), this.fogStart, this.fogEnd);
+    gl.uniform2f(p.loc("uFog"), this.fogS, this.fogE);
     gl.activeTexture(gl.TEXTURE3);
     gl.bindTexture(gl.TEXTURE_2D, this.voxAtlas);
     gl.uniform1i(p.loc("uAtlas"), 3);
@@ -1121,6 +1185,90 @@ export class ApexRenderer {
   }
   private skyLight = 1;
 
+  /** godzina, pogoda i wiatr; null = zwykłe niebo ze skyboxa */
+  setAtmosphere(a: { hour: number; weather: WeatherId; wind: number } | null) {
+    this.atm = a ? { ...a } : null;
+    if (!a) this.cover = 0;
+  }
+  /** czy gracz jest pod dachem (0-1) - wygasza deszcz i śnieg */
+  setIndoor(k: number) {
+    this.indoorGoal = k;
+  }
+  indoorLevel() {
+    return this.indoor;
+  }
+  getAtmosphere() {
+    return this.atm;
+  }
+
+  /** przelicza niebo, mgłę i błyski burzy na bieżącą klatkę */
+  private stepAtmosphere() {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.lastRender || now)) / 1000);
+    this.lastRender = now;
+    this.indoor += (this.indoorGoal - this.indoor) * Math.min(1, dt * 3);
+    const a = this.atm;
+    const goal = a ? OVERCAST[a.weather] : 0;
+    this.cover += (goal - this.cover) * Math.min(1, dt * 0.35);
+    // błyski burzy: dwa, trzy mrugnięcia pod rząd
+    this.flash = Math.max(0, this.flash - dt * 4);
+    if (a?.weather === "storm") {
+      this.nextBolt -= dt;
+      if (this.nextBolt <= 0) {
+        this.nextBolt = 5 + Math.random() * 11;
+        this.boltQueue = [0, 0.14 + Math.random() * 0.1, 0.4 + Math.random() * 0.3];
+        this.boltT = 0;
+      }
+    }
+    if (this.boltQueue.length) {
+      this.boltT += dt;
+      while (this.boltQueue.length && this.boltT >= this.boltQueue[0]) {
+        this.boltQueue.shift();
+        this.flash = 1;
+        this.onThunder?.(this.flash);
+      }
+    }
+    if (!a) return;
+    const k = skyAt(a.hour, this.cover);
+    const s = this.sky;
+    s.top = k.top; s.hor = k.hor; s.bot = k.bot; s.fog = k.fog; s.tint = k.tint; s.ground = k.ground;
+    s.stars = k.stars; s.clouds = k.clouds; s.sunDisc = k.sunDisc; s.sunDir = k.sunDir as V3;
+    this.skyLight = k.light;
+  }
+  private boltT = 0;
+
+  /** rysuje deszcz albo śnieg wokół kamery (cząsteczki liczone w shaderze) */
+  private drawWeather(eye: V3, fc: number[]) {
+    const a = this.atm;
+    if (!a || a.weather === "clear" || this.indoor > 0.97) return;
+    const gl = this.gl;
+    this.weatherProg ??= new Program(gl, WEATHER_VS, WEATHER_FS);
+    const w = this.weatherProg;
+    const snow = a.weather === "snow";
+    const dens = (this.q.shadowSize >= 2048 ? 1 : 0.5) * (1 - this.indoor);
+    const n = Math.floor((snow ? 5000 : a.weather === "storm" ? 9000 : 6000) * dens);
+    if (n < 50) return;
+    gl.useProgram(w.p);
+    gl.uniformMatrix4fv(w.loc("uVP"), false, this.vp);
+    gl.uniform3fv(w.loc("uCam"), eye);
+    gl.uniform1f(w.loc("uTime"), this.time);
+    const wind = a.wind * (a.weather === "storm" ? 1.6 : 1);
+    gl.uniform2f(w.loc("uWind"), wind * 0.55, wind * 0.25);
+    gl.uniform1f(w.loc("uSnow"), snow ? 1 : 0);
+    gl.uniform2f(w.loc("uRes"), this.width, this.height);
+    gl.uniform3f(w.loc("uCol"), Math.min(1, fc[0] * 0.6 + 0.45), Math.min(1, fc[1] * 0.6 + 0.5), Math.min(1, fc[2] * 0.6 + 0.58));
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+    gl.bindVertexArray(this.emptyVao);
+    if (snow) gl.drawArrays(gl.POINTS, 0, n);
+    else gl.drawArrays(gl.TRIANGLES, 0, n * 6);
+    this.stats.draws++;
+    gl.bindVertexArray(null);
+  }
+  private weatherProg: Program | null = null;
+
   // ---------- światła dynamiczne ----------
 
   private lights: DynLight[] = [];
@@ -1193,8 +1341,13 @@ export class ApexRenderer {
     lookAt(look.eye, look.target, [0, 1, 0], this.view);
     multiply(this.proj, this.view, this.vp);
     invert(this.vp, this.invVp);
+    this.stepAtmosphere();
+    const wCover = this.cover;
+    const fogK = 1 - 0.55 * wCover;
+    this.fogS = this.fogStart * fogK * fogK;
+    this.fogE = this.fogEnd * fogK;
     const sky = this.sky;
-    const light = this.brightness * this.skyLight;
+    const light = this.brightness * this.skyLight * (1 + this.flash * 1.6);
     const sun = sky.sunDir;
 
     // macierz światła (ortogonalna wokół gracza, przyciągnięta do pikseli mapy, żeby cień nie drżał)
@@ -1260,6 +1413,7 @@ export class ApexRenderer {
     gl.uniform4fv(sp.loc("uSunDisc"), sky.sunDisc);
     gl.uniform1f(sp.loc("uStars"), sky.stars);
     gl.uniform4fv(sp.loc("uClouds"), sky.clouds);
+    gl.uniform1f(sp.loc("uCover"), wCover);
     gl.uniform1f(sp.loc("uTime"), this.time);
     gl.bindVertexArray(null);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -1277,7 +1431,7 @@ export class ApexRenderer {
     gl.uniform3f(p.loc("uSky"), sc[0] * light, sc[1] * light, sc[2] * light);
     gl.uniform3f(p.loc("uGround"), sky.ground[0] * light, sky.ground[1] * light, sky.ground[2] * light);
     gl.uniform3fv(p.loc("uFogCol"), fc);
-    gl.uniform2f(p.loc("uFog"), this.fogStart, this.fogEnd);
+    gl.uniform2f(p.loc("uFog"), this.fogS, this.fogE);
     gl.uniform1f(p.loc("uTime"), this.time);
     gl.uniform1f(p.loc("uShadowOn"), this.shadows && light > 0.1 ? 1 : 0);
     gl.uniform1f(p.loc("uShadowTexel"), 1 / this.shadowSize);
@@ -1328,6 +1482,7 @@ export class ApexRenderer {
       }
       gl.activeTexture(gl.TEXTURE0);
     }
+    this.drawWeather(look.eye, fc);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     gl.enable(gl.CULL_FACE);

@@ -5,5 +5,5 @@ import { demoApexShowcase } from "../shared/demos/apexShowcase.ts";
 import { makeGameFile } from "../shared/gamefile.ts";
 
 const out = path.join(import.meta.dirname, "..", "games", "Apex Showcase.pgame");
-fs.writeFileSync(out, makeGameFile({ name: "Apex Showcase", description: "Mapa z trailera silnika Apex: wioska, jezioro, góra i kule z fizyką brył. Klawisz K kopie kule. Najlepiej w silniku Apex (Ustawienia → Silnik gier 3D).", maxPlayers: 30 }, demoApexShowcase()));
+fs.writeFileSync(out, makeGameFile({ name: "Apex Showcase", description: "Mapa z trailera silnika Apex: wioska, jezioro, góra i kule z fizyką brył. Klawisz K kopie kule. Czat: /deszcz /snieg /burza /slonce /noc /dzien.", maxPlayers: 30 }, demoApexShowcase()));
 console.log("Zapisano", out);

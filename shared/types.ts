@@ -217,6 +217,8 @@ export interface WorldData {
   music?: string;
   /** światło: jasność, mgła i latarka gracza */
   light?: WorldLight;
+  /** pora dnia, pogoda i wiatr (Apex) */
+  atmosphere?: Atmosphere;
   /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste;
    *  "html" = gra HTML (strona w ramce, nie gra Predatora) - kod w polu html */
   mode?: "3d" | "2d" | "html";
@@ -287,6 +289,19 @@ export interface WorldLight {
   /** latarka co jakiś czas mruga (horror) */
   flicker?: boolean;
 }
+/** Atmosfera gry 3D (Apex): pora dnia, pogoda i wiatr */
+export const WEATHERS = ["clear", "rain", "snow", "storm"] as const;
+export type WeatherId = (typeof WEATHERS)[number];
+export interface Atmosphere {
+  /** godzina 0-24 (12 = południe, 0 = północ); brak = niebo z „skybox” bez cyklu */
+  hour?: number;
+  /** ile sekund trwa pełna doba (0 = czas stoi) */
+  cycle?: number;
+  weather?: WeatherId;
+  /** siła wiatru 0-1 (kołysze drzewa i trawę, znosi deszcz) */
+  wind?: number;
+}
+export const DEFAULT_ATMOSPHERE: Required<Atmosphere> = { hour: 12, cycle: 0, weather: "clear", wind: 0.15 };
 export const DEFAULT_LIGHT: WorldLight = { brightness: 1, fog: 0, flashlight: false };
 
 /** Odznaka do zdobycia w grze (jak w Robloxie) */

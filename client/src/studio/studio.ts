@@ -16,8 +16,8 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { toolIcon, TOOL_TYPE_LABELS } from "../../../shared/tools.ts";
-import type { AnimDef, CharacterDef, Part, PartKind, PartShape, ToolDef, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
-import { MAX_PLAYERS_LIMIT, PART_EMITTERS, PART_TEXTURES } from "../../../shared/types.ts";
+import type { AnimDef, Atmosphere, CharacterDef, Part, PartKind, PartShape, ToolDef, WeatherId, WorldData, WorldInfo, WorldScript } from "../../../shared/types.ts";
+import { MAX_PLAYERS_LIMIT, PART_EMITTERS, PART_TEXTURES, WEATHERS } from "../../../shared/types.ts";
 import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
 import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
 import { openGuiEditor } from "./guiEditor.ts";
@@ -677,7 +677,7 @@ export function studioScreen(
 
     // ---------- zmiany i cofanie ----------
     // cofanie obejmuje klocki, teren i to, co zmienia asystent AI (skrypty, GUI, miejsca, narzędzia, ustawienia)
-    const UNDO_KEYS = ["scripts", "guis", "places", "startPlace", "tools", "badges", "skyColor", "skybox", "light", "gravity", "pvp", "genre", "playerCharacter"] as const;
+    const UNDO_KEYS = ["scripts", "guis", "places", "startPlace", "tools", "badges", "skyColor", "skybox", "light", "atmosphere", "gravity", "pvp", "genre", "playerCharacter"] as const;
     const snapshot = () => JSON.stringify({ parts: data.parts, terrain: data.terrain ?? null, extra: Object.fromEntries(UNDO_KEYS.map((k) => [k, data[k] ?? null])) });
     function pushUndo() {
       undo.push(snapshot());
@@ -2827,6 +2827,31 @@ export function studioScreen(
         if (!skybox) view.setSky(sky.value);
         renderSkyGrid();
       });
+      // pora dnia i pogoda (silnik Apex): godzina, długość doby, pogoda, wiatr
+      const at = data.atmosphere;
+      const atOn = h("input", { type: "checkbox", checked: !!at });
+      const atHour = h("input", { type: "range", min: "0", max: "24", step: "0.25", value: String(at?.hour ?? 12) });
+      const atHourLbl = h("span", null, "");
+      const fmtHour = () => ((Number(atHour.value) % 24).toFixed(2).replace(/\.00$/, ":00").replace(/\.25$/, ":15").replace(/\.5$/, ":30").replace(/\.75$/, ":45").replace(/^(\d):/, "0$1:"));
+      const atCycle = h("input", { type: "number", min: "0", max: "7200", step: "10", value: String(at?.cycle ?? 0) });
+      const atWeather = h("select", null, WEATHERS.map((w) => h("option", { value: w, selected: (at?.weather ?? "clear") === w }, { clear: "☀️ Słońce", rain: "🌧️ Deszcz", snow: "❄️ Śnieg", storm: "⛈️ Burza" }[w])));
+      const atWind = h("input", { type: "range", min: "0", max: "1", step: "0.05", value: String(at?.wind ?? 0.15) });
+      const atBox = h("div", { class: "form" });
+      const syncAt = () => {
+        atHourLbl.textContent = "Godzina startu: " + fmtHour();
+        atBox.style.display = atOn.checked ? "" : "none";
+      };
+      atHour.addEventListener("input", syncAt);
+      atOn.addEventListener("change", syncAt);
+      atBox.append(
+        h("label", null, atHourLbl, atHour),
+        h("label", null, "Doba trwa (sekundy, 0 = czas stoi; np. 600 = 10 minut)", atCycle),
+        h("label", null, "Pogoda na start", atWeather),
+        h("label", null, "Wiatr", atWind),
+        h("p", { class: "muted", style: "font-size:12px;margin:0" }, "Skrypty mogą to zmieniać: setHour, setDayCycle, setWeather, setWind. Działa w silniku Apex (domyślnym)."),
+      );
+      syncAt();
+      const atEl = h("div", { class: "prop" }, h("label", { class: "check" }, atOn, h("span", null, "🌤️ Pora dnia i pogoda (Apex)")), atBox);
       const grav = h("input", { type: "number", min: "10", max: "500", step: "1", value: String(data.gravity) });
       const pub = h("input", { type: "checkbox", checked: src.published });
       const pvp = h("input", { type: "checkbox", checked: data.pvp });
@@ -2852,6 +2877,7 @@ export function studioScreen(
           h("label", null, `Maks. graczy na serwer (1–${MAX_PLAYERS_LIMIT})`, maxP),
           h("div", { class: "prop" }, h("span", null, "Niebo (podgląd od razu w Studio)"), skyGrid),
           h("label", null, "Kolor nieba (gdy wybrane „Kolor”)", sky),
+          atEl,
           h("label", null, "Grawitacja (normalnie 196)", grav),
           h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
@@ -2872,6 +2898,13 @@ export function studioScreen(
               data.skyColor = sky.value;
               if (skybox) data.skybox = skybox;
               else delete data.skybox;
+              if (atOn.checked) {
+                const a: Atmosphere = { hour: Number(atHour.value) % 24, wind: Number(atWind.value) };
+                const cyc = Number(atCycle.value);
+                if (cyc > 0) a.cycle = Math.min(7200, Math.max(20, cyc));
+                if (atWeather.value !== "clear") a.weather = atWeather.value as WeatherId;
+                data.atmosphere = a;
+              } else delete data.atmosphere;
               data.gravity = Math.min(500, Math.max(10, Number(grav.value) || 196.2));
               data.pvp = pvp.checked;
               const al = audioLight.read();
@@ -3030,7 +3063,7 @@ export function studioScreen(
           // ktoś edytował wcześniej - stan z serwera jest aktualny
           const keep = new Set(srv.parts.map((p) => p.id));
           const del = data.parts.filter((p) => !keep.has(p.id)).map((p) => p.id);
-          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "genre", "terrain", "guis", "places", "startPlace", "blocks"] as const).filter(
+          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "atmosphere", "genre", "terrain", "guis", "places", "startPlace", "blocks"] as const).filter(
             (k) => JSON.stringify(srv[k] ?? null) !== JSON.stringify(data[k] ?? null),
           );
           for (const k of fields) {

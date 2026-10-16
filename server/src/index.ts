@@ -116,7 +116,7 @@ if (fs.existsSync(path.join(config.gamesDir, "Ludzik 3 & Nero.pgame"))) {
 }
 for (const m of MINIGAMES) demos.push([m.name, m.description, m.make, m.thumb]);
 // gry przeniesione z paczki GamesToadd (npm run port-games)
-for (const [file, thumb] of [["Tacos World", "tacos"], ["Tunnel Escape", "tunnel"], ["Spelling Bee", "spelling"]]) {
+for (const [file, thumb] of [["Tacos World", "tacos"], ["Tunnel Escape", "tunnel"], ["Spelling Bee", "spelling"], ["Apex Showcase", "apex"]]) {
   const f = path.join(config.gamesDir, file + ".pgame");
   if (!fs.existsSync(f)) continue;
   const text = fs.readFileSync(f, "utf8");
