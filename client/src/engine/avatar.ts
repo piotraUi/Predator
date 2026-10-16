@@ -21,6 +21,7 @@ import { hexColor } from "./color.ts";
 import { drawFace } from "./face.ts";
 import { clothCanvas } from "./clothes.ts";
 import { buildBack, buildHat, buildNeck } from "./wearables.ts";
+import { buildHair } from "./hair.ts";
 import { findItem } from "../../../shared/catalog.ts";
 import { buildToolModel, type ToolModelNode } from "./toolModels.ts";
 import { createWedge } from "./world.ts";
@@ -59,6 +60,7 @@ export class AvatarModel {
   private limbs: { la: Limb; ra: Limb; ll: Limb; rl: Limb };
   private allMeshes: Mesh[] = [];
   private hatNode: TransformNode | null = null;
+  private hairNode: TransformNode | null = null;
   private backNode: TransformNode | null = null;
   private neckNode: TransformNode | null = null;
   private spinning: Mesh[] = [];
@@ -176,17 +178,19 @@ export class AvatarModel {
     drawFace(ctx, a.face);
     this.faceTex.update();
     this.hatNode?.dispose();
+    this.hairNode?.dispose();
     this.backNode?.dispose();
     this.neckNode?.dispose();
     this.spinning = [];
     const hat = buildHat(s, a.hat, this.head, mat);
     const back = buildBack(s, a.back ?? "none", this.torso, mat);
     this.hatNode = hat.node;
+    this.hairNode = buildHair(s, a.hair ?? "none", a.hairColor ?? "#4a2f1b", this.head, mat, !!a.hat && a.hat !== "none");
     this.backNode = back.node;
     this.neckNode = buildNeck(s, a.neck ?? "none", this.torso, mat);
     if (hat.spin) this.spinning.push(hat.spin);
     if (back.spin) this.spinning.push(back.spin);
-    for (const n of [this.hatNode, this.backNode, this.neckNode])
+    for (const n of [this.hatNode, this.backNode, this.neckNode, this.hairNode])
       for (const m of n.getChildMeshes()) {
         m.isPickable = false;
         this.shadows?.addShadowCaster(m);
@@ -293,7 +297,7 @@ export class AvatarModel {
   private setBodyHidden(hidden: boolean) {
     this.bodyHidden = hidden;
     for (const m of this.allMeshes) m.isVisible = !hidden;
-    for (const n of [this.hatNode, this.backNode, this.neckNode]) for (const m of n?.getChildMeshes() ?? []) m.isVisible = !hidden;
+    for (const n of [this.hatNode, this.backNode, this.neckNode, this.hairNode]) for (const m of n?.getChildMeshes() ?? []) m.isVisible = !hidden;
     for (const m of this.accessories) (m as Mesh).isVisible = !hidden;
   }
 

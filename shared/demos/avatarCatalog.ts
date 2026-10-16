@@ -1,13 +1,14 @@
 // Katalog Avatara: salon z przymierzalnią. Wszystko z katalogu sklepu (czapki, twarze, koszulki, spodnie, plecy, szyja)
 // można założyć na siebie i sprawdzić w lustrze - jak "Catalog Creator" w Robloxie. Lista przedmiotów bierze się
 // z katalogu, więc każdy nowy przedmiot od razu pojawia się w grze.
-import { CATALOG, ITEM_TYPES, type CatalogItem } from "../catalog.ts";
+import { CATALOG, HAIR_COLORS, ITEM_TYPES, type CatalogItem } from "../catalog.ts";
 import type { GuiDef, GuiEl } from "../gui.ts";
 import type { Part, WorldData } from "../types.ts";
 import { emptyWorld, makePart } from "../world.ts";
 
 const CATS = ITEM_TYPES.filter((t) => t.type !== "emote");
 const PER_PAGE = 12;
+const HAIRS = ["#1a1a1a", "#4a2f1b", "#a0522d", "#d6a45a", "#fff1b8", "#e63946", "#3a86ff", "#8338ec"].map((c) => HAIR_COLORS.find((h) => h === c) ?? c);
 const SKINS = ["#f8d9b4", "#e8b98a", "#d6a47a", "#a0694b", "#6b4430", "#f5cd30", "#8fd694", "#9ad0ff"];
 
 const lua = (s: string) => JSON.stringify(s);
@@ -24,6 +25,7 @@ local CATS = {
 ${cats}
 }
 local SKINS = { ${SKINS.map((c) => lua(c)).join(", ")} }
+local HAIRS = { ${HAIRS.map((c) => lua(c)).join(", ")} }
 local st = {}
 
 local function stars(r) if r == "legendary" then return "👑 " elseif r == "epic" then return "💜 " elseif r == "rare" then return "💙 " end return "" end
@@ -62,6 +64,7 @@ onGuiClick(function(p, gui, b)
   local c = tonumber(string.match(b, "^C(%d+)$"))
   local i = tonumber(string.match(b, "^I(%d+)$"))
   local k = tonumber(string.match(b, "^K(%d+)$"))
+  local hc = tonumber(string.match(b, "^H(%d+)$"))
   if c and CATS[c] then
     s.cat, s.page = c, 1
     render(p)
@@ -75,6 +78,9 @@ onGuiClick(function(p, gui, b)
   elseif k and SKINS[k] then
     setAvatarColor(p, "head", SKINS[k])
     setAvatarColor(p, "arms", SKINS[k])
+  elseif hc and HAIRS[hc] then
+    setAvatarColor(p, "hairColor", HAIRS[hc])
+    setGuiText(p, "Katalog", "Opis", "Kolor włosów zmieniony")
   elseif b == "Poprzednia" then
     s.page = s.page - 1
     render(p)
@@ -89,6 +95,7 @@ onGuiClick(function(p, gui, b)
       local it = cat.items[math.random(1, #cat.items)]
       tryOn(p, it.id)
     end
+    setAvatarColor(p, "hairColor", HAIRS[math.random(1, #HAIRS)])
     setAvatarColor(p, "torso", SKINS[math.random(1, #SKINS)])
     setAvatarColor(p, "legs", SKINS[math.random(1, #SKINS)])
     setGuiText(p, "Katalog", "Opis", "🎲 Wylosowano nowy wygląd!")
@@ -126,7 +133,7 @@ function gui(): GuiDef[] {
     el({ name: "Tło", type: "frame", x: 1, y: 10, w: 31, h: 80, bg: "#10131f", bgOpacity: 0.86, radius: 16, border: "#7c5cff" }),
     el({ name: "Tytuł", type: "text", x: 1, y: 11, w: 31, h: 5, text: "👗 KATALOG AVATARA", fontSize: 20, bold: true, color: "#c8b8ff", align: "center" }),
   ];
-  CATS.forEach((_, i) => els.push(btn("C" + (i + 1), 2 + (i % 3) * 9.8, 17 + Math.floor(i / 3) * 6, 9.4, 5.4, "", "#3a4270", 12)));
+  CATS.forEach((_, i) => els.push(btn("C" + (i + 1), 2 + (i % 4) * 7.4, 17 + Math.floor(i / 4) * 6, 7.1, 5.4, "", "#3a4270", 10)));
   for (let i = 0; i < PER_PAGE; i++) els.push(btn("I" + (i + 1), 2 + (i % 2) * 14.7, 30 + Math.floor(i / 2) * 6.4, 14.3, 5.9, "", "#2a3158", 11));
   els.push(
     btn("Poprzednia", 2, 69, 6, 5.4, "◀", "#4263eb", 15),
@@ -143,7 +150,13 @@ function gui(): GuiDef[] {
     el({ name: "SkóraNapis", type: "text", x: 93, y: 31, w: 7, h: 4, text: "Skóra", fontSize: 11, bold: true, color: "#c8b8ff", align: "center" }),
     ...SKINS.map((c, i) => el({ name: "K" + (i + 1), type: "button", x: 94.6, y: 36 + i * 5, w: 3.8, h: 4.2, text: "", bg: c, bgOpacity: 1, radius: 8, border: "#ffffffaa" })),
   ];
-  return [{ id: "g-katalog", name: "Katalog", open: true, elements: [...els, ...skin] }];
+  // paleta kolorów włosów (obok)
+  const hairs: GuiEl[] = [
+    el({ name: "TłoWłosy", type: "frame", x: 88, y: 30, w: 5, h: 46, bg: "#10131f", bgOpacity: 0.8, radius: 12, border: "#7c5cff" }),
+    el({ name: "WłosyNapis", type: "text", x: 87, y: 31, w: 7, h: 4, text: "Włosy", fontSize: 11, bold: true, color: "#c8b8ff", align: "center" }),
+    ...HAIRS.map((c, i) => el({ name: "H" + (i + 1), type: "button", x: 88.6, y: 36 + i * 5, w: 3.8, h: 4.2, text: "", bg: c, bgOpacity: 1, radius: 8, border: "#ffffffaa" })),
+  ];
+  return [{ id: "g-katalog", name: "Katalog", open: true, elements: [...els, ...skin, ...hairs] }];
 }
 
 export function demoAvatarCatalog(): WorldData {

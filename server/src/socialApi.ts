@@ -349,7 +349,7 @@ function unwearMissing(userId: number) {
   const a = parseAvatar(u.avatar);
   let changed = false;
   for (const k of WEAR_TYPES) {
-    const id = a[k];
+    const id = a[k] ?? "none";
     const it = findItem(id);
     if (id !== "none" && it && !have.has(id) && !(it.price === 0 && !it.offsale)) {
       a[k] = k === "face" ? "smile" : "none";

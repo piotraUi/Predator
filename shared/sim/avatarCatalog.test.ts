@@ -10,13 +10,20 @@ test("Katalog Avatara: przymierzanie rzeczy z katalogu, zdejmowanie, losowanie i
   r.advance(1);
   const gui = d.guis![0];
   const click = (name: string) => r.sim.handle("a", "gui", { g: gui.id, e: gui.elements.find((e) => e.name === name)!.id });
-  click("C3");
+  click("C4"); // Koszulki (Włosy, Czapki, Twarze, Koszulki)
   click("I2");
   r.advance(0.2);
   const wear = () => r.sent.filter((s) => s.type === "wear").map((s) => s.msg as { avatar: Record<string, string> });
   assert.equal(wear().at(-1)!.avatar.shirt, "tshirt-blue");
   click("Zdejmij");
   assert.equal(wear().at(-1)!.avatar.shirt, "none");
+  click("C1"); // Włosy
+  click("I2");
+  click("H3");
+  r.advance(0.2);
+  const last = wear().at(-1)!.avatar;
+  assert.equal(last.hair, "hair-buzz");
+  assert.equal(last.hairColor, "#a0522d");
   click("Losuj");
   click("Reset");
   r.advance(0.2);

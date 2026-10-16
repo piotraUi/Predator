@@ -47,8 +47,8 @@ export function openCharacterEditor(
   const name = h("input", { class: "script-name", value: c.name, maxLength: 30 });
   name.addEventListener("input", () => ((c.name = name.value.trim() || "Postać"), (dirty = true)));
 
-  const colorField = (key: "head" | "torso" | "arms" | "legs", label: string) => {
-    const inp = h("input", { type: "color", value: c.look[key] });
+  const colorField = (key: "head" | "torso" | "arms" | "legs" | "hairColor", label: string) => {
+    const inp = h("input", { type: "color", value: c.look[key] ?? "#4a2f1b" });
     inp.addEventListener("input", () => {
       c.look[key] = inp.value;
       refresh();
@@ -240,6 +240,7 @@ export function openCharacterEditor(
         h("h3", null, "Kolory"),
         h("div", { class: "xyz2" }, colorField("head", "Głowa"), colorField("torso", "Tułów"), colorField("arms", "Ręce"), colorField("legs", "Nogi")),
         h("div", { class: "xyz2" }, h("label", { class: "prop" }, h("span", null, "Twarz"), itemSelect("face")), h("label", { class: "prop" }, h("span", null, "Czapka"), itemSelect("hat"))),
+        h("div", { class: "xyz2" }, h("label", { class: "prop" }, h("span", null, "Włosy"), itemSelect("hair")), colorField("hairColor", "Kolor włosów")),
         h("div", { class: "xyz2" }, h("label", { class: "prop" }, h("span", null, "Koszulka"), itemSelect("shirt")), h("label", { class: "prop" }, h("span", null, "Spodnie"), itemSelect("pants"))),
         h("div", { class: "xyz2" }, h("label", { class: "prop" }, h("span", null, "Plecy"), itemSelect("back")), h("label", { class: "prop" }, h("span", null, "Szyja"), itemSelect("neck"))),
         h("label", { class: "prop" }, h("span", null, "Skala postaci: ", scaleVal), scale),

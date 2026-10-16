@@ -400,6 +400,9 @@ export interface Avatar {
   torso: string;
   arms: string;
   legs: string;
+  /** fryzura (id z katalogu) i jej kolor; "none" = brak włosów */
+  hair?: string;
+  hairColor?: string;
   hat: string;
   face: string;
   /** koszulka, spodnie, rzecz na plecach i na szyi ("none" = brak) */

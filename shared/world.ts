@@ -376,6 +376,8 @@ export function sanitizeLook(input: unknown): Avatar {
     torso: color(a.torso, DEFAULT_AVATAR.torso),
     arms: color(a.arms, DEFAULT_AVATAR.arms),
     legs: color(a.legs, DEFAULT_AVATAR.legs),
+    hair: str(a.hair, 30, "none") || "none",
+    hairColor: color(a.hairColor, DEFAULT_AVATAR.hairColor),
     hat: str(a.hat, 20, "none") || "none",
     face: str(a.face, 20, "smile") || "smile",
     shirt: str(a.shirt, 30, "none") || "none",

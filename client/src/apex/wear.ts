@@ -3,6 +3,7 @@ import type { Avatar } from "../../../shared/types.ts";
 import { apply3, mul3, rotX, rotY, rotZ, type V3 } from "./math.ts";
 import { MAT, rgb, type ApexRenderer } from "./renderer.ts";
 import { buildBack, buildHat, buildNeck } from "./wearables.ts";
+import { buildHair } from "./hair.ts";
 import { Mesh, Scene, StandardMaterial, TransformNode } from "./sceneShim.ts";
 
 const scene = new Scene();
@@ -23,9 +24,10 @@ export class Wear {
   private nodes: { node: TransformNode; at: "head" | "torso" }[] = [];
   private spins: Mesh[] = [];
 
-  constructor(a: Pick<Avatar, "hat" | "back" | "neck">) {
+  constructor(a: Pick<Avatar, "hat" | "back" | "neck" | "hair" | "hairColor">) {
     const head = new TransformNode("head");
     const torso = new TransformNode("torso");
+    if (a.hair && a.hair !== "none") this.nodes.push({ node: buildHair(scene, a.hair, a.hairColor ?? "#4a2f1b", head as never, mat as never, !!a.hat && a.hat !== "none") as TransformNode, at: "head" });
     if (a.hat && a.hat !== "none") {
       const h = buildHat(scene, a.hat, head as never, mat as never);
       this.nodes.push({ node: h.node as TransformNode, at: "head" });

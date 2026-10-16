@@ -1135,19 +1135,19 @@ export class GameSim {
         this.t.broadcast("wear", { sid: p.sid, avatar: p.avatar });
         return true;
       },
-      // zdejmij rzecz z miejsca: takeOff(player, "hat" | "face" | "shirt" | "pants" | "back" | "neck")
+      // zdejmij rzecz z miejsca: takeOff(player, "hair" | "hat" | "face" | "shirt" | "pants" | "back" | "neck")
       takeOff: (sid, slot) => {
         const p = this.players.get(String(sid ?? ""));
         const k = String(slot ?? "");
-        if (!p || !["hat", "face", "shirt", "pants", "back", "neck"].includes(k)) return;
+        if (!p || !["hair", "hat", "face", "shirt", "pants", "back", "neck"].includes(k)) return;
         p.avatar = { ...p.avatar, [k]: k === "face" ? "smile" : "none" };
         this.t.broadcast("wear", { sid: p.sid, avatar: p.avatar });
       },
-      // kolor części ciała: setAvatarColor(player, "head" | "torso" | "arms" | "legs", "#ff8800")
+      // kolor części ciała i włosów: setAvatarColor(player, "head" | "torso" | "arms" | "legs" | "hairColor", "#ff8800")
       setAvatarColor: (sid, part, color) => {
         const p = this.players.get(String(sid ?? ""));
         const k = String(part ?? "");
-        if (!p || !["head", "torso", "arms", "legs"].includes(k) || !COLOR_RE.test(String(color ?? ""))) return;
+        if (!p || !["head", "torso", "arms", "legs", "hairColor"].includes(k) || !COLOR_RE.test(String(color ?? ""))) return;
         p.avatar = { ...p.avatar, [k]: String(color) };
         this.t.broadcast("wear", { sid: p.sid, avatar: p.avatar });
       },

@@ -1,10 +1,12 @@
 // Katalog sklepu z awatarem: czapki, twarze, koszulki, spodnie, rzeczy na plecy i na szyję.
 // Kupuje się je za monety zarobione w grach.
 
-export type ItemType = "hat" | "face" | "shirt" | "pants" | "back" | "neck" | "emote";
+export type ItemType = "hair" | "hat" | "face" | "shirt" | "pants" | "back" | "neck" | "emote";
 /** rzeczy zakładane na awatara (emotki się nie zakłada - kupuje się je do menu emotek) */
 export type WearType = Exclude<ItemType, "emote">;
-export const WEAR_TYPES: WearType[] = ["hat", "face", "shirt", "pants", "back", "neck"];
+export const WEAR_TYPES: WearType[] = ["hair", "hat", "face", "shirt", "pants", "back", "neck"];
+/** kształt włosów do rysowania miniaturki (kółko głowy); modele 3D mają własne budowniczy w client/src/engine/hair.ts */
+export type HairKind = "short" | "buzz" | "spiky" | "tall" | "long" | "bob" | "bun" | "twin" | "afro" | "mohawk" | "tail" | "curly" | "bangs";
 export type Rarity = "common" | "rare" | "epic" | "legendary";
 
 /** Wzór ubrania - rysowany na płótnie (model 3D i miniaturki) */
@@ -35,6 +37,10 @@ export interface CatalogItem {
   color?: string;
   /** koszulki i spodnie */
   cloth?: ClothSpec;
+  /** włosy: stały kolor (tęcza, ogień...) - nie zależy od koloru włosów gracza */
+  fixed?: boolean;
+  /** włosy: kształt do miniaturek 2D (głowa z profilu z przodu) */
+  hairKind?: HairKind;
   /** nowość w sklepie */
   isNew?: boolean;
   /** limitowany: tyle sztuk w ogóle istnieje, potem tylko wymiana między graczami */
@@ -47,12 +53,55 @@ const hat = (id: string, name: string, price: number, icon: string, color: strin
 const face = (id: string, name: string, price: number, icon: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "face", price, icon, ...extra });
 const shirt = (id: string, name: string, price: number, icon: string, cloth: ClothSpec, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "shirt", price, icon, cloth, color: cloth.color, ...extra });
 const pants = (id: string, name: string, price: number, icon: string, cloth: ClothSpec, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "pants", price, icon, cloth, color: cloth.color, ...extra });
+const hair = (id: string, name: string, price: number, icon: string, hairKind: HairKind, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "hair", price, icon, hairKind, color: "#4a2f1b", ...extra });
 const back = (id: string, name: string, price: number, icon: string, color: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "back", price, icon, color, ...extra });
 const neck = (id: string, name: string, price: number, icon: string, color: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "neck", price, icon, color, ...extra });
 const emote = (id: string, name: string, price: number, icon: string, extra: Partial<CatalogItem> = {}): CatalogItem => ({ id, name, type: "emote", price, icon, isNew: true, ...extra });
 const N = { isNew: true };
 
 export const CATALOG: CatalogItem[] = [
+  // ---------- włosy (kolor wybiera gracz; czapka zasłania górę fryzury) ----------
+  hair("hair-short", "Krótkie włosy", 0, "💇", "short"),
+  hair("hair-buzz", "Jeżyk", 0, "🪒", "buzz"),
+  hair("hair-sidepart", "Przedziałek", 0, "💈", "short"),
+  hair("hair-messy", "Rozczochrane", 0, "🌪️", "spiky"),
+  hair("hair-spiky", "Kolczaste", 15, "⚡", "spiky", N),
+  hair("hair-slick", "Zaczesane do tyłu", 20, "😎", "short", N),
+  hair("hair-pompadour", "Tapirek", 30, "🎸", "tall", N),
+  hair("hair-quiff", "Czub", 25, "🦜", "tall", N),
+  hair("hair-mohawk", "Irokez", 35, "🦔", "mohawk", { ...N, rarity: "rare" }),
+  hair("hair-tallmohawk", "Wysoki irokez", 55, "🔥", "mohawk", { ...N, rarity: "rare" }),
+  hair("hair-fauxhawk", "Półirokez", 30, "🪶", "mohawk", N),
+  hair("hair-afro", "Afro", 40, "🌟", "afro", { ...N, rarity: "rare" }),
+  hair("hair-bigafro", "Wielkie afro", 70, "🌕", "afro", { ...N, rarity: "epic" }),
+  hair("hair-curly", "Loki", 30, "🌀", "curly", N),
+  hair("hair-wavy", "Fale", 30, "🌊", "curly", N),
+  hair("hair-bob", "Boba", 25, "👩", "bob", N),
+  hair("hair-pixie", "Pixie", 25, "🧚", "short", N),
+  hair("hair-long", "Długie proste", 35, "👱‍♀️", "long", N),
+  hair("hair-longwavy", "Długie falowane", 45, "💁‍♀️", "long", N),
+  hair("hair-bangs", "Długie z grzywką", 45, "🎀", "bangs", N),
+  hair("hair-emo", "Grzywka na oko", 30, "🖤", "bangs", N),
+  hair("hair-wolf", "Wilcze", 40, "🐺", "long", N),
+  hair("hair-mullet", "Karpik", 35, "🦈", "long", N),
+  hair("hair-ponytail", "Kucyk", 25, "🐴", "tail", N),
+  hair("hair-highponytail", "Wysoki kucyk", 35, "🏇", "tail", N),
+  hair("hair-pigtails", "Dwa kucyki", 35, "🍭", "twin", N),
+  hair("hair-braid", "Warkocz", 40, "🧵", "tail", N),
+  hair("hair-twinbraids", "Dwa warkocze", 50, "🪢", "twin", N),
+  hair("hair-bun", "Kok", 30, "🍩", "bun", N),
+  hair("hair-topknot", "Kok samuraja", 45, "🥷", "bun", N),
+  hair("hair-doublebuns", "Dwa koczki", 40, "🐭", "bun", N),
+  hair("hair-spacebuns", "Kosmiczne koczki", 50, "🛸", "bun", { ...N, rarity: "rare" }),
+  hair("hair-dreads", "Dredy", 60, "🎶", "long", { ...N, rarity: "rare" }),
+  hair("hair-beehive", "Ul", 50, "🐝", "tall", { ...N, rarity: "rare" }),
+  hair("hair-elf", "Elfie długie", 90, "🧝", "long", { ...N, rarity: "epic" }),
+  hair("hair-viking", "Wikińskie warkocze", 80, "⚔️", "twin", { ...N, rarity: "epic" }),
+  hair("hair-anime", "Anime", 100, "✨", "spiky", { ...N, rarity: "epic" }),
+  hair("hair-rainbow", "Tęczowe", 150, "🌈", "tall", { ...N, rarity: "epic", fixed: true, color: "#ff4d6d" }),
+  hair("hair-flame", "Płomienie", 200, "🔥", "mohawk", { ...N, rarity: "legendary", fixed: true, color: "#ff6b00" }),
+  hair("hair-galaxy", "Galaktyczne", 220, "🌌", "long", { ...N, rarity: "legendary", fixed: true, color: "#6a4cff" }),
+
   // ---------- czapki ----------
   hat("none", "Brak", 0, "🚫", "#999999"),
   hat("cap", "Czapka z daszkiem", 0, "🧢", "#d62828"),
@@ -279,6 +328,7 @@ export const CATALOG: CatalogItem[] = [
 export const PAID_EMOTES = CATALOG.filter((i) => i.type === "emote").map((i) => i.id);
 
 export const ITEM_TYPES: { type: ItemType; label: string; icon: string }[] = [
+  { type: "hair", label: "Włosy", icon: "💇" },
   { type: "hat", label: "Czapki", icon: "🧢" },
   { type: "face", label: "Twarze", icon: "🙂" },
   { type: "shirt", label: "Koszulki", icon: "👕" },
@@ -297,6 +347,8 @@ export const DEFAULT_AVATAR = {
   torso: "#0d69ac",
   arms: "#f5cd30",
   legs: "#a4bd47",
+  hair: "none",
+  hairColor: "#4a2f1b",
   hat: "none",
   face: "smile",
   shirt: "none",
@@ -304,5 +356,11 @@ export const DEFAULT_AVATAR = {
   back: "none",
   neck: "none",
 };
+
+/** gotowe kolory włosów w edytorze awatara */
+export const HAIR_COLORS = [
+  "#1a1a1a", "#3b2314", "#4a2f1b", "#6b4423", "#8b5a2b", "#a0522d", "#b5651d", "#d6a45a", "#f0d58c", "#fff1b8",
+  "#c0c0c0", "#ffffff", "#e63946", "#ff6b6b", "#ff8fab", "#ff9f1c", "#52b788", "#2a9d8f", "#3a86ff", "#8338ec", "#c77dff",
+];
 
 export const findItem = (id: string) => CATALOG.find((i) => i.id === id);

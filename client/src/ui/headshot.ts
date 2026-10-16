@@ -229,9 +229,86 @@ function drawHat(ctx: CanvasRenderingContext2D, hat: string) {
   }
 }
 
+
+/** włosy na miniaturce: warstwa tylna (za głową) i przednia (grzywka, góra); czapka zasłania górę */
+function drawHair(ctx: CanvasRenderingContext2D, a: Avatar, front: boolean) {
+  const item = findItem(a.hair ?? "none");
+  if (!item || item.id === "none" || !item.hairKind) return;
+  const rainbow = item.id === "hair-rainbow";
+  const base = item.fixed ? (item.color ?? "#888888") : (a.hairColor ?? "#4a2f1b");
+  const dark = shade(base, 0.75);
+  const paint = (d = false) => {
+    if (rainbow) {
+      const g = ctx.createLinearGradient(30, 0, 98, 0);
+      ["#ff4d6d", "#ff9f1c", "#ffd60a", "#52b788", "#3a86ff", "#8338ec"].forEach((c, i) => g.addColorStop(i / 5, c));
+      ctx.fillStyle = g;
+    } else ctx.fillStyle = d ? dark : base;
+  };
+  const k = item.hairKind;
+  const hat = !!a.hat && a.hat !== "none";
+  const circle = (x: number, y: number, r: number) => {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  if (!front) {
+    paint(true);
+    if (k === "long") roundRect(ctx, 22, 36, 84, 92, 18);
+    else if (k === "bangs") roundRect(ctx, 22, 36, 84, 80, 18);
+    else if (k === "bob") roundRect(ctx, 22, 36, 84, 56, 16);
+    else if (k === "afro") circle(64, 52, 46);
+    else if (k === "curly") for (const [x, y] of [[26, 50], [102, 50], [30, 74], [98, 74], [64, 24]]) circle(x, y, 14);
+    else if (k === "twin") {
+      roundRect(ctx, 14, 50, 18, 56, 9);
+      roundRect(ctx, 96, 50, 18, 56, 9);
+    } else if (k === "tail") roundRect(ctx, 92, 40, 20, 62, 10);
+    return;
+  }
+  paint();
+  // góra fryzury (bez czapki)
+  if (!hat) {
+    if (k === "buzz") roundRect(ctx, 31, 30, 66, 12, 8);
+    else if (k === "spiky") {
+      ctx.beginPath();
+      ctx.moveTo(28, 44);
+      for (let i = 0; i < 6; i++) {
+        ctx.lineTo(28 + i * 14 + 7, 8 + (i % 2) * 8);
+        ctx.lineTo(28 + (i + 1) * 14, 44);
+      }
+      ctx.fill();
+    } else if (k === "tall") {
+      roundRect(ctx, 34, 8, 60, 38, 14);
+      roundRect(ctx, 28, 28, 72, 18, 10);
+    } else if (k === "mohawk") roundRect(ctx, 54, 2, 20, 40, 8);
+    else if (k === "bun") {
+      roundRect(ctx, 28, 26, 72, 20, 12);
+      circle(64, 16, 13);
+    } else if (k === "afro") roundRect(ctx, 26, 16, 76, 30, 20);
+    else if (k === "curly") for (const [x, y] of [[38, 32], [58, 26], [78, 26], [92, 34]]) circle(x, y, 13);
+    else if (k === "bangs") {
+      roundRect(ctx, 26, 24, 76, 20, 12);
+      ctx.beginPath();
+      ctx.moveTo(30, 40);
+      ctx.lineTo(98, 40);
+      ctx.lineTo(88, 62);
+      ctx.lineTo(62, 46);
+      ctx.lineTo(40, 58);
+      ctx.fill();
+    } else roundRect(ctx, 27, 24, 74, 22, 12);
+  }
+  // pasma po bokach głowy (też pod czapką)
+  if (k === "long" || k === "bob" || k === "bangs") {
+    roundRect(ctx, 25, 34, 9, k === "bob" ? 38 : 64, 4);
+    roundRect(ctx, 94, 34, 9, k === "bob" ? 38 : 64, 4);
+  } else if (k === "afro" || k === "curly") {
+    roundRect(ctx, 25, 34, 8, 24, 4);
+    roundRect(ctx, 95, 34, 8, 24, 4);
+  }
+}
+
 /** Obrazek (data URL) z głową i ramionami postaci */
 export function headshot(a: Avatar): string {
-  const key = [a.head, a.torso, a.arms, a.hat, a.face, a.shirt, a.neck].join("|");
+  const key = [a.head, a.torso, a.arms, a.hat, a.face, a.shirt, a.neck, a.hair, a.hairColor].join("|");
   const hit = cache.get(key);
   if (hit) return hit;
   const c = document.createElement("canvas");
@@ -258,6 +335,7 @@ export function headshot(a: Avatar): string {
     ctx.fillStyle = neck.color ?? "#888";
     roundRect(ctx, 50, 96, 28, 10, 4);
   }
+  drawHair(ctx, a, false);
   // głowa
   ctx.fillStyle = shade(a.head, 0.85);
   roundRect(ctx, 30, 34, 68, 64, 16);
@@ -268,6 +346,7 @@ export function headshot(a: Avatar): string {
   f.width = f.height = 128;
   drawFace(f.getContext("2d")!, a.face);
   ctx.drawImage(f, 34, 34, 60, 60);
+  drawHair(ctx, a, true);
   drawHat(ctx, a.hat);
   const url = c.toDataURL();
   cache.set(key, url);

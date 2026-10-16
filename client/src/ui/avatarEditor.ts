@@ -1,6 +1,6 @@
 // Edytor awatara z podglądem 3D - osobny moduł, żeby menu nie musiało wczytywać Babylona.
 import { ArcRotateCamera, Color4, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
-import { ITEM_TYPES, RARITY_LABELS, type CatalogItem, type ItemType, type WearType } from "../../../shared/catalog.ts";
+import { HAIR_COLORS, ITEM_TYPES, RARITY_LABELS, type CatalogItem, type ItemType, type WearType } from "../../../shared/catalog.ts";
 import type { Emote } from "../../../shared/types.ts";
 import { drawLeg, drawShirtFront } from "../engine/clothes.ts";
 import { headshot } from "./headshot.ts";
@@ -68,6 +68,7 @@ export function avatarEditor(el: HTMLElement): () => void {
     ["torso", "Tułów"],
     ["arms", "Ręce"],
     ["legs", "Nogi"],
+    ["hairColor", "Włosy"],
   ];
   let partSel: keyof Avatar = "torso";
   const swatches = h("div", { class: "swatches" });
@@ -79,7 +80,7 @@ export function avatarEditor(el: HTMLElement): () => void {
       ),
     );
     swatches.replaceChildren(
-      ...PALETTE.map((c) =>
+      ...(partSel === "hairColor" ? HAIR_COLORS : PALETTE).map((c) =>
         h("button", {
           class: "swatch " + (avatar[partSel] === c ? "active" : ""),
           style: `background:${c}`,
@@ -105,11 +106,11 @@ export function avatarEditor(el: HTMLElement): () => void {
   renderColors();
 
   const shop = h("div", { class: "shop" });
-  let tab: ItemType = "hat";
+  let tab: ItemType = "hair";
   let showOwned = false;
   const tabs = h("div", { class: "shop-tabs" });
   const thumb = (item: CatalogItem): Node => {
-    if (item.type === "hat" || item.type === "face" || item.type === "neck")
+    if (item.type === "hair" || item.type === "hat" || item.type === "face" || item.type === "neck")
       return h("img", { class: "item-thumb", alt: "", src: headshot({ ...user.avatar, ...avatar, shirt: "none", [item.type]: item.id } as Avatar) });
     if (item.cloth) {
       const c = document.createElement("canvas");
@@ -128,7 +129,21 @@ export function avatarEditor(el: HTMLElement): () => void {
   const renderShop = (catalog: CatalogItem[]) => {
     const u = session.user!;
     tabs.replaceChildren(
-      ...ITEM_TYPES.map((t) => h("button", { class: "shop-tab" + (t.type === tab ? " active" : ""), onClick: () => ((tab = t.type), renderShop(catalog)) }, t.icon + " " + t.label)),
+      ...ITEM_TYPES.map((t) =>
+        h(
+          "button",
+          {
+            class: "shop-tab" + (t.type === tab ? " active" : ""),
+            onClick: () => {
+              tab = t.type;
+              // przy włosach od razu pokazujemy paletę koloru włosów
+              if (t.type === "hair" && partSel !== "hairColor") (partSel = "hairColor"), renderColors();
+              renderShop(catalog);
+            },
+          },
+          t.icon + " " + t.label,
+        ),
+      ),
       h("label", { class: "shop-owned" }, h("input", { type: "checkbox", checked: showOwned, onChange: (e: Event) => ((showOwned = (e.target as HTMLInputElement).checked), renderShop(catalog)) }), "Tylko moje"),
     );
     const owns = (i: CatalogItem) => u.inventory.includes(i.id) || (i.price === 0 && !i.offsale);

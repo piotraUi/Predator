@@ -94,8 +94,8 @@ export const LUA_HELP: [string, string][] = [
   ['spawnMob("zombie", x, y, z)', "stwórz moba: zombie, creeper, pig, sheep, cow"],
   ["explode(x, y, z, 3)", "wybuch jak TNT (promień w blokach)"],
   ['tryOn(player, "hardhat")', "przymierz rzecz z katalogu (id przedmiotu) - tylko w tej grze, bez zmiany konta; zwraca true/false"],
-  ['takeOff(player, "hat")', "zdejmij rzecz: hat, face, shirt, pants, back, neck"],
-  ['setAvatarColor(player, "torso", "#ff8800")', "kolor części ciała (head, torso, arms, legs)"],
+  ['takeOff(player, "hat")', "zdejmij rzecz: hair, hat, face, shirt, pants, back, neck"],
+  ['setAvatarColor(player, "torso", "#ff8800")', "kolor części ciała (head, torso, arms, legs) albo włosów (hairColor)"],
   ["resetAvatar(player)", "przywróć wygląd z konta gracza"],
   // ---- nowe: administracja, dane gry, odczyt klocków, drużyny, pomocnicze ----
   ["isOwner(player) / isAdmin(player)", "czy gracz jest właścicielem gry / administracją gry (właściciel, współtwórca, moderator Predatora)"],

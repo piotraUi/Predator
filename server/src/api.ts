@@ -146,10 +146,10 @@ api.get("/catalog", (_req, res) => {
 /** sprawdza i składa nowy wygląd (kolory, przedmioty, które gracz ma) - albo zwraca błąd */
 function buildAvatar(user: ReturnType<typeof toPublicUser>, a: Partial<Avatar>): { next: Avatar } | { error: string; status: number } {
   const next: Avatar = { ...user.avatar };
-  for (const k of ["head", "torso", "arms", "legs"] as const) {
+  for (const k of ["head", "torso", "arms", "legs", "hairColor"] as const) {
     if (typeof a[k] === "string" && COLOR_RE.test(a[k]!)) next[k] = a[k]!;
   }
-  for (const k of ["hat", "face", "shirt", "pants", "back", "neck"] as const) {
+  for (const k of ["hair", "hat", "face", "shirt", "pants", "back", "neck"] as const) {
     const id = a[k];
     if (typeof id !== "string") continue;
     if (id === "none" && k !== "face") {
