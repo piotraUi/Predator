@@ -5,6 +5,7 @@ import { DEFAULT_AVATAR } from "../../../shared/catalog.ts";
 import { drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride, type RideHost } from "../game/vehicles.ts";
 import { CollisionWorld, PLAYER_HEIGHT, PLAYER_RADIUS, rayBox, raycastParts, rotationMatrix, stepBody, SWIM_CHEST, waterAt, type Body, type SwimInput } from "../../../shared/physics.ts";
 import { WeatherAudio } from "./weatherAudio.ts";
+import { SpatialAudio } from "./spatialAudio.ts";
 import { buildGrass, scatterTrees } from "./nature.ts";
 import { Gore, surfaceNormal } from "./gore.ts";
 import { drawViewmodel } from "./viewmodel.ts";
@@ -210,6 +211,9 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     atm.t0 = performance.now();
   };
   setAtm(init.world.atmosphere);
+  const spatial = new SpatialAudio(init.world.sounds ?? []);
+  spatial.cast = (from, dir, max) => raycastParts(collisions, from[0], from[1], from[2], dir[0], dir[1], dir[2], max)?.dist ?? null;
+  cleanups.push(() => spatial.dispose());
   const weatherAudio = new WeatherAudio();
   rend.onThunder = () => weatherAudio.thunder(rend.indoorLevel());
   cleanups.push(() => weatherAudio.dispose());
@@ -983,6 +987,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     rend.setLight(light.brightness, light.fog);
   });
   r.onMessage("sound", (m: { name: string }) => audio.play(m.name));
+  r.onMessage("sound3d", (m: { name: string; x: number; y: number; z: number; v?: number }) => void spatial.playAt(m.name, [m.x, m.y, m.z], m.v ?? 1));
   r.onMessage("music", (m: { name: string }) => audio.setMusic(m.name));
   r.onMessage("speak", (m: { text: string; lang?: string }) => audio.speak(m.text, m.lang));
   r.onMessage("prompt", (m: PromptMsg | null) => showPrompt(m));
@@ -1262,6 +1267,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const under = waterAt(collisions, eye[0], eye[1], eye[2]) !== null;
     wrap.classList.toggle("underwater", under);
     rend.followShadows(head);
+    spatial.update(eye, [-dir[0], -dir[1], -dir[2]], performance.now());
 
     // inni gracze
     const k = Math.min(1, dt * 12);
