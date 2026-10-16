@@ -309,6 +309,18 @@ export class WorldRoom extends Room {
         if (text) this.announce(`${meUser.username}: ${text}`);
         break;
       }
+      case "chaos": {
+        // 💥 CHAOS: mapa się rozpada od miejsca administratora, pochłonięci gracze są wyrzucani (administracja gry jest odporna)
+        if (!(this.sim instanceof GameSim)) return say("Chaos działa tylko w grach 3D");
+        if (m.on === false) {
+          if (!this.sim.chaosOn) return say("Chaos nie jest włączony");
+          this.sim.stopChaos();
+          this.broadcast("chat", { from: "", text: `🧹 ${meUser.username} wyłączył chaos - mapa wróciła na miejsce`, system: true });
+        } else if (this.sim.startChaos(client.sessionId)) {
+          this.broadcast("chat", { from: "", text: `💥 ${meUser.username} włączył CHAOS! Uciekaj, zanim fala zniszczenia do Ciebie dotrze!`, system: true });
+        } else say("Chaos już trwa");
+        break;
+      }
       case "restart": {
         this.broadcast("chat", { from: "", text: `🔄 ${meUser.username} restartuje serwer - za 5 sekund wróćisz do menu. Wejdź ponownie, żeby grać na świeżym serwerze.`, system: true });
         this.clock.setTimeout(() => {

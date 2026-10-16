@@ -28,6 +28,7 @@ import { GAME_PROTOCOL } from "../../../shared/types.ts";
 import { gameShop } from "./gameShop.ts";
 import { EMOTE_ALIASES, EMOTE_LABELS } from "./emotes.ts";
 import { openGameReport, playersPanel } from "./playersPanel.ts";
+import { chaosFx } from "./chaosFx.ts";
 import { safety } from "../safety.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
 import { babylonRideHost, drive, forward, Rides, startDrive, type DriveState, type Pose, type Ride } from "./vehicles.ts";
@@ -862,6 +863,7 @@ export function playScreen(
     });
     // przymierzanie ubrań przez skrypt gry (tryOn): tymczasowy wygląd gracza w tej grze
     const worn = new Map<string, Avatar>();
+    chaosFx(r);
     r.onMessage("wear", (m: { sid: string; avatar: Avatar }) => {
       worn.set(m.sid, m.avatar);
       (m.sid === init.you ? local : remotes.get(m.sid)?.model)?.setAvatar(m.avatar);

@@ -122,6 +122,12 @@ export class GameSim {
   private rigid: RigidWorld;
   private lastPos = new Map<string, [number, number, number, number]>();
   private dirtyParts = new Map<string, PartChange>();
+  /** CHAOS (włącza administracja gry): fala zniszczenia od punktu, który niszczy mapę i pochłania graczy */
+  private chaos: { cx: number; cz: number; t0: number; radius: number; list: { part: Part; d: number }[]; next: number; maxD: number } | null = null;
+  private chaosOrig = new Map<string, { x: number; y: number; z: number; ry?: number; transparency?: number; collide?: boolean }>();
+  private chaosSteps: { at: number; id: string; step: 2 | 3; dx: number; dz: number }[] = [];
+  /** gracze pochłonięci przez chaos: kiedy zostaną wyrzuceni (po glitchu ekranu) */
+  private chaosHits = new Map<string, number>();
   private scoresDirty = false;
   private lua: LuaEngine | null = null;
   private logs: { text: string; error: boolean }[] = [];
@@ -239,6 +245,7 @@ export class GameSim {
       clientScripts: this.data.scripts.filter((s) => s.enabled && s.side === "client" && s.source.trim()).map((s) => ({ name: s.name, source: s.source })),
     });
     this.gui.enter(sid, this.data.currentPlace?.id ?? MAIN_PLACE);
+    if (this.chaos) this.t.send(sid, "chaos", { on: true, x: this.chaos.cx, z: this.chaos.cz });
     this.vox?.join(sid);
     this.t.broadcast("join", this.netPlayer(p), sid);
     this.chat({ from: "", text: `${user.username} dołączył do gry`, system: true });
@@ -395,7 +402,7 @@ export class GameSim {
 
   private onMove(sid: string, m: unknown) {
     const p = this.players.get(sid);
-    if (!p || !m || typeof m !== "object") return;
+    if (!p || !m || typeof m !== "object" || this.chaosHits.has(sid)) return;
     const v = m as Record<string, unknown>;
     const x = finite(v.x, -LIMIT, LIMIT);
     const y = finite(v.y, -1000, LIMIT);
@@ -807,6 +814,7 @@ export class GameSim {
     this.lua?.tick();
     this.vox?.tick(0.05);
     this.stepRigid();
+    this.stepChaos();
     if (this.players.size > 0) {
       const snap = [...this.players.values()].map((p) => [
         p.sid,
@@ -832,6 +840,109 @@ export class GameSim {
         "scores",
         hasScores ? [...this.players.values()].map((p) => ({ name: p.username, score: p.score })) : [],
       );
+    }
+  }
+
+  // ---------- CHAOS ----------
+
+  get chaosOn() {
+    return !!this.chaos;
+  }
+
+  /** zmiana klocka przez chaos (jak skrypt: płynne przejście tw, kolizje serwera od razu aktualne) */
+  private chaosSet(part: Part, props: PartChange) {
+    const { tw, ...rest } = props;
+    Object.assign(part, rest);
+    this.collisions.set(part);
+    if (rest.x !== undefined || rest.y !== undefined || rest.z !== undefined) this.partMovedAt.set(part.id, Date.now());
+    const next: PartChange = { ...this.dirtyParts.get(part.id), ...rest };
+    if (tw) next.tw = tw;
+    else delete next.tw;
+    this.dirtyParts.set(part.id, next);
+  }
+
+  /** Włącza chaos: fala zniszczenia rusza z miejsca, w którym stoi włączający. Zwraca false, gdy już trwa. */
+  startChaos(fromSid: string): boolean {
+    if (this.chaos) return false;
+    const from = this.players.get(fromSid);
+    const cx = from?.x ?? 0;
+    const cz = from?.z ?? 0;
+    const list: { part: Part; d: number }[] = [];
+    let maxD = 0;
+    for (const part of this.partsById.values()) {
+      if (part.kind === "spawn") continue;
+      const big = Math.max(part.sx, part.sz);
+      // wielkie klocki (podłoga) wymagają, żeby fala przeszła prawie przez całe
+      const d = Math.hypot(part.x - cx, part.z - cz) + (big > 30 ? big * 0.3 : 0);
+      list.push({ part, d });
+      if (d > maxD) maxD = d;
+    }
+    list.sort((a, b) => a.d - b.d);
+    this.chaos = { cx, cz, t0: Date.now(), radius: 0, list, next: 0, maxD };
+    this.t.broadcast("chaos", { on: true, x: cx, z: cz });
+    return true;
+  }
+
+  /** Wyłącza chaos i przywraca mapę. */
+  stopChaos() {
+    if (!this.chaos) return;
+    this.chaos = null;
+    this.chaosSteps = [];
+    for (const [id, o] of this.chaosOrig) {
+      const part = this.partsById.get(id);
+      if (part) this.chaosSet(part, { x: o.x, y: o.y, z: o.z, ry: o.ry, transparency: o.transparency ?? 0, collide: o.collide, tw: 0 });
+    }
+    this.chaosOrig.clear();
+    this.t.broadcast("chaos", { on: false });
+  }
+
+  private stepChaos() {
+    const now = Date.now();
+    // pochłonięci gracze: po glitchu ekranu wylatują z gry
+    for (const [sid, at] of this.chaosHits) {
+      if (now < at) continue;
+      this.chaosHits.delete(sid);
+      if (this.players.has(sid)) this.t.kick?.(sid, "Pochłonął Cię chaos 💥");
+    }
+    const c = this.chaos;
+    if (!c) return;
+    // kolejne etapy rozbitych klocków: wzlot -> spadanie w otchłań -> niewidoczne
+    while (this.chaosSteps.length && this.chaosSteps[0].at <= now) {
+      const st = this.chaosSteps.shift()!;
+      const part = this.partsById.get(st.id);
+      if (!part) continue;
+      if (st.step === 2) this.chaosSet(part, { x: round2(part.x + st.dx), y: -150, z: round2(part.z + st.dz), tw: 2.2 });
+      else this.chaosSet(part, { transparency: 1 });
+    }
+    const el = (now - c.t0) / 1000;
+    c.radius = 3 + 6 * el + 0.8 * el * el;
+    // niszczymy klocki, do których dotarła fala (po kolei od najbliższych; nie więcej niż 60 naraz)
+    let budget = 60;
+    let pushed = false;
+    while (c.next < c.list.length && c.list[c.next].d <= c.radius && budget-- > 0) {
+      const { part } = c.list[c.next++];
+      if (!this.chaosOrig.has(part.id)) this.chaosOrig.set(part.id, { x: part.x, y: part.y, z: part.z, ry: part.ry, transparency: part.transparency, collide: part.collide });
+      const ang = Math.atan2(part.z - c.cz, part.x - c.cx) + (Math.random() - 0.5) * 0.8;
+      const big = Math.max(part.sx, part.sz) > 30;
+      const out = big ? 0 : 4 + Math.random() * 9;
+      const dx = Math.cos(ang) * out;
+      const dz = Math.sin(ang) * out;
+      const up = big ? -3 : 6 + Math.random() * 14;
+      const tw = big ? 1.2 : 0.7 + Math.random() * 0.6;
+      this.chaosSet(part, { x: round2(part.x + dx), y: round2(Math.max(-500, part.y + up)), z: round2(part.z + dz), ry: Math.round(((part.ry ?? 0) + (Math.random() - 0.5) * 720) % 3600), collide: false, tw });
+      this.chaosSteps.push({ at: now + tw * 1000, id: part.id, step: 2, dx: dx * 0.4, dz: dz * 0.4 });
+      this.chaosSteps.push({ at: now + tw * 1000 + 2300, id: part.id, step: 3, dx: 0, dz: 0 });
+      pushed = true;
+    }
+    if (pushed) this.chaosSteps.sort((a, b) => a.at - b.at);
+    // gracze (poza administracją gry), do których dotarła fala: glitch ekranu, a potem wyrzucenie
+    for (const p of this.players.values()) {
+      if (p.admin || this.chaosHits.has(p.sid)) continue;
+      if (Math.hypot(p.x - c.cx, p.z - c.cz) <= c.radius - 1) {
+        this.chaosHits.set(p.sid, now + 3000);
+        this.t.send(p.sid, "chaosHit", { ms: 3000 });
+        this.chat({ from: "", text: `💥 ${p.username} został pochłonięty przez chaos`, system: true });
+      }
     }
   }
 

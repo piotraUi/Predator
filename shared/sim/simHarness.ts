@@ -12,6 +12,7 @@ export function run(data: WorldData) {
   const said: string[] = [];
   const badges: string[] = [];
   const errors: string[] = [];
+  const kicked: string[] = [];
   const sim = new GameSim(
     data,
     {
@@ -27,6 +28,7 @@ export function run(data: WorldData) {
         if (type === "chat" && m.text) said.push(m.text);
       },
       badge: (sid, name) => badges.push(`${sid}:${name}`),
+      kick: (sid) => kicked.push(sid),
     },
     { id: 1, name: "test", ownerName: "Twórca" },
   );
@@ -53,5 +55,5 @@ export function run(data: WorldData) {
     sim.dispose();
     Date.now = realNow;
   };
-  return { sim, join, advance, touch, part, score, said, badges, errors, sent, done };
+  return { sim, join, advance, touch, part, score, said, badges, errors, kicked, sent, done };
 }

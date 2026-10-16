@@ -148,6 +148,8 @@ export function playersPanel(conn: GameConnection, list: () => GamePlayer[], myN
                   h("button", { class: "btn small", onClick: async () => { const t = await pickTool("🎁 Daj sobie narzędzie"); if (t) gadmin({ action: "give", sid: "me", tool: t }); } }, "🎁 Daj sobie narzędzie"),
                   h("button", { class: "btn small", onClick: async () => { const t = await askText("📣 Ogłoszenie dla wszystkich", "Tekst"); if (t) gadmin({ action: "announce", text: t }); } }, "📣 Ogłoszenie"),
                   h("button", { class: "btn small", onClick: openBans }, "⛔ Zbanowani"),
+                  h("button", { class: "btn small danger", onClick: () => { close(); gadmin({ action: "chaos", on: true }); } }, "💥 Włącz chaos"),
+                  h("button", { class: "btn small", onClick: () => { close(); gadmin({ action: "chaos", on: false }); } }, "🧹 Wyłącz chaos"),
                   h("button", { class: "btn small danger", onClick: () => { close(); gadmin({ action: "restart" }); } }, "🔄 Restart serwera"),
                 ),
               ),

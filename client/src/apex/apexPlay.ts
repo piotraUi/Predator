@@ -26,6 +26,7 @@ import { EMOTE_ALIASES, EMOTE_LABELS } from "../game/emotes.ts";
 import { gameShop } from "../game/gameShop.ts";
 import { VoiceChat } from "../game/voice.ts";
 import { openGameReport, playersPanel } from "../game/playersPanel.ts";
+import { chaosFx } from "../game/chaosFx.ts";
 import { PadMenuNav } from "../engine/gamepad.ts";
 import { setupVoxelsApex, type ApexVoxels } from "./voxelApex.ts";
 import { openRoomsWindow } from "../game/rooms.ts";
@@ -809,6 +810,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   });
   // przymierzanie ubrań przez skrypt gry (tryOn): tymczasowy wygląd gracza w tej grze
   const worn = new Map<string, Avatar>();
+  chaosFx(r);
   r.onMessage("wear", (m: { sid: string; avatar: Avatar }) => {
     worn.set(m.sid, m.avatar);
     const av = m.sid === init.you ? local : remotes.get(m.sid)?.av;
