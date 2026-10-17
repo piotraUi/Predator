@@ -1,22 +1,22 @@
-// Apex: ragdoll po śmierci - tułów, głowa, ręce i nogi to osobne bryły, które lecą z impulsem, odbijają się od ziemi
-// i są trzymane przy tułowiu sprężynami (galaretowate, ale zawsze razem). Liczone na procesorze, bez fizyki serwera.
+// Apex: ragdoll po śmierci. Tułów to bryła sztywna (kładzie się płasko na ziemi), a głowa, ręce i nogi są przegubowe:
+// każda kończyna ma stały punkt obrotu na tułowiu (bark, biodro, szyja), a jej drugi koniec to cząstka Verleta - wahadło
+// z grawitacją, tarciem o ziemię i ograniczeniem zgięcia stawu. Dzięki temu kończyny wiszą, wymachują i opadają jak u prawdziwej szmacianej lalki.
 import type { V3 } from "./math.ts";
 
 export type Piece = "torso" | "head" | "la" | "ra" | "ll" | "rl";
 export interface RagPiece {
-  p: V3; v: V3;
-  /** obrót 3x3 (wiersze) i prędkość kątowa */
-  R: number[]; w: V3;
-  /** połowy wymiarów bryły (do kolizji rogów z ziemią) */
-  half: V3;
-  /** największa połowa - zapas do ograniczenia odległości od zaczepu */
-  rad: number;
-  /** punkt zaczepienia względem tułowia (jednostki postaci) */
-  anchor: V3;
+  p: V3;
+  /** obrót 3x3 (wiersze) */
+  R: number[];
 }
 
-const ID3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 const GRAV = 170;
+const norm = (v: V3): V3 => {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+};
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 /** obrót wektorem obrotu (kąt = długość) przez wzór Rodriguesa, przemnożony przez R z lewej strony */
 function spin(R: number[], w: V3, dt: number): number[] {
@@ -34,95 +34,160 @@ function spin(R: number[], w: V3, dt: number): number[] {
   return o;
 }
 
+interface Limb {
+  /** punkt obrotu w układzie tułowia (jednostki postaci), kierunek spoczynkowy, długość i maks. zgięcie */
+  pivot: V3;
+  rest: V3;
+  len: number;
+  maxAng: number;
+  head: boolean;
+  tip: V3;
+  prev: V3;
+}
+
 export class Ragdoll {
   pieces: Record<Piece, RagPiece>;
   age = 0;
+  private tv: V3 = [0, 0, 0];
+  private tw: V3 = [0, 0, 0];
+  private limbs: Record<Exclude<Piece, "torso">, Limb>;
+  private half: V3;
 
-  constructor(origin: V3, ry: number, s: number, private ground: (x: number, z: number) => number) {
+  constructor(origin: V3, ry: number, private s: number, private ground: (x: number, z: number) => number) {
     const c = Math.cos(ry), sn = Math.sin(ry);
     const R = [c, 0, sn, 0, 1, 0, -sn, 0, c];
-    const at = (x: number, y: number, z: number): V3 => [origin[0] + (R[0] * x + R[2] * z) * s, origin[1] + y * s, origin[2] + (R[6] * x + R[8] * z) * s];
-    const mk = (pos: V3, half: V3, anchor: V3): RagPiece => ({ p: pos, v: [0, 0, 0], R: R.slice(), w: [0, 0, 0], half: [half[0] * s, half[1] * s, half[2] * s], rad: Math.max(...half) * s, anchor });
-    this.pieces = {
-      torso: mk(at(0, 3, 0), [1, 1, 0.5], [0, 0, 0]),
-      head: mk(at(0, 4.6, 0), [0.6, 0.6, 0.6], [0, 1.65, 0]),
-      la: mk(at(-1.5, 3, 0), [0.5, 1, 0.5], [-1.5, 0, 0]),
-      ra: mk(at(1.5, 3, 0), [0.5, 1, 0.5], [1.5, 0, 0]),
-      ll: mk(at(-0.5, 1, 0), [0.5, 1, 0.5], [-0.5, -2, 0]),
-      rl: mk(at(0.5, 1, 0), [0.5, 1, 0.5], [0.5, -2, 0]),
+    const loc = (v: V3): V3 => [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[3] * v[0] + R[4] * v[1] + R[5] * v[2], R[6] * v[0] + R[7] * v[1] + R[8] * v[2]];
+    const center: V3 = [origin[0], origin[1] + 3 * s, origin[2]];
+    this.half = [1 * s, 1 * s, 0.5 * s];
+    const mk = (pivot: V3, rest: V3, len: number, maxAng: number, head = false): Limb => {
+      const pv = loc(pivot), rv = loc(rest);
+      const tip: V3 = [center[0] + (pv[0] + rv[0] * len) * s, center[1] + (pv[1] + rv[1] * len) * s, center[2] + (pv[2] + rv[2] * len) * s];
+      return { pivot, rest, len, maxAng, head, tip, prev: [...tip] as V3 };
     };
-    // impuls: wyrzut w górę i w bok, obroty
-    const kick: V3 = [(Math.random() - 0.5) * 14, 11 + Math.random() * 6, (Math.random() - 0.5) * 14];
-    for (const [name, pc] of Object.entries(this.pieces) as [Piece, RagPiece][]) {
-      pc.v = [kick[0] + (Math.random() - 0.5) * 3, kick[1] * (name === "torso" ? 1 : 0.85 + Math.random() * 0.3), kick[2] + (Math.random() - 0.5) * 3];
-      pc.w = [(Math.random() - 0.5) * 7, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 7];
+    this.limbs = {
+      head: mk([0, 1, 0], [0, 1, 0], 0.65, 0.95, true),
+      la: mk([-1.5, 1, 0], [0, -1, 0], 2, 2.3),
+      ra: mk([1.5, 1, 0], [0, -1, 0], 2, 2.3),
+      ll: mk([-0.5, -1, 0], [0, -1, 0], 2, 1.5),
+      rl: mk([0.5, -1, 0], [0, -1, 0], 2, 1.5),
+    };
+    this.pieces = {
+      torso: { p: center, R: R.slice() },
+      head: { p: [0, 0, 0], R: R.slice() },
+      la: { p: [0, 0, 0], R: R.slice() },
+      ra: { p: [0, 0, 0], R: R.slice() },
+      ll: { p: [0, 0, 0], R: R.slice() },
+      rl: { p: [0, 0, 0], R: R.slice() },
+    };
+    // impuls: wyrzut w górę i w bok, obrót tułowia; kończyny dostają ten sam pęd (cząstki Verleta trzymają go w "prev")
+    this.tv = [(Math.random() - 0.5) * 12, 10 + Math.random() * 5, (Math.random() - 0.5) * 12];
+    this.tw = [(Math.random() - 0.5) * 6, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 6];
+    for (const l of Object.values(this.limbs)) {
+      const dt = 1 / 60;
+      l.prev = [l.tip[0] - this.tv[0] * dt, l.tip[1] - this.tv[1] * dt, l.tip[2] - this.tv[2] * dt];
     }
-    this.scale = s;
+    this.sync();
   }
-  private scale: number;
+
+  /** obrót tułowia: oś lokalna -> świat */
+  private toWorld(v: V3): V3 {
+    const R = this.pieces.torso.R;
+    return [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[3] * v[0] + R[4] * v[1] + R[5] * v[2], R[6] * v[0] + R[7] * v[1] + R[8] * v[2]];
+  }
+  private pivotWorld(l: Limb): V3 {
+    const t = this.pieces.torso.p, w = this.toWorld(l.pivot), s = this.s;
+    return [t[0] + w[0] * s, t[1] + w[1] * s, t[2] + w[2] * s];
+  }
+
+  /** zapisuje środki i obroty kończyn z położenia cząstek */
+  private sync() {
+    const torso = this.pieces.torso;
+    const tx: V3 = this.toWorld([1, 0, 0]);
+    for (const [name, l] of Object.entries(this.limbs) as [Exclude<Piece, "torso">, Limb][]) {
+      const pv = this.pivotWorld(l);
+      const d = norm([l.tip[0] - pv[0], l.tip[1] - pv[1], l.tip[2] - pv[2]]);
+      // oś Y bryły: głowa - w stronę od szyi; ręce i nogi - w stronę stawu (od końca kończyny do punktu obrotu)
+      const y: V3 = l.head ? d : [-d[0], -d[1], -d[2]];
+      let x: V3 = [tx[0] - y[0] * dot(tx, y), tx[1] - y[1] * dot(tx, y), tx[2] - y[2] * dot(tx, y)];
+      if (Math.hypot(x[0], x[1], x[2]) < 1e-4) x = this.toWorld([0, 0, 1]);
+      x = norm(x);
+      const z = cross(x, y);
+      const piece = this.pieces[name];
+      piece.R = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+      const len = l.len * this.s;
+      piece.p = l.head ? [l.tip[0], l.tip[1], l.tip[2]] : [pv[0] + d[0] * len * 0.5, pv[1] + d[1] * len * 0.5, pv[2] + d[2] * len * 0.5];
+    }
+    void torso;
+  }
 
   step(dt: number) {
     dt = Math.min(dt, 0.05);
     this.age += dt;
     const n = 3, h = dt / n;
-    const tor = this.pieces.torso;
-    const s = this.scale;
+    const torso = this.pieces.torso;
+    const [hx, hy, hz] = this.half;
     for (let it = 0; it < n; it++) {
-      for (const [name, pc] of Object.entries(this.pieces) as [Piece, RagPiece][]) {
-        pc.v[1] -= GRAV * h;
-        if (name !== "torso") {
-          // sprężyna do zaczepu na tułowiu (dobrze wytłumiona), a poza tym twardy limit odległości - kończyny nie odlatują
-          const a = pc.anchor, R = tor.R;
-          const ax = tor.p[0] + (R[0] * a[0] + R[1] * a[1] + R[2] * a[2]) * s;
-          const ay = tor.p[1] + (R[3] * a[0] + R[4] * a[1] + R[5] * a[2]) * s;
-          const az = tor.p[2] + (R[6] * a[0] + R[7] * a[1] + R[8] * a[2]) * s;
-          const k = 220, d = 26;
-          const fx = (ax - pc.p[0]) * k - pc.v[0] * d, fy = (ay - pc.p[1]) * k - pc.v[1] * d, fz = (az - pc.p[2]) * k - pc.v[2] * d;
-          pc.v[0] += fx * h; pc.v[1] += fy * h; pc.v[2] += fz * h;
-          tor.v[0] -= fx * h * 0.1; tor.v[1] -= fy * h * 0.1; tor.v[2] -= fz * h * 0.1;
+      // --- tułów: bryła sztywna, rogi odbijają się od ziemi i obracają ją tak, żeby leżała płasko ---
+      this.tv[1] -= GRAV * h;
+      torso.p[0] += this.tv[0] * h; torso.p[1] += this.tv[1] * h; torso.p[2] += this.tv[2] * h;
+      const R = torso.R;
+      const g = this.ground(torso.p[0], torso.p[2]);
+      let contact = false;
+      for (let c = 0; c < 8; c++) {
+        const lx = c & 1 ? hx : -hx, ly = c & 2 ? hy : -hy, lz = c & 4 ? hz : -hz;
+        const rx = R[0] * lx + R[1] * ly + R[2] * lz, ry = R[3] * lx + R[4] * ly + R[5] * lz, rz = R[6] * lx + R[7] * ly + R[8] * lz;
+        const depth = g - (torso.p[1] + ry);
+        if (depth > 0) {
+          contact = true;
+          torso.p[1] += depth * 0.35;
+          if (this.tv[1] < 0) this.tv[1] *= 0.55;
+          this.tw[0] -= rz * depth * 10 * h * 60;
+          this.tw[2] += rx * depth * 10 * h * 60;
         }
-        pc.p[0] += pc.v[0] * h; pc.p[1] += pc.v[1] * h; pc.p[2] += pc.v[2] * h;
-        if (name !== "torso") {
-          const a = pc.anchor, R = tor.R;
-          const ax = tor.p[0] + (R[0] * a[0] + R[1] * a[1] + R[2] * a[2]) * s;
-          const ay = tor.p[1] + (R[3] * a[0] + R[4] * a[1] + R[5] * a[2]) * s;
-          const az = tor.p[2] + (R[6] * a[0] + R[7] * a[1] + R[8] * a[2]) * s;
-          const dx = pc.p[0] - ax, dy = pc.p[1] - ay, dz = pc.p[2] - az;
-          const dl = Math.hypot(dx, dy, dz), lim = 0.9 * s;
-          if (dl > lim) {
-            const k2 = lim / dl;
-            pc.p[0] = ax + dx * k2; pc.p[1] = ay + dy * k2; pc.p[2] = az + dz * k2;
-          }
+      }
+      if (contact) {
+        const f = Math.pow(0.04, h);
+        this.tv[0] *= f; this.tv[2] *= f;
+        const fw = Math.pow(0.12, h);
+        this.tw[0] *= fw; this.tw[1] *= fw; this.tw[2] *= fw;
+      }
+      torso.R = spin(torso.R, this.tw, h);
+      const damp = Math.pow(this.age > 1.8 ? 0.15 : 0.9, h);
+      this.tw[0] *= damp; this.tw[1] *= damp; this.tw[2] *= damp;
+
+      // --- kończyny: wahadła z punktem obrotu na tułowiu ---
+      const s = this.s;
+      for (const l of Object.values(this.limbs)) {
+        const pv = this.pivotWorld(l);
+        const len = l.len * s;
+        // verlet: pęd z poprzedniego kroku, grawitacja, lekkie tłumienie
+        const nx = l.tip[0] + (l.tip[0] - l.prev[0]) * 0.985;
+        const ny = l.tip[1] + (l.tip[1] - l.prev[1]) * 0.985 - GRAV * h * h;
+        const nz = l.tip[2] + (l.tip[2] - l.prev[2]) * 0.985;
+        l.prev = [l.tip[0], l.tip[1], l.tip[2]];
+        l.tip = [nx, ny, nz];
+        // ziemia: koniec kończyny nie wchodzi pod podłoże, tarcie wyhamowuje poślizg
+        const gg = this.ground(l.tip[0], l.tip[2]) + 0.35 * s;
+        if (l.tip[1] < gg) {
+          l.tip[1] = gg;
+          l.prev[0] += (l.tip[0] - l.prev[0]) * 0.35;
+          l.prev[2] += (l.tip[2] - l.prev[2]) * 0.35;
+          l.prev[1] = l.tip[1];
         }
-        // kolizja rogów bryły z ziemią: popycha w górę i obraca bryłę tak, żeby się kładła płasko
-        const R = pc.R, hx = pc.half[0], hy = pc.half[1], hz = pc.half[2];
-        let contact = false;
-        const g = this.ground(pc.p[0], pc.p[2]);
-        for (let c = 0; c < 8; c++) {
-          const lx = (c & 1 ? hx : -hx), ly = (c & 2 ? hy : -hy), lz = (c & 4 ? hz : -hz);
-          const rx = R[0] * lx + R[1] * ly + R[2] * lz, ry = R[3] * lx + R[4] * ly + R[5] * lz, rz = R[6] * lx + R[7] * ly + R[8] * lz;
-          const depth = g - (pc.p[1] + ry);
-          if (depth > 0) {
-            contact = true;
-            pc.p[1] += depth * 0.35;
-            if (pc.v[1] < 0) pc.v[1] *= 0.55;
-            // moment siły z rogu: r × (0,1,0) = (rz, 0, -rx)
-            pc.w[0] += rz * depth * 10 * h * 60;
-            pc.w[2] -= rx * depth * 10 * h * 60;
-          }
+        // twarda długość kończyny
+        let d = norm([l.tip[0] - pv[0], l.tip[1] - pv[1], l.tip[2] - pv[2]]);
+        // limit zgięcia stawu względem kierunku spoczynkowego (w układzie tułowia)
+        const rest = norm(this.toWorld(l.rest));
+        const cosA = dot(d, rest);
+        const cosMax = Math.cos(l.maxAng);
+        if (cosA < cosMax) {
+          const perp = norm([d[0] - rest[0] * cosA, d[1] - rest[1] * cosA, d[2] - rest[2] * cosA]);
+          const sinMax = Math.sin(l.maxAng);
+          d = norm([rest[0] * cosMax + perp[0] * sinMax, rest[1] * cosMax + perp[1] * sinMax, rest[2] * cosMax + perp[2] * sinMax]);
         }
-        if (contact) {
-          const f = Math.pow(0.04, h);
-          pc.v[0] *= f; pc.v[2] *= f;
-          const fw = Math.pow(0.12, h);
-          pc.w[0] *= fw; pc.w[1] *= fw; pc.w[2] *= fw;
-        }
-        pc.R = spin(pc.R, pc.w, h);
-        const damp = Math.pow(this.age > 1.8 ? 0.15 : 0.9, h);
-        pc.w[0] *= damp; pc.w[1] *= damp; pc.w[2] *= damp;
+        l.tip = [pv[0] + d[0] * len, pv[1] + d[1] * len, pv[2] + d[2] * len];
       }
     }
+    this.sync();
   }
 }
-
-export { ID3 };
