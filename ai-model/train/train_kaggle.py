@@ -6,8 +6,13 @@ Wyjście:  adapter LoRA w OUT_DIR/adapter oraz (opcjonalnie) scalony model w OUT
 
 Uczy się TYLKO wiadomości asystenta (rola "assistant"); system, prośby użytkownika i wyniki narzędzi są maskowane (label = -100).
 """
-import json
 import os
+
+UNSLOTH = os.environ.get("UNSLOTH", "0") == "1"
+if UNSLOTH:
+    import unsloth  # noqa: F401  (musi być zaimportowany przed transformers/peft)
+
+import json
 import random
 import sys
 
@@ -28,7 +33,7 @@ GENERAL_N = int(os.environ.get("GENERAL_N", "2500"))
 GENERAL_DATASET = os.environ.get("GENERAL_DATASET", "saillab/alpaca-polish-cleaned")
 MAX_TRAIN = int(os.environ.get("MAX_TRAIN", "0"))        # 0 = wszystko; do szybkiego testu np. 200
 # LIGER=1: jądra Liger (fused cross-entropy, RMSNorm, SwiGLU) - mniej pamięci na logity i szybciej; wymaga pip install liger-kernel
-LIGER = os.environ.get("LIGER", "0") == "1"
+LIGER = os.environ.get("LIGER", "0") == "1" and not UNSLOTH  # Unsloth ma własne jądra, nie łączymy z Ligerem
 SEED = 42
 # wiele kart (Kaggle T4 x2): uruchom przez `torchrun --nproc_per_node 2 train_kaggle.py` - każda karta trzyma własną kopię modelu (DDP)
 RANK = int(os.environ.get("RANK", "0"))
@@ -183,31 +188,44 @@ def main():
                 print(f"szybkie jądra DeltaNet: {pkg} OK")
             except ImportError:
                 print(f"UWAGA: brak {pkg} - trening będzie wyraźnie wolniejszy (pip install {pkg})")
-    if QUANT == "none":
-        try:
-            model = AutoModelForCausalLM.from_pretrained(MODEL, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16, attn_implementation="sdpa")
-        except (ValueError, KeyError):  # modele multimodalne (Qwen3.5): ładujemy całość, używamy samego tekstu
-            from transformers import AutoModelForMultimodalLM
-            model = AutoModelForMultimodalLM.from_pretrained(MODEL, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16)
-        model.gradient_checkpointing_enable()
-        model.enable_input_require_grads()
-        targets = "all-linear"
+    if UNSLOTH:
+        # Unsloth: szybsze jądra attention/MLP/RoPE/cross-entropy i oszczędny checkpointing; reszta (dane, maska, Trainer) bez zmian
+        from unsloth import FastLanguageModel
+        model, _ = FastLanguageModel.from_pretrained(
+            model_name=MODEL, max_seq_length=MAX_LEN, load_in_4bit=(QUANT != "none"), load_in_16bit=(QUANT == "none"),
+            full_finetuning=False, device_map={"": LOCAL_RANK},
+        )
+        model = FastLanguageModel.get_peft_model(
+            model, r=LORA_R, lora_alpha=LORA_R * 2, lora_dropout=0, bias="none",
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            use_gradient_checkpointing="unsloth", random_state=SEED, max_seq_length=MAX_LEN,
+        )
     else:
-        bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16)
-        model = AutoModelForCausalLM.from_pretrained(MODEL, quantization_config=bnb, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16, attn_implementation="sdpa")
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
-        targets = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-    model = get_peft_model(model, LoraConfig(r=LORA_R, lora_alpha=LORA_R * 2, lora_dropout=0.03, target_modules=targets, task_type="CAUSAL_LM"))
+        if QUANT == "none":
+            try:
+                model = AutoModelForCausalLM.from_pretrained(MODEL, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16, attn_implementation="sdpa")
+            except (ValueError, KeyError):  # modele multimodalne (Qwen3.5): ładujemy całość, używamy samego tekstu
+                from transformers import AutoModelForMultimodalLM
+                model = AutoModelForMultimodalLM.from_pretrained(MODEL, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16)
+            model.gradient_checkpointing_enable()
+            model.enable_input_require_grads()
+            targets = "all-linear"
+        else:
+            bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16)
+            model = AutoModelForCausalLM.from_pretrained(MODEL, quantization_config=bnb, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16, attn_implementation="sdpa")
+            model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+            targets = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        model = get_peft_model(model, LoraConfig(r=LORA_R, lora_alpha=LORA_R * 2, lora_dropout=0.03, target_modules=targets, task_type="CAUSAL_LM"))
     if RANK == 0:
+        print("Unsloth:", UNSLOTH, "| Liger:", LIGER)
         model.print_trainable_parameters()
         print(f"karty: {WORLD}, efektywny batch: {BATCH * max(1, GRAD_ACC // WORLD) * WORLD}")
-
     args = TrainingArguments(
         output_dir=os.path.join(OUT_DIR, "ckpt"), per_device_train_batch_size=BATCH, per_device_eval_batch_size=1, gradient_accumulation_steps=max(1, GRAD_ACC // WORLD),
         num_train_epochs=EPOCHS, learning_rate=LR, lr_scheduler_type="cosine", warmup_ratio=0.03, weight_decay=0.0,
         fp16=True, logging_steps=10, eval_strategy="steps", eval_steps=200, save_strategy="steps", save_steps=200, save_total_limit=2,
-        group_by_length=False, report_to="none", gradient_checkpointing=True, optim="paged_adamw_8bit" if QUANT != "none" else "adamw_torch", max_grad_norm=1.0, seed=SEED,
-        remove_unused_columns=False, use_liger_kernel=LIGER, ddp_find_unused_parameters=False, gradient_checkpointing_kwargs={"use_reentrant": False},
+        group_by_length=False, report_to="none", gradient_checkpointing=not UNSLOTH, optim="paged_adamw_8bit" if QUANT != "none" else "adamw_torch", max_grad_norm=1.0, seed=SEED,
+        remove_unused_columns=False, use_liger_kernel=LIGER, ddp_find_unused_parameters=False, gradient_checkpointing_kwargs=None if UNSLOTH else {"use_reentrant": False},
     )
     trainer = Trainer(model=model, args=args, train_dataset=DS(train_ds), eval_dataset=DS(val_ds), data_collator=collate)
     resume = os.path.isdir(os.path.join(OUT_DIR, "ckpt")) and any(d.startswith("checkpoint") for d in os.listdir(os.path.join(OUT_DIR, "ckpt")))
