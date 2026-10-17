@@ -1,5 +1,7 @@
 # Własny asystent AI Predatora
 
+> **Aktualizacja:** trening własnego modelu jest odłożony. Asystent Gemini uczy się budować z tych samych sprawdzonych budowli bez treningu: narzędzia `list_examples` i `get_example` (kod w `shared/blueprints/`) oddają mu pełne listy klocków przykładów (dom, zamek, drzewo, statek, miasto...), a w instrukcji ma zasady dobrego budowania. Poniższy opis dotyczy odłożonego treningu.
+
 Mały model językowy (LLM), który zastępuje Gemini w Studio: **buduje mapy 3D, pisze skrypty Lua, rozmawia po polsku i po angielsku** i wie, co to hulajnoga, checkpoint czy tycoon. Trenujesz go sam na Kaggle, a potem uruchamiasz na swoim komputerze lub serwerze.
 
 ## Co to jest i ile to zajmuje pamięci

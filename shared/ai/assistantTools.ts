@@ -161,6 +161,21 @@ const MEDIA_TOOLS = [
 export const TOOLS_3D = [
   fn("get_overview", "Summary of the whole 3D game: places, part counts and extents, spawn, scripts, GUIs, tools, characters, sounds, settings, the camera focus point and the user's selection. Call this first."),
   fn(
+    "list_examples",
+    "List the library of VERIFIED EXAMPLE BUILDINGS (houses, castles, towers, trees, vehicles, furniture, playground, obby, arena, maze, skyscraper, school, ...). Each has an id, names, footprint and part count. Use it to find which examples to study before you build something.",
+  ),
+  fn(
+    "get_example",
+    "Study verified, well-built examples: returns the full part list (shape|name|x|y|z|sx|sy|sz|#color|options per line, LOCAL coordinates: center of the building at x=0,z=0, ground at y=0, the front/door faces -Z) of 1-3 example buildings. Call it BEFORE building a structure and learn HOW they are built (proportions, wall thickness, openings, roof construction, trim, details, color palette, nothing floating, parts touching but not overlapping). Then build your OWN original design of that quality with create_parts (use `origin` to place local coordinates in the world). Do not copy blindly unless the user asks for exactly that.",
+    obj(
+      {
+        ids: arr(str("Example id from list_examples"), "1-3 example ids, e.g. the closest to what you will build"),
+        seed: int("Optional: different seed = a different variant of the same example"),
+      },
+      ["ids"],
+    ),
+  ),
+  fn(
     "find_parts",
     "List parts (id, name, kind, shape, position, size, rotation, color...). Use filters - games can have thousands of parts.",
     obj({
@@ -180,6 +195,11 @@ export const TOOLS_3D = [
         parts: arr(obj(PART_FIELDS, ["name", "x", "y", "z", "sx", "sy", "sz"]), "Parts to create (max 400 per call)"),
         model_name: str("Optional: group these parts into one model (they move/copy together)"),
         place: str("Place name (default: the place open in the editor)"),
+        origin: obj(
+          { x: num("World X of the building center"), z: num("World Z of the building center"), yaw: num("Rotation around Y in degrees (front faces -Z at yaw 0)"), y: num("Lift in Y (default 0)") },
+          [],
+          "Optional: your part coordinates are LOCAL (building center at 0,0, ground y=0); they are moved to origin.x/z, rotated by yaw and lifted by y for you. Saves you doing the math.",
+        ),
       },
       ["parts"],
     ),

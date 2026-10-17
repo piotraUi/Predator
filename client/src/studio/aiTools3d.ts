@@ -4,6 +4,8 @@ import { DEFAULT_LIGHT } from "../../../shared/types.ts";
 import { baseplate, MAX_PARTS, newId, sanitizeWorld, spawnPart } from "../../../shared/world.ts";
 import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
 import { SKYBOXES } from "../../../shared/skybox.ts";
+import { exampleOf, listBlueprints } from "../../../shared/blueprints/catalog.ts";
+import { placeParts } from "../../../shared/ai/localFormat.ts";
 import { guisSummary, guiTool, list, n, r2, runTest, s, same, scriptsSummary, scriptTool, ToolError, type AiAttachments, type Args } from "./aiCommon.ts";
 
 /** to, czego narzędzia potrzebują od Studia 3D */
@@ -149,7 +151,22 @@ export function tools3d(hk: Studio3DHooks, att: AiAttachments) {
         const limit = Math.min(300, Math.max(1, n(a.limit) ?? 80));
         return { total: res.length, parts: res.slice(0, limit).map(brief), ...(res.length > limit ? { note: `showing ${limit} of ${res.length} - narrow the filter` } : {}) };
       }
+      case "list_examples":
+        return { count: listBlueprints().length, examples: listBlueprints().map((b) => ({ id: b.id, name: `${b.pl} / ${b.en}`, footprint: `${b.foot[0]}x${b.foot[1]}`, parts: b.parts, ...(b.options ? { options: b.options } : {}) })) };
+      case "get_example": {
+        const ids = list<string>(a.ids).slice(0, 3);
+        if (!ids.length) throw new ToolError("Give 1-3 example ids (see list_examples)");
+        const seed = n(a.seed);
+        const out = ids.map((id) => exampleOf(String(id), {}, seed === undefined ? 1 : seed));
+        const bad = ids.filter((_, i) => !out[i]);
+        if (bad.length) throw new ToolError(`Unknown example id: ${bad.join(", ")}. Use list_examples.`);
+        return { format: "Each parts line: shape|name|x|y|z|sx|sy|sz|#color|options (shape letters: b box, s sphere, c cylinder, w wedge; omitted options mean defaults). x,y,z = part CENTER. Local coordinates: building center x=0,z=0, ground y=0, front faces -Z.", examples: out };
+      }
       case "create_parts": {
+        const origin = a.origin as Args | undefined;
+        if (origin && Array.isArray(a.parts)) {
+          a = { ...a, parts: placeParts(a.parts as never[], { at: [n(origin.x) ?? 0, n(origin.z) ?? 0], yaw: n(origin.yaw) ?? 0, y: n(origin.y) ?? 0 }) };
+        }
         const specs = list(a.parts).slice(0, 400);
         if (!specs.length) throw new ToolError("No parts given");
         if (d.parts.length + specs.length > MAX_PARTS) throw new ToolError(`Too many parts: the game has ${d.parts.length}, max ${MAX_PARTS}`);

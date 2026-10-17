@@ -211,3 +211,21 @@ test("deklaracje narzędzi: unikalne nazwy i poprawne schematy dla Gemini", () =
     for (const t of list) if ("parameters" in t && t.parameters) check(t.parameters as Record<string, unknown>, t.name);
   }
 });
+
+test("asystent 3D: przykłady do nauki (list_examples / get_example) i origin w create_parts", async () => {
+  const data = sanitizeWorld(emptyWorld());
+  const s = studio3d(data);
+  const list = (await s.run("list_examples", {})) as { count: number; examples: { id: string }[] };
+  assert.ok(list.count >= 70 && list.examples.some((e) => e.id === "house"));
+  const ex = (await s.run("get_example", { ids: ["house", "tree"] })) as { examples: { id: string; parts: string }[] };
+  assert.equal(ex.examples.length, 2);
+  assert.match(ex.examples[0].parts, /\|Dach\|/);
+  await assert.rejects(s.run("get_example", { ids: ["nie-ma"] }), /Unknown example/);
+  // lokalne współrzędne trafiają na origin (przesunięcie + obrót)
+  const before = data.parts.length;
+  await s.run("create_parts", { parts: [{ name: "Słup", x: 4, y: 3, z: 0, sx: 1, sy: 6, sz: 1 }], origin: { x: 100, z: 50, yaw: 90 } });
+  const p = data.parts[before];
+  assert.equal(Math.round(p.x), 100);
+  assert.equal(Math.round(p.z), 46);
+  assert.ok(TOOLS_3D.some((t) => t.name === "get_example"));
+});
