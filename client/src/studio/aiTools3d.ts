@@ -24,7 +24,7 @@ export interface Studio3DHooks {
   changed(): void;
 }
 
-const PART_KEYS = ["name", "shape", "kind", "x", "y", "z", "sx", "sy", "sz", "rx", "ry", "rz", "color", "material", "transparency", "collide", "spin", "label", "vehicle", "dynamic", "bounce"] as const;
+const PART_KEYS = ["name", "shape", "kind", "x", "y", "z", "sx", "sy", "sz", "rx", "ry", "rz", "color", "material", "transparency", "collide", "spin", "label", "vehicle", "dynamic", "bounce", "texture", "emitter"] as const;
 
 export function tools3d(hk: Studio3DHooks, att: AiAttachments) {
   const data = () => hk.data;

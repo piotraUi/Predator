@@ -122,6 +122,10 @@ const PART_FIELDS: Record<string, S> = {
   vehicle: str("kind=seat: vehicle type, all parts of the same model drive together", { enum: ["car", "boat", "skate"] }),
   tool: str("kind=pickup: tool name lying on it"),
   character: str("kind=npc: character name"),
+  texture: str("Surface pattern painted on the part (tinted by its color): brick, planks, stone, cobble, grass, sand, dirt, checker, tiles, metal, concrete, hazard", {
+    enum: ["brick", "planks", "stone", "cobble", "grass", "sand", "dirt", "checker", "tiles", "metal", "concrete", "hazard"],
+  }),
+  emitter: str("Particles coming out of the part (fires, smoke, magic...)", { enum: ["fire", "smoke", "sparks", "magic", "dust", "splash"] }),
   anchored_note: str("ignored - every part is anchored (does not fall)"),
 };
 
