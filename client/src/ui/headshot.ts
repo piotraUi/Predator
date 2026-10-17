@@ -3,7 +3,7 @@ import type { Avatar } from "../../../shared/types.ts";
 import { drawFace } from "../engine/face.ts";
 import { drawShirtFront } from "../engine/clothes.ts";
 import { findItem } from "../../../shared/catalog.ts";
-import { headshot3d } from "./headshot3d.ts";
+import { headshot3d, portrait3d } from "./headshot3d.ts";
 
 const cache = new Map<string, string>();
 
@@ -305,6 +305,17 @@ function drawHair(ctx: CanvasRenderingContext2D, a: Avatar, front: boolean) {
     roundRect(ctx, 25, 34, 8, 24, 4);
     roundRect(ctx, 95, 34, 8, 24, 4);
   }
+}
+
+const portraits = new Map<string, string>();
+/** Okrągły portret profilu w stylu Robloxa: zbliżenie na głowę 3D na kolorowym tle (gdy WebGL nie działa: płaski rysunek) */
+export function portrait(a: Avatar): string {
+  const key = [a.head, a.torso, a.arms, a.legs, a.hat, a.face, a.shirt, a.pants, a.neck, a.hair, a.hairColor].join("|");
+  const hit = portraits.get(key);
+  if (hit) return hit;
+  const url = portrait3d(a) ?? headshot(a);
+  portraits.set(key, url);
+  return url;
 }
 
 /** Obrazek (data URL) z głową i ramionami postaci */

@@ -1990,7 +1990,9 @@ export class ApexRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, pst ? (pst.ms ?? pst.scene.fbo) : null);
     gl.viewport(0, 0, this.width, this.height);
     const fc = [sky.fog[0] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[1] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[2] * (0.12 + 0.88 * Math.min(1, light))];
-    gl.clearColor(fc[0], fc[1], fc[2], this.transparent ? 0 : 1);
+    // przezroczyste tło: kolor musi być zerowy (premultiplied alpha), inaczej tło jaśnieje
+    if (this.transparent) gl.clearColor(0, 0, 0, 0);
+    else gl.clearColor(fc[0], fc[1], fc[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.depthMask(true);
     gl.disable(gl.BLEND);

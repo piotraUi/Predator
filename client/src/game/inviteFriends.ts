@@ -1,7 +1,7 @@
 // Okno "Zaproś znajomych" w menu gry - znajomy dostaje powiadomienie z przyciskiem Dołącz
 // (a gdy nie ma go w Predatorze - wiadomość na czacie).
 import { api } from "../api.ts";
-import { headshot } from "../ui/headshot.ts";
+import { portrait } from "../ui/headshot.ts";
 import { h, modal, toast } from "../ui/dom.ts";
 
 export function openInviteFriends(privateCode?: string) {
@@ -30,7 +30,7 @@ export function openInviteFriends(privateCode?: string) {
           return h(
             "div",
             { class: "invite-row" },
-            h("img", { class: "pv-head small", src: headshot(f.avatar), alt: "" }),
+            h("img", { class: "pv-head small", src: portrait(f.avatar), alt: "" }),
             h(
               "div",
               { class: "invite-name" },

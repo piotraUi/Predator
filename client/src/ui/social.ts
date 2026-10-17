@@ -16,7 +16,7 @@ import { api } from "../api.ts";
 import { session } from "../state.ts";
 import { safety } from "../safety.ts";
 import { ask, h, modal, toast } from "./dom.ts";
-import { headshot } from "./headshot.ts";
+import { portrait } from "./headshot.ts";
 import { errorBox, gameGrid, loading, timeAgo, timeLabel, type Ctx } from "./home.ts";
 import { icon } from "./icons.ts";
 
@@ -142,7 +142,7 @@ export async function profileView(el: HTMLElement, ctx: Ctx, name: string) {
       h(
         "div",
         { class: "prof-head" },
-        h("img", { class: "pv-head prof-face", src: headshot(p.avatar), alt: "" }),
+        h("img", { class: "pv-head prof-face", src: portrait(p.avatar), alt: "" }),
         h(
           "div",
           { class: "prof-main" },
@@ -424,7 +424,7 @@ export async function groupView(el: HTMLElement, ctx: Ctx, id: number): Promise<
             h(
               "button",
               { class: "grp-member", onClick: () => ctx.nav({ v: "profile", name: m.username }) },
-              h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head small", src: headshot(m.avatar), alt: "" }), m.online ? h("span", { class: "pv-dot" }) : null),
+              h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head small", src: portrait(m.avatar), alt: "" }), m.online ? h("span", { class: "pv-dot" }) : null),
               h("div", null, h("b", null, m.username), h("div", { class: "muted small" }, roleLabel(m.role))),
             ),
             h("div", { class: "spacer" }),
@@ -453,7 +453,7 @@ function groupChat(box: HTMLElement, g: GroupInfo, setTimer: (t: number) => void
     const row = h(
       "div",
       { class: "grp-msg " + (mine ? "me" : "them") },
-      mine ? null : h("img", { class: "pv-head tiny", src: headshot(m.avatar), alt: "" }),
+      mine ? null : h("img", { class: "pv-head tiny", src: portrait(m.avatar), alt: "" }),
       h(
         "div",
         { class: "pv-msg " + (mine ? "me" : "them") },

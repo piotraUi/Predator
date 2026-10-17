@@ -7,7 +7,7 @@ import { session } from "../state.ts";
 import { openSettings } from "../settings.ts";
 import { pickFile } from "../files.ts";
 import { ask, h, hashColor, logo, modal, toast } from "./dom.ts";
-import { headshot } from "./headshot.ts";
+import { portrait } from "./headshot.ts";
 import { icon } from "./icons.ts";
 import { groupsView, groupView, privateServersSection, profileView, reportDialog, tradesView } from "./social.ts";
 
@@ -141,7 +141,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
   const updateUser = () => {
     const u = session.user!;
     coinsNum.textContent = String(u.coins);
-    const face = headshot(u.avatar);
+    const face = portrait(u.avatar);
     sideUser.replaceChildren(h("img", { class: "pv-head", src: face, alt: "" }), h("b", null, u.username));
     for (const img of bottom.querySelectorAll<HTMLImageElement>(".pv-tab-avatar")) img.src = face;
   };
@@ -238,7 +238,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
           h(
             "div",
             { class: "pv-notif" },
-            h("img", { class: "pv-head small", src: headshot(f.avatar), alt: "" }),
+            h("img", { class: "pv-head small", src: portrait(f.avatar), alt: "" }),
             h("div", { class: "pv-notif-text" }, h("b", null, f.username), " chce zostać twoim znajomym"),
             h("button", { class: "btn small primary", onClick: async () => (await api.acceptFriend(f.id), refresh(), pollNotifications()) }, "Akceptuj"),
             h("button", { class: "btn small", onClick: async () => (await api.removeFriend(f.id), refresh(), pollNotifications()) }, "Odrzuć"),
@@ -368,7 +368,7 @@ function friendBubble(f: FriendInfo, onClick: () => void) {
   return h(
     "button",
     { class: "pv-friend", onClick, title: f.username },
-    h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: headshot(f.avatar), alt: "" }), f.online ? h("span", { class: "pv-dot" }) : null),
+    h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: portrait(f.avatar), alt: "" }), f.online ? h("span", { class: "pv-dot" }) : null),
     h("span", { class: "pv-friend-name" }, f.username),
     f.playing ? h("span", { class: "pv-friend-game" }, f.playing.worldName) : null,
   );
@@ -387,7 +387,7 @@ function friendMenu(f: FriendInfo, ctx: Ctx) {
     h(
       "div",
       { class: "pv-friend-card" },
-      h("img", { class: "pv-head big", src: headshot(f.avatar), alt: "" }),
+      h("img", { class: "pv-head big", src: portrait(f.avatar), alt: "" }),
       h("div", { class: "muted" }, f.playing ? `Gra w: ${f.playing.worldName}` : f.online ? "Online" : "Offline"),
     ),
     actions,
@@ -403,7 +403,7 @@ function homeView(el: HTMLElement, ctx: Ctx): Cleanup {
   const hello = h(
     "button",
     { class: "pv-hello", onClick: () => ctx.nav({ v: "avatar" }) },
-    h("img", { class: "pv-head big", src: headshot(u.avatar), alt: "" }),
+    h("img", { class: "pv-head big", src: portrait(u.avatar), alt: "" }),
     h("div", null, h("div", { class: "pv-hello-name" }, u.username), h("div", { class: "muted" }, "Edytuj awatar")),
   );
   const friendsRow = h("div", { class: "pv-friends-row" });
@@ -777,7 +777,7 @@ async function chatListView(el: HTMLElement, ctx: Ctx) {
         h(
           "button",
           { class: "pv-row", onClick: () => ctx.nav({ v: "chat", with: c.friend.id }) },
-          h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: headshot(c.friend.avatar), alt: "" }), c.friend.online ? h("span", { class: "pv-dot" }) : null),
+          h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: portrait(c.friend.avatar), alt: "" }), c.friend.online ? h("span", { class: "pv-dot" }) : null),
           h(
             "div",
             { class: "pv-row-main" },
@@ -872,7 +872,7 @@ async function conversationView(el: HTMLElement, ctx: Ctx, friendId: number) {
         "div",
         { class: "pv-convo-head" },
         h("button", { class: "pv-icon-btn", title: "Wróć", onClick: () => ctx.back() }, icon("back")),
-        h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head small", src: headshot(f.avatar), alt: "" }), f.online ? h("span", { class: "pv-dot" }) : null),
+        h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head small", src: portrait(f.avatar), alt: "" }), f.online ? h("span", { class: "pv-dot" }) : null),
         h("div", null, h("b", null, f.username), h("div", { class: "muted small" }, f.playing ? `Gra w: ${f.playing.worldName}` : f.online ? "Online" : "Offline")),
         h("div", { class: "spacer" }),
         f.playing
@@ -962,7 +962,7 @@ async function friendsView(el: HTMLElement, ctx: Ctx) {
     return h(
       "div",
       { class: "pv-row", onClick: () => f.status === "accepted" && friendMenu(f, ctx) },
-      h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: headshot(f.avatar), alt: "" }), f.online && f.status === "accepted" ? h("span", { class: "pv-dot" }) : null),
+      h("span", { class: "pv-friend-face" }, h("img", { class: "pv-head", src: portrait(f.avatar), alt: "" }), f.online && f.status === "accepted" ? h("span", { class: "pv-dot" }) : null),
       h("div", { class: "pv-row-main" }, h("b", null, f.username), h("div", { class: "pv-row-sub" + (f.playing ? " playing" : "") }, status)),
       h("div", { class: "pv-row-actions" }, actions),
     );
