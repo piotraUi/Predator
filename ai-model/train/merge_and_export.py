@@ -14,7 +14,11 @@ ADAPTER = os.environ.get("ADAPTER_DIR", "/kaggle/working/predator-ai/adapter")
 OUT = os.environ.get("OUT_DIR", "/kaggle/working/predator-ai") + "/merged"
 
 tok = AutoTokenizer.from_pretrained(BASE)
-model = AutoModelForCausalLM.from_pretrained(BASE, torch_dtype=torch.float16, device_map={"": "cpu"})
+try:
+    model = AutoModelForCausalLM.from_pretrained(BASE, torch_dtype=torch.float16, device_map={"": "cpu"})
+except (ValueError, KeyError):  # modele multimodalne (Qwen3.5)
+    from transformers import AutoModelForMultimodalLM
+    model = AutoModelForMultimodalLM.from_pretrained(BASE, torch_dtype=torch.float16, device_map={"": "cpu"})
 model = PeftModel.from_pretrained(model, ADAPTER)
 model = model.merge_and_unload()
 model.save_pretrained(OUT, safe_serialization=True)

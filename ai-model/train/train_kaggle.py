@@ -22,6 +22,8 @@ LORA_R = int(os.environ.get("LORA_R", "32"))
 BATCH = int(os.environ.get("BATCH", "1"))
 GRAD_ACC = int(os.environ.get("GRAD_ACC", "16"))
 # ogólne polskie rozmowy (opcjonalnie): pomaga w swobodnym czacie. 0 = wyłączone.
+# QUANT=4bit (QLoRA, domyślnie) albo none (LoRA na wagach fp16; zalecane dla Qwen3.5, ok. 10-14 GB VRAM)
+QUANT = os.environ.get("QUANT", "4bit")
 GENERAL_N = int(os.environ.get("GENERAL_N", "2500"))
 GENERAL_DATASET = os.environ.get("GENERAL_DATASET", "saillab/alpaca-polish-cleaned")
 MAX_TRAIN = int(os.environ.get("MAX_TRAIN", "0"))        # 0 = wszystko; do szybkiego testu np. 200
@@ -62,18 +64,32 @@ def general_samples(system_prompts, n):
 
 
 # ---------------------------------------------------------------- tokenizacja z maską
+END = os.environ.get("END_TOKEN", "<|im_end|>")
+
+
+def render(tok, messages):
+    # Qwen3.5 domyślnie "myśli" (<think>) - wyłączamy; starsze szablony ignorują ten parametr
+    return tok.apply_chat_template(messages, tokenize=False, enable_thinking=False)
+
+
 def encode(tok, messages, max_len):
-    """Zwraca (input_ids, labels) albo None, gdy za długie. Etykiety tylko dla tekstu asystenta (z <|im_end|>)."""
-    full = tok.apply_chat_template(messages, tokenize=False)
+    """Zwraca (input_ids, labels) albo None, gdy za długie. Etykiety tylko dla tekstu asystenta (z <|im_end|>).
+    Fragmenty asystenta znajdujemy po treści w wyrenderowanym tekście, więc działa to z każdym szablonem (także z pustym <think>)."""
+    full = render(tok, messages)
     spans = []
-    for i, m in enumerate(messages):
+    cur = 0
+    for m in messages:
         if m["role"] != "assistant":
             continue
-        start = len(tok.apply_chat_template(messages[:i], tokenize=False, add_generation_prompt=True))
-        end = len(tok.apply_chat_template(messages[: i + 1], tokenize=False))
-        if full[end - 1] == "\n":  # nowa linia po <|im_end|> nie jest uczona
-            end -= 1
+        text = m["content"].strip()
+        start = full.find(text, cur)
+        if start < 0:
+            raise ValueError("nie znaleziono odpowiedzi asystenta w szablonie: " + text[:60])
+        end = start + len(text)
+        if full.startswith(END, end):
+            end += len(END)
         spans.append((start, end))
+        cur = end
     enc = tok(full, add_special_tokens=False, return_offsets_mapping=True)
     ids = enc["input_ids"]
     if len(ids) > max_len:
@@ -101,6 +117,7 @@ def selftest(tok, rows):
         # żaden token roli system/user nie może być uczony
         dec_user = tok.decode([t for t, l in zip(ids, labels) if l != -100])
         assert "<|im_start|>user" not in dec_user and "<|im_start|>system" not in dec_user
+        assert "<think>" not in dec_user or "<think>" in "".join(m["content"] for m in r["messages"]), "uczony tekst zawiera <think>"
     print("maskowanie OK")
 
 
@@ -150,17 +167,28 @@ def main():
         att = torch.tensor([[1] * len(b["input_ids"]) + [0] * (m - len(b["input_ids"])) for b in batch])
         return {"input_ids": ids, "labels": lab, "attention_mask": att}
 
-    bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16)
-    model = AutoModelForCausalLM.from_pretrained(MODEL, quantization_config=bnb, device_map={"": 0}, torch_dtype=torch.float16, attn_implementation="sdpa")
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
-    model = get_peft_model(model, LoraConfig(r=LORA_R, lora_alpha=LORA_R * 2, lora_dropout=0.03, target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], task_type="CAUSAL_LM"))
+    if QUANT == "none":
+        try:
+            model = AutoModelForCausalLM.from_pretrained(MODEL, device_map={"": 0}, torch_dtype=torch.float16, attn_implementation="sdpa")
+        except (ValueError, KeyError):  # modele multimodalne (Qwen3.5): ładujemy całość, używamy samego tekstu
+            from transformers import AutoModelForMultimodalLM
+            model = AutoModelForMultimodalLM.from_pretrained(MODEL, device_map={"": 0}, torch_dtype=torch.float16)
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
+        targets = "all-linear"
+    else:
+        bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16)
+        model = AutoModelForCausalLM.from_pretrained(MODEL, quantization_config=bnb, device_map={"": 0}, torch_dtype=torch.float16, attn_implementation="sdpa")
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+        targets = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    model = get_peft_model(model, LoraConfig(r=LORA_R, lora_alpha=LORA_R * 2, lora_dropout=0.03, target_modules=targets, task_type="CAUSAL_LM"))
     model.print_trainable_parameters()
 
     args = TrainingArguments(
         output_dir=os.path.join(OUT_DIR, "ckpt"), per_device_train_batch_size=BATCH, per_device_eval_batch_size=1, gradient_accumulation_steps=GRAD_ACC,
         num_train_epochs=EPOCHS, learning_rate=LR, lr_scheduler_type="cosine", warmup_ratio=0.03, weight_decay=0.0,
         fp16=True, logging_steps=10, eval_strategy="steps", eval_steps=200, save_strategy="steps", save_steps=200, save_total_limit=2,
-        group_by_length=False, report_to="none", gradient_checkpointing=True, optim="paged_adamw_8bit", max_grad_norm=1.0, seed=SEED,
+        group_by_length=False, report_to="none", gradient_checkpointing=True, optim="paged_adamw_8bit" if QUANT != "none" else "adamw_torch", max_grad_norm=1.0, seed=SEED,
         remove_unused_columns=False,
     )
     trainer = Trainer(model=model, args=args, train_dataset=DS(train_ds), eval_dataset=DS(val_ds), data_collator=collate)

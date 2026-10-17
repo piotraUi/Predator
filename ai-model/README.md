@@ -10,6 +10,7 @@ Mały model językowy (LLM), który zastępuje Gemini w Studio: **buduje mapy 3D
 | Trening na Kaggle | GPU T4 albo P100 (16 GB): zużywa ok. 10-14 GB VRAM |
 | Działanie (Q4_K_M, llama.cpp) | plik ~2,5 GB; **~3-4 GB VRAM** (albo ~4-5 GB RAM na samym CPU) |
 | Szybkość | GPU 6-8 GB: 50-100 tokenów/s; sam CPU: 5-15 tokenów/s (wolno przy dużych mapach) |
+| Nowszy model (Qwen3.5-4B) | `BASE_MODEL=Qwen/Qwen3.5-4B QUANT=none` + w komórce 1 `pip install -U transformers` (wymaga v5). Unsloth odradza QLoRA 4-bit dla Qwen3.5, więc trenujemy LoRA na wagach fp16 (więcej VRAM, ok. 12-15 GB, wolniej). Szablon z `<think>` jest obsłużony (`enable_thinking=False`), `--selftest` przeszedł na prawdziwym tokenizerze. **Nieprzetestowane na GPU**; do GGUF potrzebny świeży llama.cpp |
 | Mniejsza wersja | `BASE_MODEL=Qwen/Qwen3-1.7B` (~1,3 GB, szybsza, ale słabsza w budowaniu) |
 
 Odpowiedź modelu nie jest JSON-em, tylko zwartym tekstem (ok. 2× mniej tokenów, więc szybciej):
