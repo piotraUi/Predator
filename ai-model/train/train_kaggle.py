@@ -28,6 +28,10 @@ GENERAL_N = int(os.environ.get("GENERAL_N", "2500"))
 GENERAL_DATASET = os.environ.get("GENERAL_DATASET", "saillab/alpaca-polish-cleaned")
 MAX_TRAIN = int(os.environ.get("MAX_TRAIN", "0"))        # 0 = wszystko; do szybkiego testu np. 200
 SEED = 42
+# wiele kart (Kaggle T4 x2): uruchom przez `torchrun --nproc_per_node 2 train_kaggle.py` - każda karta trzyma własną kopię modelu (DDP)
+RANK = int(os.environ.get("RANK", "0"))
+LOCAL_RANK = int(os.environ.get("LOCAL_RANK", "0"))
+WORLD = int(os.environ.get("WORLD_SIZE", "1"))
 
 
 # ---------------------------------------------------------------- dane
@@ -138,6 +142,8 @@ def main():
         train_rows = train_rows[:MAX_TRAIN]
 
     import torch
+    if WORLD > 1:
+        torch.cuda.set_device(LOCAL_RANK)
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, BitsAndBytesConfig, Trainer, TrainingArguments
 
@@ -169,34 +175,37 @@ def main():
 
     if QUANT == "none":
         try:
-            model = AutoModelForCausalLM.from_pretrained(MODEL, device_map={"": 0}, torch_dtype=torch.float16, attn_implementation="sdpa")
+            model = AutoModelForCausalLM.from_pretrained(MODEL, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16, attn_implementation="sdpa")
         except (ValueError, KeyError):  # modele multimodalne (Qwen3.5): ładujemy całość, używamy samego tekstu
             from transformers import AutoModelForMultimodalLM
-            model = AutoModelForMultimodalLM.from_pretrained(MODEL, device_map={"": 0}, torch_dtype=torch.float16)
+            model = AutoModelForMultimodalLM.from_pretrained(MODEL, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16)
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
         targets = "all-linear"
     else:
         bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16)
-        model = AutoModelForCausalLM.from_pretrained(MODEL, quantization_config=bnb, device_map={"": 0}, torch_dtype=torch.float16, attn_implementation="sdpa")
+        model = AutoModelForCausalLM.from_pretrained(MODEL, quantization_config=bnb, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16, attn_implementation="sdpa")
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
         targets = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
     model = get_peft_model(model, LoraConfig(r=LORA_R, lora_alpha=LORA_R * 2, lora_dropout=0.03, target_modules=targets, task_type="CAUSAL_LM"))
-    model.print_trainable_parameters()
+    if RANK == 0:
+        model.print_trainable_parameters()
+        print(f"karty: {WORLD}, efektywny batch: {BATCH * max(1, GRAD_ACC // WORLD) * WORLD}")
 
     args = TrainingArguments(
-        output_dir=os.path.join(OUT_DIR, "ckpt"), per_device_train_batch_size=BATCH, per_device_eval_batch_size=1, gradient_accumulation_steps=GRAD_ACC,
+        output_dir=os.path.join(OUT_DIR, "ckpt"), per_device_train_batch_size=BATCH, per_device_eval_batch_size=1, gradient_accumulation_steps=max(1, GRAD_ACC // WORLD),
         num_train_epochs=EPOCHS, learning_rate=LR, lr_scheduler_type="cosine", warmup_ratio=0.03, weight_decay=0.0,
         fp16=True, logging_steps=10, eval_strategy="steps", eval_steps=200, save_strategy="steps", save_steps=200, save_total_limit=2,
         group_by_length=False, report_to="none", gradient_checkpointing=True, optim="paged_adamw_8bit" if QUANT != "none" else "adamw_torch", max_grad_norm=1.0, seed=SEED,
-        remove_unused_columns=False,
+        remove_unused_columns=False, ddp_find_unused_parameters=False, gradient_checkpointing_kwargs={"use_reentrant": False},
     )
     trainer = Trainer(model=model, args=args, train_dataset=DS(train_ds), eval_dataset=DS(val_ds), data_collator=collate)
     resume = os.path.isdir(os.path.join(OUT_DIR, "ckpt")) and any(d.startswith("checkpoint") for d in os.listdir(os.path.join(OUT_DIR, "ckpt")))
     trainer.train(resume_from_checkpoint=resume or None)
-    model.save_pretrained(os.path.join(OUT_DIR, "adapter"))
-    tok.save_pretrained(os.path.join(OUT_DIR, "adapter"))
-    print("adapter zapisany:", os.path.join(OUT_DIR, "adapter"))
+    if RANK == 0:
+        model.save_pretrained(os.path.join(OUT_DIR, "adapter"))
+        tok.save_pretrained(os.path.join(OUT_DIR, "adapter"))
+        print("adapter zapisany:", os.path.join(OUT_DIR, "adapter"))
 
 
 if __name__ == "__main__":

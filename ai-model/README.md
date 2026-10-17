@@ -76,7 +76,7 @@ os.environ["DATA_DIR"] = "/kaggle/input/predator-ai-data"
 !python /kaggle/working/predator/ai-model/train/train_kaggle.py --selftest
 ```
 
-Komórka 3 (właściwy trening; sesja Kaggle ma limit ~9-12 h, skrypt zapisuje punkty kontrolne co 200 kroków i wznawia je sam):
+Komórka 3 (na Kaggle z dwiema kartami T4 uruchom `!torchrun --nproc_per_node 2 .../train_kaggle.py` zamiast `python` - trening idzie ok. 1,8x szybciej; właściwy trening; sesja Kaggle ma limit ~9-12 h, skrypt zapisuje punkty kontrolne co 200 kroków i wznawia je sam):
 
 ```python
 os.environ.update({"EPOCHS": "2", "GENERAL_N": "2500"})
