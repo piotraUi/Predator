@@ -173,6 +173,14 @@ def main():
         att = torch.tensor([[1] * len(b["input_ids"]) + [0] * (m - len(b["input_ids"])) for b in batch])
         return {"input_ids": ids, "labels": lab, "attention_mask": att}
 
+    if "qwen3_5" in MODEL.lower().replace(".", "_").replace("-", "_") or "qwen3.5" in MODEL.lower():
+        # Qwen3.5 ma warstwy Gated DeltaNet: bez tych pakietów model po cichu przechodzi na wolne operacje PyTorch
+        for mod, pkg in (("fla", "flash-linear-attention"), ("causal_conv1d", "causal-conv1d")):
+            try:
+                __import__(mod)
+                print(f"szybkie jądra DeltaNet: {pkg} OK")
+            except ImportError:
+                print(f"UWAGA: brak {pkg} - trening będzie wyraźnie wolniejszy (pip install {pkg})")
     if QUANT == "none":
         try:
             model = AutoModelForCausalLM.from_pretrained(MODEL, device_map={"": LOCAL_RANK}, torch_dtype=torch.float16, attn_implementation="sdpa")
