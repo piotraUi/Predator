@@ -8,7 +8,6 @@ import { WeatherAudio } from "./weatherAudio.ts";
 import { SpatialAudio } from "./spatialAudio.ts";
 import { buildGrass, scatterTrees } from "./nature.ts";
 import { Gore, surfaceNormal } from "./gore.ts";
-import { drawViewmodel } from "./viewmodel.ts";
 import { findSkybox } from "../../../shared/skybox.ts";
 import { TerrainGrid } from "../../../shared/terrain.ts";
 import type { ActionAnim, Anim, Atmosphere, WeatherId, Avatar, ChatMsg, NetPlayer, Part, ToolDef } from "../../../shared/types.ts";
@@ -704,7 +703,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (!fromServer) r.send("died");
     hotbar.select(null);
     setHp(0, maxHp);
-    gore.pool(groundUnder(body.x, body.y, body.z) ?? [body.x, body.y, body.z]);
+    goreOn && gore.pool(groundUnder(body.x, body.y, body.z) ?? [body.x, body.y, body.z]);
     setTimeout(() => {
       if (disposed) return;
       Object.assign(body, spawnPoint(), { vx: 0, vy: 0, vz: 0 });
@@ -731,7 +730,9 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const g = raycastParts(collisions, x, y + 1, z, 0, -1, 0, 40);
     return g ? [x, y + 1 - g.dist, z] : null;
   };
+  const goreOn = !!init.world.gore;
   const bleed = (x: number, y: number, z: number, n = 8) => {
+    if (!goreOn) return;
     fx.burst("blood", [x, y + 3, z], n);
     const g = groundUnder(x, y, z);
     if (g) gore.splat([g[0] + (Math.random() - 0.5) * 2.5, g[1], g[2] + (Math.random() - 0.5) * 2.5]);
@@ -912,7 +913,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (!rm) return;
     setRemoteHp(rm, m.hp, m.max);
     if (m.hp > 0) rm.av.flash();
-    else gore.pool(groundUnder(rm.av.x, rm.av.y, rm.av.z) ?? [rm.av.x, rm.av.y, rm.av.z]);
+    else goreOn && gore.pool(groundUnder(rm.av.x, rm.av.y, rm.av.z) ?? [rm.av.x, rm.av.y, rm.av.z]);
   });
   r.onMessage("inv", (ids: string[]) => hotbar.set(toolDefs(ids)));
   r.onMessage("picked", (id: string) => {
@@ -1267,9 +1268,11 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       eye[1] = body.y + 4.7 - down * 0.3;
       eye[2] = body.z + fwdZ * lean;
       target[0] = eye[0] - dir[0]; target[1] = eye[1] - dir[1]; target[2] = eye[2] - dir[2];
-      local.visible = false;
+      local.visible = true;
+      local.firstPerson = true;
     } else {
       local.visible = true;
+      local.firstPerson = false;
       const hit = raycastParts(collisions, head[0], head[1], head[2], dir[0], dir[1], dir[2], useRadius);
       if (hit) useRadius = Math.max(0.5, hit.dist - 0.6);
       eye[0] = head[0] + dir[0] * useRadius; eye[1] = head[1] + dir[1] * useRadius; eye[2] = head[2] + dir[2] * useRadius;
@@ -1373,7 +1376,6 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     fx.draw(rend);
     vox?.draw();
     local.draw();
-    if (fp && !dead && !myRide && !vox) drawViewmodel(rend, { eye, dir, tool: hotbar.current ?? null, arm: local.armColor(), time: rend.time, moving, sinceUse: (now - lastUseAt) / 1000 });
     for (const rm of remotes.values()) rm.av.draw();
     for (const n of npcs.values()) if (rend.inView(n.x, n.y + 4 * n.scale, n.z, 8 * n.scale, TIERS[gov.tier].drawDist * 0.14)) n.draw();
     rend.render({ eye, target, fov: ROBLOX_FOV, near: fp ? 0.05 : 0.2, far: 2000 });

@@ -234,6 +234,8 @@ export interface WorldData {
   atmosphere?: Atmosphere;
   /** trawa i drzewa na terenie (Apex) */
   nature?: Nature;
+  /** krew (plamy, kałuże, cząsteczki) po trafieniu i śmierci - domyślnie wyłączona */
+  gore?: boolean;
   /** "2d" = gra 2D (platformówka) - wtedy świat jest w world2d, a parts są puste;
    *  "html" = gra HTML (strona w ramce, nie gra Predatora) - kod w polu html */
   mode?: "3d" | "2d" | "html";

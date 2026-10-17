@@ -678,7 +678,7 @@ export function studioScreen(
 
     // ---------- zmiany i cofanie ----------
     // cofanie obejmuje klocki, teren i to, co zmienia asystent AI (skrypty, GUI, miejsca, narzędzia, ustawienia)
-    const UNDO_KEYS = ["scripts", "guis", "places", "startPlace", "tools", "badges", "skyColor", "skybox", "light", "atmosphere", "nature", "gravity", "pvp", "genre", "playerCharacter"] as const;
+    const UNDO_KEYS = ["scripts", "guis", "places", "startPlace", "tools", "badges", "skyColor", "skybox", "light", "atmosphere", "nature", "gore", "gravity", "pvp", "genre", "playerCharacter"] as const;
     const snapshot = () => JSON.stringify({ parts: data.parts, terrain: data.terrain ?? null, extra: Object.fromEntries(UNDO_KEYS.map((k) => [k, data[k] ?? null])) });
     function pushUndo() {
       undo.push(snapshot());
@@ -2878,6 +2878,8 @@ export function studioScreen(
         h("label", { class: "check" }, natGrass, h("span", null, "🌿 Trawa na trawiastym terenie (Apex)")),
         h("label", null, "🌳 Drzewa rozsiane po terenie (0 = brak, 1 = las)", natTrees),
       );
+      const goreBox = h("input", { type: "checkbox", checked: !!data.gore });
+      const goreEl = h("label", { class: "check" }, goreBox, h("span", null, "🩸 Krew (gore): plamy, kałuże i krwawe cząsteczki po trafieniu i śmierci (Apex)"));
       const grav = h("input", { type: "number", min: "10", max: "500", step: "1", value: String(data.gravity) });
       const pub = h("input", { type: "checkbox", checked: src.published });
       const pvp = h("input", { type: "checkbox", checked: data.pvp });
@@ -2905,6 +2907,7 @@ export function studioScreen(
           h("label", null, "Kolor nieba (gdy wybrane „Kolor”)", sky),
           atEl,
           natEl,
+          goreEl,
           h("label", null, "Grawitacja (normalnie 196)", grav),
           h("label", null, "Wygląd graczy", playerChar),
           h("label", { class: "check" }, pvp, h("span", null, "PvP - gracze mogą się ranić broniami")),
@@ -2932,6 +2935,8 @@ export function studioScreen(
                 if (atWeather.value !== "clear") a.weather = atWeather.value as WeatherId;
                 data.atmosphere = a;
               } else delete data.atmosphere;
+              if (goreBox.checked) data.gore = true;
+              else delete data.gore;
               {
                 const nat: Nature = {};
                 if (!natGrass.checked) nat.grass = false;
@@ -3097,7 +3102,7 @@ export function studioScreen(
           // ktoś edytował wcześniej - stan z serwera jest aktualny
           const keep = new Set(srv.parts.map((p) => p.id));
           const del = data.parts.filter((p) => !keep.has(p.id)).map((p) => p.id);
-          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "atmosphere", "nature", "genre", "terrain", "guis", "places", "startPlace", "blocks"] as const).filter(
+          const fields = (["scripts", "tools", "characters", "animations", "skyColor", "skybox", "gravity", "pvp", "playerCharacter", "badges", "products", "sounds", "music", "light", "atmosphere", "nature", "gore", "genre", "terrain", "guis", "places", "startPlace", "blocks"] as const).filter(
             (k) => JSON.stringify(srv[k] ?? null) !== JSON.stringify(data[k] ?? null),
           );
           for (const k of fields) {

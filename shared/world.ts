@@ -510,8 +510,8 @@ export const MAX_SOUND_CHARS = 4_200_000;
 const SOUND_URL_RE = /^(data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+|\/game-assets\/[A-Za-z0-9_./-]+)$/;
 
 /** dźwięki, muzyka i światło gry 3D */
-export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, "sounds" | "music" | "light" | "atmosphere" | "nature"> {
-  const out: Pick<WorldData, "sounds" | "music" | "light" | "atmosphere" | "nature"> = {};
+export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, "sounds" | "music" | "light" | "atmosphere" | "nature" | "gore"> {
+  const out: Pick<WorldData, "sounds" | "music" | "light" | "atmosphere" | "nature" | "gore"> = {};
   const sounds: WorldSound[] = [];
   let total = 0;
   for (const raw of Array.isArray(w.sounds) ? w.sounds.slice(0, MAX_SOUNDS) : []) {
@@ -534,6 +534,7 @@ export function sanitizeAudioLight(w: Record<string, unknown>): Pick<WorldData, 
   }
   const atm = sanitizeAtmosphere(w.atmosphere);
   if (atm) out.atmosphere = atm;
+  if (w.gore === true) out.gore = true;
   const nat = sanitizeNature(w.nature);
   if (nat) out.nature = nat;
   return out;

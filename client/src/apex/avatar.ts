@@ -35,6 +35,8 @@ export class ApexAvatar {
   /** skala całej postaci (postacie ze Studia) */
   scale = 1;
   visible = true;
+  /** pierwsza osoba: bez głowy (twarz, włosy, czapka), reszta ciała widoczna */
+  firstPerson = false;
   private t = Math.random() * 10;
   private look!: Avatar;
   private colors: { head: Rgb; torso: Rgb; arms: Rgb; legs: Rgb } = { head: [1, 1, 1], torso: [1, 1, 1], arms: [1, 1, 1], legs: [1, 1, 1] };
@@ -355,7 +357,8 @@ export class ApexAvatar {
     };
     const c = this.colors;
     const C = this.cloth;
-    const hidden = !!(this.modelDef?.hideBody && this.model);
+    const fpv = this.firstPerson && !this.rag;
+    const hidden = !!(this.modelDef?.hideBody && this.model) || (fpv && !!this.model);
     let hr = mul3(root, this.headRot);
     const frames: Record<Joint, { rot: number[]; pos: V3 }> = {
       head: { rot: hr, pos: place(0, 4.6, 0) },
@@ -373,8 +376,8 @@ export class ApexAvatar {
     }
     if (!hidden) {
       r.drawBox("box", frames.torso.rot, frames.torso.pos, [2 * s, 2 * s, s], tint(C.torso ? [1, 1, 1] : c.torso), 1, 0, C.torso, -2);
-      r.drawBox("box", hr, frames.head.pos, [1.2 * s, 1.2 * s, 1.2 * s], tint(c.head));
-      if (this.face) {
+      if (!fpv) r.drawBox("box", hr, frames.head.pos, [1.2 * s, 1.2 * s, 1.2 * s], tint(c.head));
+      if (this.face && !fpv) {
         const fo = apply3(hr, [0, 0, -0.61 * s]);
         r.drawDecal(this.face, hr, [frames.head.pos[0] + fo[0], frames.head.pos[1] + fo[1], frames.head.pos[2] + fo[2]], 1.1 * s, 1.1 * s);
       }
@@ -396,8 +399,9 @@ export class ApexAvatar {
       if (!hidden) r.drawBox("box", rot, pos, [s, 2 * s, s], tint(ct ? [1, 1, 1] : col), 1, 0, ct, -3);
     }
     if (!hidden) {
-      this.wear?.draw(r, { headRot: hr, headPos: frames.head.pos, torsoRot: frames.torso.rot, torsoPos: frames.torso.pos, s, tint, time: this.t });
+      if (!fpv) this.wear?.draw(r, { headRot: hr, headPos: frames.head.pos, torsoRot: frames.torso.rot, torsoPos: frames.torso.pos, s, tint, time: this.t });
       for (const a of this.accessories) {
+        if (fpv && a.joint === "head") continue;
         const f = frames[a.joint];
         const lp = apply3(f.rot, [a.x * s, a.y * s, a.z * s]);
         r.drawBox(a.shape, mul3(f.rot, euler(a.rx * DEG, a.ry * DEG, a.rz * DEG)), [f.pos[0] + lp[0], f.pos[1] + lp[1], f.pos[2] + lp[2]], [a.sx * s, a.sy * s, a.sz * s], tint(rgb(a.color)), 1, a.material === "neon" ? 1 : 0);
