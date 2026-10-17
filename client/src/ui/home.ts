@@ -171,7 +171,7 @@ export function homeScreen(root: HTMLElement, params: { tab?: string; worldId?: 
     for (const b of el.querySelectorAll<HTMLElement>("[data-v]")) b.classList.toggle("active", b.dataset.v === tab);
     el.dataset.view = r.v;
     if (isHomeTab(r.v)) history.replaceState(null, "", "#" + r.v);
-    const view = h("div", { class: "pv-view pv-" + r.v });
+    const view = h("div", { class: "pv-view pv-" + (r.v === "search" ? "searchpage" : r.v) });
     main.append(view);
     const res: Cleanup | Promise<Cleanup> =
       r.v === "home"
