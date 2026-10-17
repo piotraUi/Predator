@@ -8,11 +8,14 @@ import { requireAuth, type AuthedRequest } from "./auth.ts";
 import { db, isAdminName, toPublicUser, users } from "./db.ts";
 import { gemini, GeminiError, geminiModel, geminiReady, type GeminiContent, type GeminiPart } from "./gemini.ts";
 import { settings } from "./settings.ts";
+import { aiProvider, localChat, localModel, localReady, LocalLlmError } from "./localLlm.ts";
 import { normalizeContents } from "../../shared/ai/contents.ts";
 
 export const assistantRouter = express.Router();
 
-const enabled = () => geminiReady() && settings.get("ai_assistant") !== "0";
+/** własny model obsługuje tylko gry 3D (mapy i skrypty); 2D zawsze przez Gemini */
+const useLocal = (mode: "2d" | "3d") => aiProvider() === "local" && localReady() && mode === "3d";
+const enabled = () => (geminiReady() || (aiProvider() === "local" && localReady())) && settings.get("ai_assistant") !== "0";
 const dailyLimit = () => Number(settings.get("ai_daily_limit") ?? 300);
 
 // ---------- dokupowanie kroków za monety ----------
@@ -131,7 +134,7 @@ function cleanContents(raw: unknown): GeminiContent[] | string {
 assistantRouter.get("/status", requireAuth, (req, res) => {
   const u = (req as AuthedRequest).user;
   const admin = isAdminName(u.username);
-  res.json({ enabled: enabled(), model: geminiModel(), used: used(u.id), limit: admin ? null : limitFor(u.id), pack: PACK, coins: u.coins });
+  res.json({ enabled: enabled(), model: aiProvider() === "local" && localReady() ? localModel() : geminiModel(), provider: aiProvider() === "local" && localReady() ? "local" : "gemini", used: used(u.id), limit: admin ? null : limitFor(u.id), pack: PACK, coins: u.coins });
 });
 
 /** przedłużenie asystenta na dziś: kilka monet za kolejną porcję kroków */
@@ -157,6 +160,12 @@ assistantRouter.post("/assistant", express.json({ limit: "12mb" }), requireAuth,
   if (!admin && n >= limitFor(u.id)) return void res.status(429).json({ error: `Dzisiejszy limit asystenta się skończył (${limitFor(u.id)} kroków). Wróć jutro albo przedłuż go za ${PACK.coins} monet (przycisk ➕ przy liczniku kroków).`, limitReached: true });
   usage.set(u.id, { day: today(), n: n + 1 });
   try {
+    if (useLocal(mode)) {
+      const r = await localChat(contents, u.username);
+      count(u.id, r.tokens);
+      return void res.json({ content: { role: "model", parts: r.parts }, finish: "STOP", used: n + 1, limit: admin ? null : limitFor(u.id) });
+    }
+    if (!geminiReady()) return void res.status(503).json({ error: "Gry 2D wymagają klucza Gemini (własny model obsługuje na razie tylko gry 3D)" });
     const r = await gemini(
       {
         systemInstruction: { parts: [{ text: PROMPTS[mode] + `\n\nThe user's name is ${u.username}.` }] },
@@ -176,7 +185,7 @@ assistantRouter.post("/assistant", express.json({ limit: "12mb" }), requireAuth,
   } catch (e) {
     const err = e as Error;
     console.warn("Asystent AI:", err.message);
-    const status = e instanceof GeminiError && e.status === 429 ? 429 : 502;
+    const status = (e instanceof GeminiError || e instanceof LocalLlmError) && e.status === 429 ? 429 : 502;
     res.status(status).json({ error: status === 429 ? "Za dużo zapytań do AI naraz - spróbuj za chwilę." : "AI nie odpowiada: " + err.message.slice(0, 300) });
   }
 });

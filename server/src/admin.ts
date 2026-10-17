@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { aiEnabled, checkTexts, moderationStatus, modLog, runWorldScan, scanAllPublished, settings, worldMod } from "./moderation.ts";
 import { DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, imageLocation, imageModel, mediaCosts, mediaStats, videoLocation, videoModel } from "./media.ts";
+import { localPing, localStatus } from "./localLlm.ts";
 import { deleteServiceAccount, gemini, geminiFastModel, geminiModel, geminiReady, geminiStatus, responseText, saveServiceAccount } from "./gemini.ts";
 import { assistantStats } from "./assistant.ts";
 import { mountMediaAdmin } from "./downloads.ts";
@@ -352,7 +353,7 @@ admin.post("/moderation/test", async (req, res) => {
 
 // ---------- Gemini (Google Cloud): plik klucza JSON, model, asystent ----------
 
-const aiStatus = () => ({ ...geminiStatus(), assistant: settings.get("ai_assistant") !== "0", dailyLimit: Number(settings.get("ai_daily_limit") ?? 300), stats: assistantStats(), media: { enabled: settings.get("ai_media") !== "0", imageModel: imageModel(), videoModel: videoModel(), imageLocation: imageLocation(), videoLocation: videoLocation(), defaults: { image: DEFAULT_IMAGE_MODEL, video: DEFAULT_VIDEO_MODEL }, ...mediaCosts(), ...mediaStats() } });
+const aiStatus = () => ({ ...geminiStatus(), local: localStatus(), assistant: settings.get("ai_assistant") !== "0", dailyLimit: Number(settings.get("ai_daily_limit") ?? 300), stats: assistantStats(), media: { enabled: settings.get("ai_media") !== "0", imageModel: imageModel(), videoModel: videoModel(), imageLocation: imageLocation(), videoLocation: videoLocation(), defaults: { image: DEFAULT_IMAGE_MODEL, video: DEFAULT_VIDEO_MODEL }, ...mediaCosts(), ...mediaStats() } });
 
 admin.get("/ai", (_req, res) => res.json(aiStatus()));
 
@@ -402,11 +403,27 @@ admin.put("/ai", (req, res) => {
   for (const [field, key] of [["imageCoins", "ai_image_coins"], ["videoCoins", "ai_video_coins"], ["imageDaily", "ai_image_daily"], ["videoDaily", "ai_video_daily"]] as const)
     if (typeof b[field] === "number") settings.set(key, String(Math.max(0, Math.min(100_000, Math.round(b[field])))));
   if (typeof b.media === "boolean") settings.set("ai_media", b.media ? "1" : "0");
+  // własny model (np. Qwen po treningu na Kaggle) - serwer zgodny z OpenAI (llama.cpp, Ollama, vLLM)
+  if (b.provider === "gemini" || b.provider === "local") settings.set("ai_provider", b.provider);
+  if (typeof b.localUrl === "string") {
+    const u = b.localUrl.trim().replace(/\/+$/, "");
+    if (u && !/^https?:\/\/[^\s]{3,200}$/.test(u)) return fail(res, 400, "Zły adres (np. http://127.0.0.1:8080/v1)");
+    settings.set("local_llm_url", u || null);
+  }
+  if (typeof b.localModel === "string") {
+    const m = b.localModel.trim();
+    if (m && !/^[A-Za-z0-9][A-Za-z0-9.\-_:@\/]{0,100}$/.test(m)) return fail(res, 400, "Zła nazwa modelu");
+    settings.set("local_llm_model", m || null);
+  }
+  if (typeof b.localKey === "string") settings.set("local_llm_key", b.localKey.trim() || null);
   if (typeof b.assistant === "boolean") settings.set("ai_assistant", b.assistant ? "1" : "0");
   if (typeof b.dailyLimit === "number") settings.set("ai_daily_limit", String(Math.max(0, Math.min(100_000, Math.round(b.dailyLimit)))));
   log(req, "Ustawienia AI zmienione", "", JSON.stringify({ model: b.model, fastModel: b.fastModel, location: b.location, assistant: b.assistant, dailyLimit: b.dailyLimit }));
   res.json(aiStatus());
 });
+
+/** próba połączenia z własnym modelem */
+admin.post("/ai/local-test", async (_req, res) => res.json(await localPing()));
 
 /** próba: krótkie pytanie do Gemini (czy klucz, model i region działają) */
 admin.post("/ai/test", async (req, res) => {

@@ -65,6 +65,8 @@ export class Rng {
 }
 
 export const r2 = (v: number) => Math.round(v * 100) / 100;
+/** zapis krótszy w tokenach: jedno miejsce po przecinku (dwa dla liczb mniejszych od 1) */
+export const rd = (v: number) => (Math.abs(v) < 1 ? Math.round(v * 100) / 100 : Math.round(v * 10) / 10);
 const rad = (d: number) => (d * Math.PI) / 180;
 
 // ---------- sceneria w układzie lokalnym ----------
@@ -91,11 +93,12 @@ export class Scene {
 
   add(sp: Spec): Spec {
     const [x, z] = this.at(sp.x, sp.z);
-    const o: Spec = { ...sp, x: r2(x), y: r2(sp.y + this.oy), z: r2(z) };
-    if (this.yaw) o.ry = r2(((sp.ry ?? 0) + this.yaw) % 360);
-    o.sx = r2(sp.sx);
-    o.sy = r2(sp.sy);
-    o.sz = r2(sp.sz);
+    const o: Spec = { ...sp, x: rd(x), y: rd(sp.y + this.oy), z: rd(z) };
+    if (this.yaw) o.ry = rd(((sp.ry ?? 0) + this.yaw) % 360);
+    for (const k of ["rx", "ry", "rz"] as const) if (o[k] !== undefined) o[k] = rd(o[k]!);
+    o.sx = rd(sp.sx);
+    o.sy = rd(sp.sy);
+    o.sz = rd(sp.sz);
     if (o.ry === 0) delete o.ry;
     this.parts.push(o);
     return o;

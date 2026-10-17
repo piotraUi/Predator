@@ -117,3 +117,38 @@ export function stripPl(s: string): string {
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 NOUNS.road = { pl: [N("ulica", "ulicę", "ulic", "f"), N("droga", "drogę", "dróg", "f")], en: ["road", "street"], enPl: "roads" };
+
+Object.assign(NOUNS, {
+  scooter: { pl: [N("hulajnoga", "hulajnogę", "hulajnóg", "f")], en: ["scooter", "kick scooter"], enPl: "scooters" },
+  bicycle: { pl: [N("rower", "rower", "rowerów", "m"), N("rowerek", "rowerek", "rowerków", "m")], en: ["bicycle", "bike"], enPl: "bikes" },
+  motorcycle: { pl: [N("motocykl", "motocykl", "motocykli", "m"), N("motor", "motor", "motorów", "m")], en: ["motorcycle"], enPl: "motorcycles" },
+  airplane: { pl: [N("samolot", "samolot", "samolotów", "m")], en: ["airplane", "plane"], enPl: "airplanes" },
+  helicopter: { pl: [N("helikopter", "helikopter", "helikopterów", "m"), N("śmigłowiec", "śmigłowiec", "śmigłowców", "m")], en: ["helicopter"], enPl: "helicopters" },
+  pirateShip: { pl: [N("statek piracki", "statek piracki", "statków pirackich", "m"), N("statek", "statek", "statków", "m")], en: ["pirate ship", "ship"], enPl: "ships" },
+  train: { pl: [N("pociąg", "pociąg", "pociągów", "m")], en: ["train"], enPl: "trains" },
+  bus: { pl: [N("autobus", "autobus", "autobusów", "m")], en: ["bus"], enPl: "buses" },
+  rocket: { pl: [N("rakieta", "rakietę", "rakiet", "f")], en: ["rocket"], enPl: "rockets" },
+  tank: { pl: [N("czołg", "czołg", "czołgów", "m")], en: ["tank"], enPl: "tanks" },
+  ufo: { pl: [N("UFO", "UFO", "UFO", "n"), N("latający talerz", "latający talerz", "latających talerzy", "m")], en: ["UFO", "flying saucer"], enPl: "UFOs" },
+  sofa: { pl: [N("sofa", "sofę", "sof", "f"), N("kanapa", "kanapę", "kanap", "f")], en: ["sofa", "couch"], enPl: "sofas" },
+  tableChairs: { pl: [N("stół z krzesłami", "stół z krzesłami", "stołów z krzesłami", "m")], en: ["table with chairs"], enPl: "tables with chairs" },
+  bed: { pl: [N("łóżko", "łóżko", "łóżek", "n")], en: ["bed"], enPl: "beds" },
+  television: { pl: [N("telewizor", "telewizor", "telewizorów", "m")], en: ["TV", "television"], enPl: "TVs" },
+  robot: { pl: [N("robot", "robota", "robotów", "m")], en: ["robot"], enPl: "robots" },
+  snowman: { pl: [N("bałwan", "bałwana", "bałwanów", "m")], en: ["snowman"], enPl: "snowmen" },
+  trampoline: { pl: [N("trampolina", "trampolinę", "trampolin", "f")], en: ["trampoline"], enPl: "trampolines" },
+  ferrisWheel: { pl: [N("diabelski młyn", "diabelski młyn", "diabelskich młynów", "m"), N("koło młyńskie", "koło młyńskie", "kół młyńskich", "n")], en: ["ferris wheel"], enPl: "ferris wheels" },
+  catapult: { pl: [N("katapulta", "katapultę", "katapult", "f")], en: ["catapult"], enPl: "catapults" },
+  treehouse: { pl: [N("domek na drzewie", "domek na drzewie", "domków na drzewie", "m")], en: ["treehouse"], enPl: "treehouses" },
+  church: { pl: [N("kościół", "kościół", "kościołów", "m")], en: ["church"], enPl: "churches" },
+  school: { pl: [N("szkoła", "szkołę", "szkół", "f")], en: ["school"], enPl: "schools" },
+  shop: { pl: [N("sklep", "sklep", "sklepów", "m")], en: ["shop", "store"], enPl: "shops" },
+  swimmingPool: { pl: [N("basen", "basen", "basenów", "m"), N("pływalnia", "pływalnię", "pływalni", "f")], en: ["swimming pool", "pool"], enPl: "pools" },
+  footballPitch: { pl: [N("boisko piłkarskie", "boisko piłkarskie", "boisk piłkarskich", "n"), N("boisko do piłki nożnej", "boisko do piłki nożnej", "boisk do piłki nożnej", "n")], en: ["football pitch", "soccer field"], enPl: "football pitches" },
+  basketballCourt: { pl: [N("boisko do koszykówki", "boisko do koszykówki", "boisk do koszykówki", "n")], en: ["basketball court"], enPl: "basketball courts" },
+  igloo: { pl: [N("igloo", "igloo", "igloo", "n")], en: ["igloo"], enPl: "igloos" },
+  cactus: { pl: [N("kaktus", "kaktus", "kaktusów", "m")], en: ["cactus"], enPl: "cacti" },
+  mushroom: { pl: [N("grzyb", "grzyb", "grzybów", "m"), N("muchomor", "muchomora", "muchomorów", "m")], en: ["mushroom"], enPl: "mushrooms" },
+  treasureChest: { pl: [N("skrzynia skarbów", "skrzynię skarbów", "skrzyń skarbów", "f"), N("skrzynia", "skrzynię", "skrzyń", "f")], en: ["treasure chest"], enPl: "treasure chests" },
+  portal: { pl: [N("portal", "portal", "portali", "m")], en: ["portal"], enPl: "portals" },
+});

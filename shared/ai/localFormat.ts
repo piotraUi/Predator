@@ -22,7 +22,7 @@ const SHAPE_LETTER: Record<string, string> = { box: "b", sphere: "s", cylinder: 
 const MAT_SHORT: Record<string, string> = { plastic: "plastic", neon: "neon", glass: "glass", metal: "metal" };
 
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
-const fmt = (v: number) => String(Math.round(v * 100) / 100);
+const fmt = (v: number) => String(Math.abs(v) < 1 ? Math.round(v * 100) / 100 : Math.round(v * 10) / 10);
 
 export interface PartLike {
   name: string;
@@ -79,7 +79,7 @@ export function placeParts<T extends PartLike>(parts: T[], pl: Placement): T[] {
   const yaw = pl.yaw ?? 0, oy = pl.y ?? 0;
   if (!ox && !oz && !yaw && !oy) return parts;
   const c = Math.cos((yaw * Math.PI) / 180), sn = Math.sin((yaw * Math.PI) / 180);
-  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const r2 = (v: number) => (Math.abs(v) < 1 ? Math.round(v * 100) / 100 : Math.round(v * 10) / 10);
   return parts.map((p) => {
     const q = { ...p, x: r2(ox + c * p.x + sn * p.z), y: r2(p.y + oy), z: r2(oz - sn * p.x + c * p.z) };
     if (yaw) {

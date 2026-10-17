@@ -182,10 +182,21 @@ function summarize(items: BuiltItem[], pl: boolean): string {
   return (pl ? "Postawiłem: " : "I placed: ") + bits.join(", ") + ".";
 }
 
+/** losowe dopiski do prośby (pozdrowienie, "w mojej grze", emotka), żeby ten sam cel brzmiał na wiele sposobów */
+export function decorate(ask: string, r: Rng, lang: Lang): string {
+  const pre = lang === "en" ? ["", "", "", "Hey, ", "Hi! ", "Please ", "Quick one: ", "Help me: "] : ["", "", "", "Hej, ", "Cześć! ", "Proszę, ", "Słuchaj, ", "Pomóż mi: ", "Zadanie: ", "Siema, "];
+  const suf = lang === "en" ? ["", "", " in my game", " please", " 🙂", " thanks!"] : ["", "", " w mojej grze", " proszę", " 🙂", " dzięki!", " na mojej mapie", " tak, żeby działało"];
+  let t = r.pick(pre) + ask.replace(/[.!?]+$/, "") + r.pick(suf);
+  if (r.chance(0.15)) t = t.charAt(0).toLowerCase() + t.slice(1);
+  return lang === "pl-noaccent" ? stripPl(t) : t;
+}
+
 // ---------- pojedyncza budowla ----------
 
 /** wagi: co użytkownicy budują najczęściej */
 export const SINGLE_WEIGHTS: Record<string, number> = {
+  scooter: 3, bicycle: 2, motorcycle: 2, airplane: 3, helicopter: 3, pirateShip: 2, train: 3, bus: 2, rocket: 3, tank: 2, ufo: 2, sofa: 1, tableChairs: 1, bed: 1, television: 1, robot: 2, snowman: 2, trampoline: 2,
+  ferrisWheel: 2, catapult: 1, treehouse: 2, church: 2, school: 2, shop: 2, swimmingPool: 2, footballPitch: 2, basketballCourt: 1, igloo: 1, cactus: 1, mushroom: 1, treasureChest: 1, portal: 2, road: 1,
   house: 14, tower: 5, castle: 4, tree: 6, bridge: 4, bench: 2, lamp: 2, well: 2, campfire: 3, tent: 3, fence: 3, fountain: 3, car: 6, boat: 3, skateboard: 1,
   pond: 2, dock: 2, swing: 2, slide: 2, sandbox: 1, pyramid: 3, windmill: 3, lighthouse: 3, gazebo: 2, stairs: 3, ramp: 2, barn: 2, stall: 2, sign: 1,
   rock: 1, flowers: 1, obby: 12, stairsOfDeath: 3, spiralTower: 3, arena: 6, maze: 5, raceTrack: 3, skyscraper: 5, island: 4,
@@ -201,9 +212,9 @@ function weighted(r: Rng, w: Record<string, number>): string {
 const PLAN_PL = ["Sprawdzę najpierw mapę.", "Najpierw rzucę okiem na mapę.", "Zaczynam od przeglądu mapy.", "Patrzę, gdzie jest kamera i co już stoi."];
 const PLAN_EN = ["Let me check the map first.", "I'll start by looking at the map.", "First I'll check what's already there."];
 
-export function sampleSingle(r: Rng, forceId?: string): Sample | null {
+export function sampleSingle(r: Rng, forceId?: string, askOverride?: string, langOverride?: Lang): Sample | null {
   const id = forceId ?? weighted(r, SINGLE_WEIGHTS);
-  const lang = pickLang(r);
+  const lang = langOverride ?? pickLang(r);
   const w = baseWorld(r);
   const yaw = r.chance(0.6) ? 0 : r.pick([90, 180, 270, 45, -45, 30]);
   const at: [number, number] = [w.focus[0], w.focus[2]];
@@ -212,7 +223,7 @@ export function sampleSingle(r: Rng, forceId?: string): Sample | null {
   const item = buildOne(id, r, at, yaw, req);
   if (!item) return null;
   const ph = phrase(id, item.req, r, lang);
-  const ask = askText(ph, r);
+  const ask = askOverride ?? askText(ph, r);
   const sys = systemMsg(r);
   const plan = lang === "en" ? r.pick(PLAN_EN) : lang === "pl" ? r.pick(PLAN_PL) : stripPl(r.pick(PLAN_PL));
   const msgs: Msg[] = [sys, { role: "user", content: ask }];

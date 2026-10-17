@@ -3,7 +3,7 @@
 import { Rng, type Spec } from "./core.ts";
 import { stripPl } from "./lang.ts";
 import { Session } from "./session.ts";
-import { pickLang, toPart, type Sample } from "./samples.ts";
+import { decorate, pickLang, toPart, type Sample } from "./samples.ts";
 import type { Lang } from "./requests.ts";
 
 export interface TestAction { at: number; player?: number; type: "touch" | "chat" | "gui_click" | "answer"; target?: string; text?: string }
@@ -26,12 +26,12 @@ export interface Mech {
 }
 export interface TestResult { seconds: number; chat: string[]; errors: string[]; prints: string[]; events: string[]; scores?: string[] }
 
-const pick = <T,>(r: Rng, a: readonly T[]) => r.pick(a);
-const box = (name: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: string, extra: Partial<Spec> = {}): Spec => ({ name, shape: "box", x, y, z, sx, sy, sz, color, ...extra });
+export const pick = <T,>(r: Rng, a: readonly T[]) => r.pick(a);
+export const box = (name: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: string, extra: Partial<Spec> = {}): Spec => ({ name, shape: "box", x, y, z, sx, sy, sz, color, ...extra });
 
 // ---------- mechaniki ----------
 
-type Maker = (r: Rng) => Mech;
+export type Maker = (r: Rng) => Mech;
 
 const HAZARDS = [
   { name: "Lawa", color: "#ff5a1f", pl: ["lawa", "lawy", "lawę"], en: "lava", msg: "Auć, gorąca lawa!" },
@@ -364,9 +364,12 @@ const colorFloor: Maker = (r) => {
   };
 };
 
-export const MECHS: Record<string, Maker> = {
+const MECHS1: Record<string, Maker> = {
   hazard, coins, checkpoints, goal, door, teleporter, speedPad, chatCommands, weather: weatherCmds, roundTimer, movingPlatform, saveCoins, leaderboard: leaderboardCmd, npcTalk, giveTool, fallKill, welcome, trapToggle, colorFloor,
 };
+
+import { MECHS2 } from "./lua2.ts";
+export const MECHS: Record<string, Maker> = { ...MECHS1, ...MECHS2 };
 
 // ---------- składanie rozmowy ----------
 
@@ -384,7 +387,7 @@ export async function sampleLua(r: Rng, forceId?: string): Promise<Sample | null
   const m = MECHS[id](r);
   const lang: Lang = pickLang(r);
   const ask0 = lang === "en" ? r.pick(m.ask.en) : r.pick(m.ask.pl);
-  const ask = lang === "pl-noaccent" ? stripPl(ask0) : ask0;
+  const ask = decorate(lang === "pl-noaccent" ? stripPl(ask0) : ask0, r, lang);
   const tr = (pl: string[], en: string[]) => (lang === "en" ? r.pick(en) : lang === "pl" ? r.pick(pl) : stripPl(r.pick(pl)));
   const S = new Session(r);
   if (m.existing.length) await S.exec("create_parts", { parts: m.existing.map(toPart) });

@@ -289,6 +289,7 @@ export interface AdminWorld {
 
 /** Gemini (Google Cloud) - status dla panelu admina */
 export interface AdminAi {
+  local: { url: string; model: string; hasKey: boolean; ready: boolean; provider: "gemini" | "local" };
   ready: boolean;
   fromEnv: boolean;
   email: string;
@@ -386,7 +387,8 @@ export const adminApi = {
     }>("GET", "/admin/update" + (check ? "?check=1" : "")),
   updateServer: () => req<{ ok: true }>("POST", "/admin/update"),
   ai: () => req<AdminAi>("GET", "/admin/ai"),
-  setAi: (b: { model?: string; fastModel?: string; location?: string; assistant?: boolean; dailyLimit?: number; media?: boolean; imageModel?: string; videoModel?: string; imageLocation?: string; videoLocation?: string; imageCoins?: number; videoCoins?: number; imageDaily?: number; videoDaily?: number }) => req<AdminAi>("PUT", "/admin/ai", b),
+  setAi: (b: { provider?: "gemini" | "local"; localUrl?: string; localModel?: string; localKey?: string; model?: string; fastModel?: string; location?: string; assistant?: boolean; dailyLimit?: number; media?: boolean; imageModel?: string; videoModel?: string; imageLocation?: string; videoLocation?: string; imageCoins?: number; videoCoins?: number; imageDaily?: number; videoDaily?: number }) => req<AdminAi>("PUT", "/admin/ai", b),
+  testLocalAi: () => req<{ ok: boolean; reply?: string; ms?: number; error?: string }>("POST", "/admin/ai/local-test"),
   uploadAiKey: (json: string) => req<AdminAi>("POST", "/admin/ai/key", { json }),
   deleteAiKey: () => req<AdminAi>("DELETE", "/admin/ai/key"),
   testAi: (fast = false) => req<{ ok: boolean; text: string; ms: number }>("POST", "/admin/ai/test", { fast }),

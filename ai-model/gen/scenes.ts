@@ -214,7 +214,7 @@ export function sampleScene(r: Rng, forceId?: string): Sample | null {
   let items: BuiltItem[] | null = null;
   for (let t = 0; t < 6; t++) {
     items = layout(def, ings, radius, [w.focus[0], w.focus[2]], r);
-    if (items && items.reduce((a, b) => a + b.parts.length, 0) <= 280) break;
+    if (items && items.reduce((a, b) => a + b.parts.length, 0) <= 150) break;
     items = null;
     ings = ings.map((x) => (x.id === "tree" || x.id === "lamp" || x.id === "fence" ? { ...x, count: [Math.max(1, x.count[0] - 2), Math.max(1, x.count[1] - 2)] as [number, number] } : { ...x, count: [Math.max(1, x.count[0] - (t > 2 ? 1 : 0)), Math.max(1, x.count[1] - (t > 2 ? 1 : 0))] as [number, number] }));
   }

@@ -530,6 +530,10 @@ async function aiTab(el: HTMLElement) {
   const imgDaily = numIn(m.imageDaily);
   const vidDaily = numIn(m.videoDaily);
   const testOut = h("div", { class: "muted small" });
+  const lUrl = h("input", { value: s.local.url, placeholder: "http://127.0.0.1:8080/v1" });
+  const lModel = h("input", { value: s.local.model, placeholder: "predator" });
+  const lKey = h("input", { type: "password", placeholder: s.local.hasKey ? "(klucz zapisany - wpisz nowy, żeby zmienić)" : "klucz API (opcjonalnie)", autocomplete: "off" });
+  const lOut = h("div", { class: "muted small" });
   el.append(
     h(
       "div",
@@ -635,6 +639,28 @@ async function aiTab(el: HTMLElement) {
         ),
         h("button", { class: "btn small", onClick: async () => (await run(adminApi.setAi({ media: !m.enabled }))) && redraw() }, m.enabled ? "⏸️ Wyłącz obrazy i filmy" : "▶️ Włącz obrazy i filmy"),
       ),
+    ),
+    h(
+      "div",
+      { class: "adm-box" },
+      h("h3", null, "🧠 Własny model asystenta (zamiast Gemini)"),
+      h("p", { class: "muted small" }, "Model wytrenowany przez Ciebie (ai-model/README.md) uruchomiony jako serwer zgodny z OpenAI (llama.cpp, Ollama albo vLLM). Obsługuje mapy i skrypty w grach 3D po polsku i angielsku; gry 2D, obrazy i moderacja nadal używają Gemini."),
+      h("p", null, s.local.provider === "local" ? "✅ Asystent używa własnego modelu" : "ℹ️ Asystent używa Gemini", s.local.ready ? "" : " (brak adresu modelu)"),
+      h("label", { class: "field" }, h("span", null, "Adres API (kończy się na /v1)"), lUrl),
+      h("label", { class: "field" }, h("span", null, "Nazwa modelu na serwerze"), lModel),
+      h("label", { class: "field" }, h("span", null, "Klucz API"), lKey),
+      h(
+        "div",
+        { class: "row wrap" },
+        h("button", { class: "btn small primary", onClick: async () => (await run(adminApi.setAi({ localUrl: lUrl.value, localModel: lModel.value, ...(lKey.value ? { localKey: lKey.value } : {}) }), "Zapisano")) && redraw() }, "Zapisz"),
+        h("button", { class: "btn small", onClick: async () => {
+          lOut.textContent = "Łączę…";
+          const r = await run(adminApi.testLocalAi());
+          if (r) lOut.textContent = r.ok ? `✅ ${r.ms} ms: ${r.reply}` : "❌ " + r.error;
+        } }, "🧪 Test połączenia"),
+        h("button", { class: "btn small", onClick: async () => (await run(adminApi.setAi({ provider: s.local.provider === "local" ? "gemini" : "local" }))) && redraw() }, s.local.provider === "local" ? "↩️ Wróć do Gemini" : "▶️ Używaj własnego modelu"),
+      ),
+      lOut,
     ),
     h(
       "div",
