@@ -21,12 +21,12 @@ export interface Settings {
   apexBloom: boolean;
   /** jakość grafiki: automatyczna albo stały poziom */
   quality: QualityId;
-  /** interfejs graficzny silnika Apex: WebGL2 (pełny) albo WebGPU (eksperymentalny, mniej efektów) */
-  graphicsApi: "webgl2" | "webgpu";
+  /** interfejs graficzny silnika Apex: automatycznie (WebGPU, gdy przeglądarka go obsługuje, inaczej WebGL2) albo wymuszony */
+  gfxApi: "auto" | "webgl2" | "webgpu";
 }
 
 const KEY = "predator.settings";
-const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", apexBloom: true, quality: "auto", graphicsApi: "webgl2" };
+const DEFAULTS: Settings = { sensitivity: 1, invertY: false, notifyOnline: true, notifyPlaying: true, studioTheme: "predator", apexBloom: true, quality: "auto", gfxApi: "auto" };
 const listeners = new Set<(s: Settings) => void>();
 
 function load(): Settings {
@@ -161,10 +161,11 @@ export function openSettings() {
   const api = h(
     "select",
     null,
-    h("option", { value: "webgl2", selected: settings.graphicsApi === "webgl2" }, "WebGL2 (pełne efekty, zalecane)"),
-    h("option", { value: "webgpu", selected: settings.graphicsApi === "webgpu" }, "WebGPU (eksperymentalny, nowocześniejszy)"),
+    h("option", { value: "auto", selected: settings.gfxApi === "auto" }, "Automatyczny (zalecany)"),
+    h("option", { value: "webgpu", selected: settings.gfxApi === "webgpu" }, "WebGPU"),
+    h("option", { value: "webgl2", selected: settings.gfxApi === "webgl2" }, "WebGL2"),
   ) as HTMLSelectElement;
-  api.addEventListener("change", () => updateSettings({ graphicsApi: api.value as Settings["graphicsApi"] }));
+  api.addEventListener("change", () => updateSettings({ gfxApi: api.value as Settings["gfxApi"] }));
   const hasGpu = "gpu" in navigator;
   const close = modal(
     "Ustawienia",

@@ -110,15 +110,18 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
             }
             if (disposed) return;
             if (apex) {
-              // WebGPU (opcja w Ustawieniach): tylko dla gier bez światów z bloków; gdy się nie uda, od razu WebGL2
+              // WebGPU: automatycznie, gdy przeglądarka go obsługuje (wymuszone w Ustawieniach też); w razie czego od razu WebGL2
               let gpu: Awaited<ReturnType<typeof import("../apex/gpuRenderer.ts").requestGpu>> = null;
-              if (settings.graphicsApi === "webgpu" && !(init as { world?: { blocks?: unknown } }).world?.blocks) {
+              if (settings.gfxApi !== "webgl2") {
                 try {
-                  gpu = await (await import("../apex/gpuRenderer.ts")).requestGpu();
+                  const mod = await import("../apex/gpuRenderer.ts");
+                  gpu = await mod.requestGpu();
+                  // automat nie używa kart programowych ani sterowników, w których nie kompilują się shadery
+                  if (gpu && (settings.gfxApi === "auto" ? !(await mod.gpuUsable(gpu)) : false)) gpu = null;
                 } catch {
                   gpu = null;
                 }
-                if (gpu === null) toast("WebGPU niedostępne w tej przeglądarce - używam WebGL2", "error");
+                if (gpu === null && settings.gfxApi === "webgpu") toast("WebGPU niedostępne w tej przeglądarce - używam WebGL2", "error");
               }
               if (disposed) return;
               try {
