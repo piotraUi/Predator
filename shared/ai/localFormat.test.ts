@@ -49,3 +49,14 @@ test("blok z at i yaw przesuwa i obraca klocki", () => {
   assert.equal(p.z, 18);
   assert.equal(p.ry, 105);
 });
+
+test("powielanie: jeden blok, wiele miejsc (at/yaw z średnikami)", () => {
+  const parts = [{ name: "Słup", x: 0, y: 3, z: 0, sx: 1, sy: 6, sz: 1 }];
+  const raw = formatParts(parts, "Lampa", undefined, [{ at: [0, 0] }, { at: [10, 5], yaw: 90 }, { at: [-10, 5] }]);
+  assert.match(raw, /at="0,0;10,5;-10,5" yaw="0;90;0"/);
+  const t = parseAssistant(raw);
+  assert.deepEqual(t.errors, []);
+  assert.equal(t.calls.length, 3);
+  const xs = t.calls.map((c) => (c.args.parts as { x: number }[])[0].x);
+  assert.deepEqual(xs, [0, 10, -10]);
+});

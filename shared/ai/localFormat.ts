@@ -91,13 +91,18 @@ export function placeParts<T extends PartLike>(parts: T[], pl: Placement): T[] {
   });
 }
 
-export function formatParts(parts: PartLike[], model?: string, place?: string, pl: Placement = {}): string {
+export function formatParts(parts: PartLike[], model?: string, place?: string, pl: Placement | Placement[] = {}): string {
+  // tablica = ta sama budowla ustawiona w kilku miejscach: at="x,z;x,z" yaw="a;b"
+  const many = Array.isArray(pl) && pl.length > 1;
+  const list = Array.isArray(pl) ? pl : [pl];
+  const one = list[0] ?? {};
+  const at = many ? ` at="${list.map((q) => `${fmt(q.at?.[0] ?? 0)},${fmt(q.at?.[1] ?? 0)}`).join(";")}"` : one.at && (one.at[0] || one.at[1]) ? ` at="${fmt(one.at[0])},${fmt(one.at[1])}"` : "";
+  const yaw = many ? (list.some((q) => q.yaw) ? ` yaw="${list.map((q) => fmt(q.yaw ?? 0)).join(";")}"` : "") : one.yaw ? ` yaw="${fmt(one.yaw)}"` : "";
   const attrs =
     (model ? ` model="${model.replace(/"/g, "'")}"` : "") +
     (place ? ` place="${place.replace(/"/g, "'")}"` : "") +
-    (pl.at && (pl.at[0] || pl.at[1]) ? ` at="${fmt(pl.at[0])},${fmt(pl.at[1])}"` : "") +
-    (pl.yaw ? ` yaw="${fmt(pl.yaw)}"` : "") +
-    (pl.y ? ` y="${fmt(pl.y)}"` : "");
+    at + yaw +
+    (one.y ? ` y="${fmt(one.y)}"` : "");
   return `<parts${attrs}>\n${parts.map(partLine).join("\n")}\n</parts>`;
 }
 
@@ -209,17 +214,21 @@ export function parseAssistant(raw: string): ParsedTurn {
         if (typeof p === "string") errors.push(p);
         else parts.push(p);
       }
-      const at = attr(head, "at")?.split(",").map(Number);
-      const placement: Placement = {};
-      if (at && at.length === 2 && at.every(Number.isFinite)) placement.at = [at[0], at[1]];
-      const yaw = Number(attr(head, "yaw")), ey = Number(attr(head, "y"));
-      if (Number.isFinite(yaw) && attr(head, "yaw")) placement.yaw = yaw;
-      if (Number.isFinite(ey) && attr(head, "y")) placement.y = ey;
-      const args: Record<string, unknown> = { parts: placeParts(parts, placement) };
+      const ats = (attr(head, "at") ?? "").split(";").map((t) => t.split(",").map(Number)).filter((a) => a.length === 2 && a.every(Number.isFinite));
+      const yaws = (attr(head, "yaw") ?? "").split(";").map(Number);
+      const ey = Number(attr(head, "y"));
       const model = attr(head, "model"), place = attr(head, "place");
-      if (model) args.model_name = model;
-      if (place) args.place = place;
-      calls.push({ name: "create_parts", args });
+      for (let i = 0; i < Math.max(1, ats.length); i++) {
+        const placement: Placement = {};
+        if (ats[i]) placement.at = [ats[i][0], ats[i][1]];
+        const yw = yaws.length === 1 ? yaws[0] : yaws[i];
+        if (Number.isFinite(yw) && attr(head, "yaw")) placement.yaw = yw;
+        if (Number.isFinite(ey) && attr(head, "y")) placement.y = ey;
+        const args: Record<string, unknown> = { parts: placeParts(parts, placement) };
+        if (model) args.model_name = model;
+        if (place) args.place = place;
+        calls.push({ name: "create_parts", args });
+      }
     } else if (tag === "script") {
       const name = attr(head, "name");
       if (!name) {

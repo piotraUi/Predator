@@ -468,3 +468,32 @@ export const portal: Builder = (r, s) => {
 };
 
 void STONE; void WATER; void col;
+
+// ---------- dobudówki do domu ----------
+
+export const garage: Builder = (r, s) => {
+  const w = r.pick([12, 14, 16]), d = r.pick([16, 18, 20]), h = 8, T = 0.4;
+  const wallC = col(r, ["white", "gray", "beige", "yellow", "blue"] as ColorKey[]);
+  const door = r.pick(["#9e9e9e", "#78909c", "#8d6e63", "#eceff1", "#455a64"]);
+  s.stand("Podłoga garażu", 0, 0, 0, w, T, d, "#8a8a8a", { texture: "concrete" });
+  for (const sx of [-1, 1]) s.stand("Ściana garażu", sx * (w / 2 - 0.4), T, 0, 0.8, h, d, wallC.hex);
+  s.stand("Ściana garażu", 0, T, d / 2 - 0.4, w - 1.6, h, 0.8, wallC.hex);
+  s.stand("Nadproże garażu", 0, T + h - 2, -d / 2 + 0.4, w - 1.6, 2, 0.8, wallC.hex);
+  s.stand("Brama garażu", 0, T, -d / 2 + 0.4, w - 1.6, h - 2, 0.5, door, { ov: true });
+  s.stand("Dach garażu", 0, T + h, 0, w + 1.2, 0.5, d + 1.2, r.pick(["#5d4037", "#37474f", "#8d3b2e", "#546e7a"]));
+  return { model: "Garaż", foot: [w + 2, d + 2], tags: { w, d } };
+};
+
+export const shed: Builder = (r, s) => {
+  const w = r.pick([8, 10]), d = r.pick([7, 8]), h = 6, T = 0.4;
+  const wood = r.pick(WOOD);
+  s.stand("Podłoga szopy", 0, 0, 0, w, T, d, WOOD[1], { texture: "planks" });
+  for (const sx of [-1, 1]) s.stand("Ściana szopy", sx * (w / 2 - 0.3), T, 0, 0.6, h, d, wood, { texture: "planks" });
+  s.stand("Ściana szopy", 0, T, d / 2 - 0.3, w - 1.2, h, 0.6, wood, { texture: "planks" });
+  s.stand("Nadproże szopy", 0, T + h - 1.6, -d / 2 + 0.3, w - 1.2, 1.6, 0.6, wood, { texture: "planks" });
+  s.stand("Drzwi szopy", 0, T, -d / 2 + 0.3, 3.6, h - 1.6, 0.5, WOOD[2], { texture: "planks", ov: true });
+  s.stand("Ściana szopy", -w / 2 + 2.4, T, -d / 2 + 0.3, 2.4, h - 1.6, 0.6, wood, { texture: "planks" });
+  s.stand("Ściana szopy", w / 2 - 2.4, T, -d / 2 + 0.3, 2.4, h - 1.6, 0.6, wood, { texture: "planks" });
+  s.stand("Dach szopy", 0, T + h, 0, w + 1, 0.5, d + 1, "#4e342e");
+  return { model: "Szopa", foot: [w + 2, d + 2], tags: { w, d } };
+};

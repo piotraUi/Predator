@@ -32,7 +32,7 @@ export class Session {
     }
   }
   /** wiadomość asystenta: tekst + bloki wywołań, potem wyniki jako wiadomość użytkownika. Zwraca wyniki. */
-  async turn(text: string, calls: (Call & { at?: Placement })[]): Promise<unknown[]> {
+  async turn(text: string, calls: (Call & { at?: Placement | Placement[] })[]): Promise<unknown[]> {
     const blocks: string[] = [];
     const results: unknown[] = [];
     const out: string[] = [];
@@ -41,10 +41,11 @@ export class Session {
         // do modelu idą współrzędne lokalne z at/yaw, do narzędzia - świat
         const local = c.args.parts as never[];
         blocks.push(formatParts(local, c.args.model_name as string | undefined, c.args.place as string | undefined, c.at ?? {}));
-        const worldArgs = { ...c.args, parts: placeParts(local, c.at ?? {}) };
-        const res = await this.exec("create_parts", worldArgs);
-        results.push(res);
-        out.push(formatResponse(c.name, compactResult(c.name, res)));
+        for (const a of Array.isArray(c.at) ? c.at : [c.at ?? {}]) {
+          const res = await this.exec("create_parts", { ...c.args, parts: placeParts(local, a) });
+          results.push(res);
+          out.push(formatResponse(c.name, compactResult(c.name, res)));
+        }
       } else {
         blocks.push(c.name === "write_script" ? formatScript(String(c.args.name), String(c.args.source), c.args.place as string | undefined, c.args.enabled as boolean | undefined) : formatCall(c.name, c.args));
         const res = await this.exec(c.name, c.args);

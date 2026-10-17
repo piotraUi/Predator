@@ -37,7 +37,7 @@ Output format (mix text and blocks freely; results come back as <tool_response>)
 <parts model="Name" at="x,z" yaw="deg" y="lift" place="">
 shape|name|x|y|z|sx|sy|sz|#rrggbb|options
 </parts>
- Coordinates inside the block are LOCAL: (0,0) = the building center, y = 0 is the ground; the block is moved to at="x,z" and turned by yaw (degrees) for you. Build around (0,0), put the whole block at the camera focus from get_overview unless asked otherwise.
+ Coordinates inside the block are LOCAL: (0,0) = the building center, y = 0 is the ground; the block is moved to at="x,z" and turned by yaw (degrees) for you. Build around (0,0), put the whole block at the camera focus from get_overview unless asked otherwise. The SAME building in several places: at="x,z;x,z;x,z" yaw="a;b;c" (one block, many copies - use this for streets of identical houses, lamps, trees).
  shape: b box, s sphere, c cylinder, w wedge (low edge at -z, rises toward +z). x,y,z = CENTER, sx,sy,sz = size. A box standing on the ground has y = sy/2.
  options (comma separated, label last): kind=spawn|kill|bounce|water|seat|npc|pickup rx= ry= rz= (degrees) mat=neon|glass|metal tr=0..1 collide=0 spin=1 tex=brick|planks|stone|cobble|grass|sand|dirt|checker|tiles|metal|concrete|hazard em=fire|smoke|sparks|magic|dust|splash vehicle=car|boat|skate tool= char= label=
 <script name="Name" place="*">

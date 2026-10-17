@@ -6,6 +6,8 @@ import { Rng } from "./core.ts";
 import { sampleChat, sampleEdit } from "./extras.ts";
 import { sampleLua } from "./lua.ts";
 import { sampleScene } from "./scenes.ts";
+import { sampleTown } from "./scenes2.ts";
+import { sampleMulti } from "./multi.ts";
 import { sampleSingle, type Sample } from "./samples.ts";
 import { sampleChatKnow, sampleDefine, sampleDefineBuild, sampleIntent } from "./knowledge.ts";
 
@@ -17,7 +19,7 @@ const N = Number(arg("n", "2000"));
 const SEED = Number(arg("seed", "1"));
 const OUT = path.resolve(arg("out", "../ai-model/data"));
 const VAL = 0.03;
-const WEIGHTS: [string, number][] = [["single", 0.25], ["scene", 0.09], ["lua", 0.27], ["edit", 0.1], ["chat", 0.03], ["define", 0.07], ["defbuild", 0.05], ["intent", 0.08], ["know", 0.06]];
+const WEIGHTS: [string, number][] = [["single", 0.18], ["scene", 0.05], ["town", 0.07], ["multi", 0.1], ["lua", 0.21], ["edit", 0.1], ["chat", 0.03], ["define", 0.07], ["defbuild", 0.05], ["intent", 0.08], ["know", 0.06]];
 
 fs.mkdirSync(OUT, { recursive: true });
 const train = fs.createWriteStream(path.join(OUT, `train.jsonl`));
@@ -34,7 +36,7 @@ while (made < N && tries < N * 4) {
   for (const [k, w] of WEIGHTS) { acc += w; if (x < acc) { kind = k; break; } }
   let s: Sample | null = null;
   try {
-    s = kind === "single" ? sampleSingle(r) : kind === "scene" ? sampleScene(r) : kind === "lua" ? await sampleLua(r) : kind === "edit" ? await sampleEdit(r) : kind === "define" ? sampleDefine(r) : kind === "defbuild" ? await sampleDefineBuild(r) : kind === "intent" ? await sampleIntent(r) : kind === "know" ? sampleChatKnow(r) : sampleChat(r);
+    s = kind === "single" ? sampleSingle(r) : kind === "scene" ? sampleScene(r) : kind === "town" ? sampleTown(r) : kind === "multi" ? await sampleMulti(r) : kind === "lua" ? await sampleLua(r) : kind === "edit" ? await sampleEdit(r) : kind === "define" ? sampleDefine(r) : kind === "defbuild" ? await sampleDefineBuild(r) : kind === "intent" ? await sampleIntent(r) : kind === "know" ? sampleChatKnow(r) : sampleChat(r);
   } catch (e) {
     fail++;
     if (process.env.DEBUG) console.log(kind, (e as Error).message);

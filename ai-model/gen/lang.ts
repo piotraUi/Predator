@@ -46,6 +46,8 @@ export const NOUNS: Record<string, NounEntry> = {
   stairs: { pl: [N("schody", "schody", "schodów", "p")], en: ["staircase", "stairs"], enPl: "staircases" },
   ramp: { pl: [N("rampa", "rampę", "ramp", "f"), N("podjazd", "podjazd", "podjazdów", "m")], en: ["ramp"], enPl: "ramps" },
   barn: { pl: [N("stodoła", "stodołę", "stodół", "f")], en: ["barn"], enPl: "barns" },
+  garage: { pl: [N("garaż", "garaż", "garaży", "m")], en: ["garage"], enPl: "garages" },
+  shed: { pl: [N("szopa", "szopę", "szop", "f"), N("szopka", "szopkę", "szopek", "f")], en: ["shed"], enPl: "sheds" },
   stall: { pl: [N("stragan", "stragan", "straganów", "m")], en: ["market stall"], enPl: "market stalls" },
   sign: { pl: [N("tablica", "tablicę", "tablic", "f")], en: ["sign"], enPl: "signs" },
   rock: { pl: [N("skała", "skałę", "skał", "f"), N("głaz", "głaz", "głazów", "m")], en: ["rock", "boulder"], enPl: "rocks" },

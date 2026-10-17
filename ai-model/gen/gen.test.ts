@@ -10,6 +10,8 @@ import { MECHS, sampleLua } from "./lua.ts";
 import { REGISTRY } from "./registry.ts";
 import { sampleSingle, type Sample } from "./samples.ts";
 import { sampleScene } from "./scenes.ts";
+import { TOWNS, sampleTown } from "./scenes2.ts";
+import { sampleMulti } from "./multi.ts";
 
 function check(s: Sample | null) {
   assert.ok(s, "próbka istnieje");
@@ -41,6 +43,17 @@ test("sceny, poprawki, wiedza i rozmowa", async () => {
   for (let i = 0; i < 4; i++) check(await sampleDefineBuild(new Rng(40 + i)));
   for (let i = 0; i < 4; i++) check(await sampleIntent(new Rng(50 + i)));
   check(sampleChat(new Rng(1)));
+  for (const t of TOWNS) {
+    let s: Sample | null = null;
+    for (let i = 0; i < 20 && !s; i++) s = sampleTown(new Rng(60 + i), t.id);
+    check(s);
+  }
+  let multi = 0;
+  for (let i = 0; i < 20; i++) {
+    const s = await sampleMulti(new Rng(70 + i));
+    if (s) { check(s); multi++; }
+  }
+  assert.ok(multi >= 10, "rozmowy wieloetapowe: " + multi);
   check(sampleChatKnow(new Rng(2)));
 });
 

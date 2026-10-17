@@ -41,6 +41,7 @@ export const REGISTRY: Record<string, Def> = {
   school: { build: S4.school },
   shop: { build: S4.shop },
   swimmingPool: { build: S4.swimmingPool },
+  garage: { build: S4.garage }, shed: { build: S4.shed },
   footballPitch: { build: S4.footballPitch },
   basketballCourt: { build: S4.basketballCourt },
   igloo: { build: S4.igloo },
