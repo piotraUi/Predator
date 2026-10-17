@@ -3,6 +3,7 @@ import type { Avatar } from "../../../shared/types.ts";
 import { drawFace } from "../engine/face.ts";
 import { drawShirtFront } from "../engine/clothes.ts";
 import { findItem } from "../../../shared/catalog.ts";
+import { headshot3d } from "./headshot3d.ts";
 
 const cache = new Map<string, string>();
 
@@ -308,9 +309,15 @@ function drawHair(ctx: CanvasRenderingContext2D, a: Avatar, front: boolean) {
 
 /** Obrazek (data URL) z głową i ramionami postaci */
 export function headshot(a: Avatar): string {
-  const key = [a.head, a.torso, a.arms, a.hat, a.face, a.shirt, a.neck, a.hair, a.hairColor].join("|");
+  const key = [a.head, a.torso, a.arms, a.legs, a.hat, a.face, a.shirt, a.pants, a.neck, a.hair, a.hairColor].join("|");
   const hit = cache.get(key);
   if (hit) return hit;
+  // najpierw prawdziwy render 3D; płaski rysunek tylko, gdy WebGL2 nie działa
+  const r3 = headshot3d(a);
+  if (r3) {
+    cache.set(key, r3);
+    return r3;
+  }
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const ctx = c.getContext("2d")!;

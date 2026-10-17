@@ -1081,8 +1081,12 @@ export class ApexRenderer {
     gl.enable(gl.CULL_FACE);
   }
 
-  constructor(readonly canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext("webgl2", { antialias: true, alpha: false, powerPreference: "high-performance" });
+  /** tło przezroczyste (miniaturki awatarów): bez nieba, wyczyszczone na alfa 0 */
+  transparent = false;
+
+  constructor(readonly canvas: HTMLCanvasElement, opts: { alpha?: boolean } = {}) {
+    this.transparent = !!opts.alpha;
+    const gl = canvas.getContext("webgl2", { antialias: true, alpha: !!opts.alpha, preserveDrawingBuffer: !!opts.alpha, powerPreference: "high-performance" });
     if (!gl) throw new Error("WebGL2 niedostępne");
     this.gl = gl;
     this.prog = new Program(gl, VS, FS);
@@ -1808,7 +1812,7 @@ export class ApexRenderer {
     gl.uniform1f(sp.loc("uCover"), wCover);
     gl.uniform1f(sp.loc("uTime"), this.time);
     gl.bindVertexArray(null);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (!this.transparent) gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
 
@@ -1968,7 +1972,7 @@ export class ApexRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, pst ? (pst.ms ?? pst.scene.fbo) : null);
     gl.viewport(0, 0, this.width, this.height);
     const fc = [sky.fog[0] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[1] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[2] * (0.12 + 0.88 * Math.min(1, light))];
-    gl.clearColor(fc[0], fc[1], fc[2], 1);
+    gl.clearColor(fc[0], fc[1], fc[2], this.transparent ? 0 : 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
