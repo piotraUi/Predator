@@ -259,11 +259,13 @@ export class WorldRoom extends Room {
     const tj = this.joinedAt.get(tsid);
     const tUser = tj ? users.byId(tj.userId) : undefined;
     // nie ruszamy właściciela, współtwórców ani moderatorów (chyba że to my sami)
-    const protectedTarget = !!tUser && tUser.id !== meUser.id && this.isStaff(tUser);
+    // właściciel gry może wyrzucić i zbanować każdego (też moderatorów i adminów Predatora); współtwórcy i moderatorzy nie ruszają właściciela ani siebie nawzajem
+    const iAmOwner = meUser.id === this.world.owner_id;
+    const protectedTarget = !!tUser && tUser.id !== meUser.id && !iAmOwner && this.isStaff(tUser);
     switch (action) {
       case "kick": {
         if (!tUser || tUser.id === meUser.id) return say("Wybierz innego gracza");
-        if (protectedTarget) return say("Nie można wyrzucić administracji gry");
+        if (protectedTarget) return say("Tylko właściciel gry może wyrzucić administrację");
         const reason = filterChat(String(m.reason ?? "").slice(0, 100));
         this.clients.find((c) => c.sessionId === tsid)?.send("chat", { from: "", text: "👢 Wyrzucono Cię z gry" + (reason ? ": " + reason : ""), system: true });
         this.clients.find((c) => c.sessionId === tsid)?.leave(4000);
@@ -272,7 +274,7 @@ export class WorldRoom extends Room {
       }
       case "ban": {
         if (!tUser || tUser.id === meUser.id) return say("Wybierz innego gracza");
-        if (protectedTarget) return say("Nie można zbanować administracji gry");
+        if (protectedTarget) return say("Tylko właściciel gry może zbanować administrację");
         const minutes = Math.min(60 * 24 * 365, Math.max(0, Math.round(Number(m.minutes) || 0)));
         const reason = filterChat(String(m.reason ?? "").slice(0, 100));
         worldBans.add(this.world.id, tUser.id, minutes, reason, meUser.username);
