@@ -27,6 +27,8 @@ QUANT = os.environ.get("QUANT", "4bit")
 GENERAL_N = int(os.environ.get("GENERAL_N", "2500"))
 GENERAL_DATASET = os.environ.get("GENERAL_DATASET", "saillab/alpaca-polish-cleaned")
 MAX_TRAIN = int(os.environ.get("MAX_TRAIN", "0"))        # 0 = wszystko; do szybkiego testu np. 200
+# LIGER=1: jądra Liger (fused cross-entropy, RMSNorm, SwiGLU) - mniej pamięci na logity i szybciej; wymaga pip install liger-kernel
+LIGER = os.environ.get("LIGER", "0") == "1"
 SEED = 42
 # wiele kart (Kaggle T4 x2): uruchom przez `torchrun --nproc_per_node 2 train_kaggle.py` - każda karta trzyma własną kopię modelu (DDP)
 RANK = int(os.environ.get("RANK", "0"))
@@ -205,7 +207,7 @@ def main():
         num_train_epochs=EPOCHS, learning_rate=LR, lr_scheduler_type="cosine", warmup_ratio=0.03, weight_decay=0.0,
         fp16=True, logging_steps=10, eval_strategy="steps", eval_steps=200, save_strategy="steps", save_steps=200, save_total_limit=2,
         group_by_length=False, report_to="none", gradient_checkpointing=True, optim="paged_adamw_8bit" if QUANT != "none" else "adamw_torch", max_grad_norm=1.0, seed=SEED,
-        remove_unused_columns=False, ddp_find_unused_parameters=False, gradient_checkpointing_kwargs={"use_reentrant": False},
+        remove_unused_columns=False, use_liger_kernel=LIGER, ddp_find_unused_parameters=False, gradient_checkpointing_kwargs={"use_reentrant": False},
     )
     trainer = Trainer(model=model, args=args, train_dataset=DS(train_ds), eval_dataset=DS(val_ds), data_collator=collate)
     resume = os.path.isdir(os.path.join(OUT_DIR, "ckpt")) and any(d.startswith("checkpoint") for d in os.listdir(os.path.join(OUT_DIR, "ckpt")))
