@@ -645,7 +645,7 @@ export class GpuRenderer {
     const posBuf: GPUVertexBufferLayout = { arrayStride: 32, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }] };
     const gridCol: GPUVertexBufferLayout = { arrayStride: 32, attributes: [{ shaderLocation: 7, offset: 0, format: "float32x4" }, { shaderLocation: 8, offset: 16, format: "float32x4" }] };
     const blend: GPUBlendState = { color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" } };
-    const depth = (write: boolean, bias = 0): GPUDepthStencilState => ({ format: "depth24plus", depthWriteEnabled: write, depthCompare: "less", depthBias: bias, depthBiasSlopeScale: bias ? 2 : 0 });
+    const depth = (write: boolean, bias = 0): GPUDepthStencilState => ({ format: "depth24plus", depthWriteEnabled: write, depthCompare: "less", depthBias: bias, depthBiasSlopeScale: bias ? -4 : 0 });
     if (kind === "shadow-inst" || kind === "shadow-grid") {
       const layout = d.createPipelineLayout({ bindGroupLayouts: [this.shadowLayoutBG] });
       p = d.createRenderPipeline({
@@ -676,7 +676,7 @@ export class GpuRenderer {
         },
         fragment: { module: this.shaderMain, entryPoint: decal ? "fs_decal" : "fs", targets: [{ format: this.format, blend: transparent || decal ? blend : undefined }] },
         primitive: { topology: "triangle-list", cullMode: transparent || decal ? "none" : "back", frontFace: "cw" },
-        depthStencil: decal ? depth(false, -2) : depth(!transparent),
+        depthStencil: decal ? depth(false, -8) : depth(!transparent),
         multisample: { count: MSAA },
       });
     }
