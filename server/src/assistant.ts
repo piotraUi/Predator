@@ -9,6 +9,7 @@ import { db, isAdminName, toPublicUser, users } from "./db.ts";
 import { gemini, GeminiError, geminiModel, geminiReady, type GeminiContent, type GeminiPart } from "./gemini.ts";
 import { settings } from "./settings.ts";
 import { aiProvider, localChat, localModel, localReady, LocalLlmError } from "./localLlm.ts";
+import { exampleOf } from "../../shared/blueprints/catalog.ts";
 import { normalizeContents } from "../../shared/ai/contents.ts";
 
 export const assistantRouter = express.Router();
@@ -91,6 +92,25 @@ BUILDING CRAFT - how to build well (learn it from the verified examples):
 - Give parts clear shared names (Ściana, Dach, Szyba, Drzwi...), group the building with model_name, use a few harmonious colors (wall + roof + accent), textures (planks, brick, tiles, concrete, cobble) and materials (glass, metal, neon) where they fit. Round things: cylinder / sphere shapes. Slopes: wedge.
 - Several identical things (a street of houses, a row of lamps, a forest): build one with create_parts, then reuse its design; vary colors/size a little. A city or village: straight streets with sidewalks (road example), buildings on both sides facing the road with 3-6 units between them, different building kinds, trees and lamps in gaps, nothing overlapping. Check with find_parts after big scenes.`;
 
+/** wzorcowe budowle wklejone na stałe do instrukcji (stała treść = tańsze przy niejawnym cache'owaniu kontekstu) */
+const EXAMPLE_IDS = [
+  "house", "tower", "castle", "tree", "bridge", "bench", "lamp", "well", "campfire", "tent", "fence", "fountain", "barn", "stall", "road", "windmill",
+  "car", "boat", "scooter", "airplane", "helicopter", "pirateShip", "bus", "rocket",
+  "church", "school", "shop", "skyscraper", "garage", "shed", "swimmingPool", "swing", "slide", "sofa", "bed", "snowman", "robot",
+];
+const EXAMPLES_3D = EXAMPLE_IDS.map((id) => {
+  const e = exampleOf(id, {}, 1);
+  return e ? `### ${e.name_en} (id "${e.id}", footprint ${e.footprint}, ${e.part_count} parts, model_name "${e.model_name}")\n${e.parts}` : "";
+})
+  .filter(Boolean)
+  .join("\n\n");
+
+const EXAMPLES_BLOCK = `
+
+WORKED EXAMPLES of well-built structures (verified: nothing floats, nothing overlaps by accident, everything stands on y=0). Line format: shape|name|x|y|z|sx|sy|sz|#color|options - shape b box (omitted), s sphere, c cylinder, w wedge; x,y,z = part CENTER; options tex= texture, mat= material, rx/ry/rz rotation in degrees, collide=0 etc. LOCAL coordinates: building center at x=0,z=0, front/door toward -Z. Study the technique (wall pieces around openings, glass panes, roof of two tilted boxes plus wedge gables, trim, layered colors) and apply it to EVERYTHING you build, in your own designs. For other kinds of structures (train, tank, UFO, tables, trampoline, ferris wheel, catapult, treehouse, igloo, pyramid, lighthouse, dock, gazebo, stairs, obby, arena, maze, race track, island...) call list_examples and get_example first.
+
+${EXAMPLES_3D}`;
+
 const PROMPT_2D = `${COMMON}
 
 Lua functions for 2D games:
@@ -99,7 +119,7 @@ ${luaList(LUA_HELP_2D)}
 2D world facts: x grows right, y grows DOWN, units are pixels; instance x,y is the TOP-LEFT corner. A level has objects placed as instances. Objects have built-in roles (hazard, pickup+coin, checkpoint, goal, enemy, spring, button/gate with key, spawn) - prefer roles over scripts for simple mechanics. Ground and walls: a "tiled" solid object stretched (w,h) - floors are usually 32 px tall. One-way platforms: solid "jumpthru". Every playable level needs exactly one spawn instance and a kill_y below the lowest floor. The HUD layer is fixed to the screen (coin counter text "Monety: {coins}"). New objects need a look: an existing image asset, an attached image, or draw (simple generated pixel art). Menu levels (menu=true) have no player and a fixed camera - use them with GUIs for title screens.`;
 
 const FUNCTION_DECLS = { "3d": TOOLS_3D, "2d": TOOLS_2D };
-const PROMPTS = { "3d": PROMPT_3D, "2d": PROMPT_2D };
+const PROMPTS = { "3d": PROMPT_3D + EXAMPLES_BLOCK, "2d": PROMPT_2D };
 
 // ---------- sprawdzanie zapytania ----------
 
