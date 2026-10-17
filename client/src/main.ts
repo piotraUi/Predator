@@ -8,6 +8,7 @@ import { autoUpdate, confirmAppStarted } from "./appUpdate.ts";
 import { h, logo, toast } from "./ui/dom.ts";
 import { showDownloadBanner, showTrailerOnce } from "./ui/intro.ts";
 import { desktop, launchFile, type OpenedFile } from "./files.ts";
+import { initEasterEggs } from "./easter.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
 
 type Screen = (root: HTMLElement, params: never, go: Go) => () => void;
@@ -233,4 +234,5 @@ async function boot() {
 }
 
 onBanned((b) => showBanScreen(b));
+initEasterEggs();
 boot();

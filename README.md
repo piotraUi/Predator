@@ -445,3 +445,13 @@ npm run typecheck
 - **Katalog Avatara**: natywna gra 3D z całym katalogiem sklepu do przymierzania (jak Catalog Creator w Robloxie).
 - **Zestaw w Studiu**: samoloty, statki, Kukirin, wille, zamek, pałac, meble, pojazdy i więcej (ponad 40 modeli).
 - **Skiny**: zapis i zakładanie własnych wyglądów (Awatar → Zapisane skiny). „Testuj" w Studiu uruchamia zawsze osobną grę lokalną (bez serwera).
+
+
+## Easter eggi 🦖
+
+Ukryte niespodzianki, bez żadnych ustawień (nie działają podczas pisania w polach tekstowych):
+
+- **Kod Konami** (↑ ↑ ↓ ↓ ← → ← → B A): tryb disco.
+- **7 szybkich kliknięć w logo** Predatora: ryk dinozaura i trzęsienie ekranu.
+- **Wpisz słowo** na dowolnym ekranie (także w grze): `pizza`, `kebab`, `tort`, `dino`, `predator` (deszcz emoji i dźwięk) albo `roll` (ekran robi beczkę).
+- **Konsola przeglądarki** (F12): wpisz `predator()`.
