@@ -57,6 +57,9 @@ export function apexUnsupported(init: InitMsg): string | null {
 }
 
 interface Remote {
+  /** wynik ostatniego promienia nicku (undefined = jeszcze nie liczony) i numer do rozłożenia promieni w czasie */
+  tagHidden?: boolean;
+  slot: number;
   av: ApexAvatar;
   tag: HTMLElement;
   hpFill: HTMLElement;
@@ -414,7 +417,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const hpBar = h("div", { class: "apex-hp hidden" }, hpFill);
     const tag = h("div", { class: "apex-tag" }, h("span", null, p.username), hpBar);
     tagLayer.append(tag);
-    const rm: Remote = { av, tag, hpFill, hpBar, tx: p.x, ty: p.y, tz: p.z, tr: p.ry, username: p.username };
+    const rm: Remote = { slot: remotes.size, av, tag, hpFill, hpBar, tx: p.x, ty: p.y, tz: p.z, tr: p.ry, username: p.username };
     remotes.set(p.sid, rm);
     setRemoteHp(rm, p.hp, p.maxHp);
   };
@@ -1034,7 +1037,9 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   });
 
   // ---------- pętla gry ----------
-  const scale = () => Math.min(devicePixelRatio || 1, TIERS[gov.tier].dprCap, isMobile() ? 1.5 : 3) * TIERS[gov.tier].renderScale;
+  /** dynamiczna rozdzielczość (tryb auto): płynnie obniża skalę obrazu, gdy klatki spadają poniżej ~50 FPS */
+  let dynScale = 1;
+  const scale = () => Math.min(devicePixelRatio || 1, TIERS[gov.tier].dprCap, isMobile() ? 1.5 : 3) * TIERS[gov.tier].renderScale * dynScale;
   const fit = () => rend.resize(wrap.clientWidth || innerWidth, wrap.clientHeight || innerHeight, scale());
   const offSettings = onSettingsChange((st) => {
     if (st.quality !== gov.level) gov = new QualityGovernor(st.quality, detected);
@@ -1049,6 +1054,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
 
   let last = performance.now();
   let fpsAcc = 0, fpsN = 0, fps = 0;
+  let dynAcc = 0, dynN = 0;
   let raf = 0;
   const frame = (now: number) => {
     if (disposed) return;
@@ -1069,7 +1075,20 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     const nt = gov.sample(dt);
     if (nt) {
       applyQuality();
+      dynScale = 1;
+      dynAcc = dynN = 0;
       fit();
+    } else if (gov.level === "auto" && dt < 0.25) {
+      dynAcc += dt; dynN++;
+      if (dynAcc >= 1) {
+        const f = dynN / dynAcc;
+        dynAcc = dynN = 0;
+        const next = f < 48 ? Math.max(0.55, dynScale - 0.1) : f > 58 ? Math.min(1, dynScale + 0.05) : dynScale;
+        if (next !== dynScale) {
+          dynScale = next;
+          fit();
+        }
+      }
     }
     tick(dt);
     fpsAcc += dt; fpsN++;
@@ -1390,7 +1409,9 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     placeTags();
   }
 
+  let tagFrame = 0;
   const placeTags = () => {
+    tagFrame++;
     const w = wrap.clientWidth, hh = wrap.clientHeight;
     const put = (el: HTMLElement, p: V3, maxDist = 400) => {
       const d = Math.hypot(p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]);
@@ -1406,10 +1427,14 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       put(rm.tag, hp);
       // nick nie prześwituje przez ściany: promień od kamery do głowy zatrzymany przez klocek = ukryty
       if (rm.tag.style.display !== "none") {
-        const dx = hp[0] - eye[0], dy = hp[1] - eye[1], dz = hp[2] - eye[2];
-        const d = Math.hypot(dx, dy, dz) || 1;
-        const hit = raycastParts(collisions, eye[0], eye[1], eye[2], dx / d, dy / d, dz / d, d);
-        if (hit && hit.dist < d - 1.2) rm.tag.style.display = "none";
+        // promień co kilka klatek (wynik pamiętamy), żeby wielu graczy nie kosztowało zbyt dużo
+        if (tagFrame % 4 === rm.slot || rm.tagHidden === undefined) {
+          const dx = hp[0] - eye[0], dy = hp[1] - eye[1], dz = hp[2] - eye[2];
+          const d = Math.hypot(dx, dy, dz) || 1;
+          const hit = raycastParts(collisions, eye[0], eye[1], eye[2], dx / d, dy / d, dz / d, d);
+          rm.tagHidden = !!(hit && hit.dist < d - 1.2);
+        }
+        if (rm.tagHidden) rm.tag.style.display = "none";
       }
     }
     for (const [id, el] of labels) {

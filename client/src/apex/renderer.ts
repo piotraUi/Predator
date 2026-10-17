@@ -551,7 +551,8 @@ class InstList {
       n.set(this.data);
       this.data = n;
     }
-    this.data.set(src.subarray(i * STRIDE, (i + 1) * STRIDE), this.count * STRIDE);
+    const a = i * STRIDE, o = this.count * STRIDE, d = this.data;
+    for (let k = 0; k < STRIDE; k++) d[o + k] = src[a + k];
     this.count++;
   }
   upload(gl: WebGL2RenderingContext) {
@@ -597,8 +598,12 @@ class Batch {
     this.dirty = true;
     return this.count++;
   }
+  /** zmienia się z każdą zmianą danych: pozwala pominąć ponowne ukrywanie niewidocznych */
+  ver = 0;
+  cullVer = -1;
   upload(gl: WebGL2RenderingContext) {
     if (!this.dirty) return;
+    this.ver++;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
     if (this.data.length > this.cap) {
       gl.bufferData(gl.ARRAY_BUFFER, this.data, gl.DYNAMIC_DRAW);
@@ -738,6 +743,11 @@ export class ApexRenderer {
   private fogEnd = 700;
   private fogStart = 250;
   private shadowCenter: V3 = [0, 0, 0];
+  private frameNo = 0;
+  /** czy dalsza kaskada cieni ma w sobie ważny obraz (odświeżamy ją co drugą klatkę) */
+  private farShadowOk = false;
+  private lvScratch = new Float32Array(16);
+  private lightVp2Next: Mat4 = new Float32Array(16);
   /** połowa boku obszaru z cieniami (jednostki świata) */
   extent = 90;
   private pending: (() => void)[] = [];
@@ -1141,6 +1151,7 @@ export class ApexRenderer {
     };
     const far = mk(), near = mk();
     this.shadowTex = far.tex; this.shadowFbo = far.fbo;
+    this.farShadowOk = false;
     this.shadowTex0 = near.tex; this.shadowFbo0 = near.fbo;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
@@ -1892,13 +1903,17 @@ export class ApexRenderer {
       const texel = (ext * 2) / this.shadowSize;
       const eyeL: V3 = [c[0] + sun[0] * 160, c[1] + sun[1] * 160, c[2] + sun[2] * 160];
       lookAt(eyeL, c, Math.abs(sun[1]) > 0.98 ? [0, 0, 1] : [0, 1, 0], this.view as Mat4 & Float32Array);
-      const lv = new Float32Array(this.view);
+      const lv = this.lvScratch;
+      lv.set(this.view);
       lv[12] += Math.round(lv[12] / texel) * texel - lv[12];
       lv[13] += Math.round(lv[13] / texel) * texel - lv[13];
       multiply(ortho(-ext, ext, -ext, ext, 1, 360), lv, out);
     };
     const extFar = casc2 ? this.extent * 1.6 : this.extent;
-    lightMatrix(extFar, this.lightVp2);
+    // daleka kaskada zmienia się powoli: rysujemy ją co drugą klatkę (macierz zmieniamy razem z obrazem)
+    this.frameNo++;
+    const refreshFar = !casc2 || !this.farShadowOk || (this.frameNo & 1) === 0;
+    if (refreshFar) lightMatrix(extFar, this.lightVp2);
     if (casc2) lightMatrix(Math.min(34, this.extent * 0.4), this.lightVp);
     lookAt(look.eye, look.target, [0, 1, 0], this.view);
 
@@ -1924,11 +1939,14 @@ export class ApexRenderer {
         this.drawSkinQueue(this.depthProg, true);
         if (this.terrain) this.drawTerrain(this.terrain);
       };
-      pass(this.shadowFbo, this.lightVp2);
+      if (refreshFar) {
+        pass(this.shadowFbo, this.lightVp2);
+        this.farShadowOk = true;
+      }
       if (casc2) pass(this.shadowFbo0, this.lightVp);
       gl.disable(gl.POLYGON_OFFSET_FILL);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
+    } else this.farShadowOk = false;
 
     // --- odbicie w wodzie: scena z lustrzanej kamery do małej tekstury (tylko przy wysokiej jakości) ---
     this.reflActive = false;
@@ -2103,45 +2121,69 @@ export class ApexRenderer {
   /** płaszczyzny widoczności z macierzy kamery (lewa, prawa, dół, góra, bliska, daleka) */
   private extractPlanes() {
     const m = this.vp, o = this.planes;
-    const row = (i: number) => [m[i], m[4 + i], m[8 + i], m[12 + i]];
-    const r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
-    const sets = [r3.map((v, k) => v + r0[k]), r3.map((v, k) => v - r0[k]), r3.map((v, k) => v + r1[k]), r3.map((v, k) => v - r1[k]), r3.map((v, k) => v + r2[k]), r3.map((v, k) => v - r2[k])];
-    sets.forEach((pl, i) => {
-      const l = Math.hypot(pl[0], pl[1], pl[2]) || 1;
-      o[i * 4] = pl[0] / l; o[i * 4 + 1] = pl[1] / l; o[i * 4 + 2] = pl[2] / l; o[i * 4 + 3] = pl[3] / l;
-    });
+    for (let k = 0; k < 6; k++) {
+      const row = k >> 1, sg = k & 1 ? -1 : 1;
+      const a = m[3] + sg * m[row], b = m[7] + sg * m[4 + row], c = m[11] + sg * m[8 + row], d = m[15] + sg * m[12 + row];
+      const inv = 1 / (Math.hypot(a, b, c) || 1);
+      o[k * 4] = a * inv; o[k * 4 + 1] = b * inv; o[k * 4 + 2] = c * inv; o[k * 4 + 3] = d * inv;
+    }
   }
 
   /** duże paczki stałych klocków: rysujemy tylko to, co w kadrze; z daleka małe rzeczy znikają, a kule i walce są uproszczone */
+  private cullKey = new Float64Array(32);
   private cullBatches(eye: V3) {
     const gl = this.gl, q = this.q, pl = this.planes, sc = this.shadowCenter;
     const shR = this.extent * 1.8;
+    // ten sam widok i te same dane = ten sam wynik: nie przeliczamy
+    const key = this.cullKey;
+    let same = true;
+    const probe = (i: number, v: number) => {
+      if (key[i] !== v) {
+        key[i] = v;
+        same = false;
+      }
+    };
+    probe(0, eye[0]); probe(1, eye[1]); probe(2, eye[2]);
+    for (let k = 0; k < 24; k++) probe(3 + k, pl[k]);
+    probe(27, sc[0]); probe(28, sc[2]); probe(29, q.drawDist); probe(30, q.lodDist + this.extent);
+    const dd = q.drawDist, dd45 = dd * 0.45, dd8 = dd * 0.8, ld = q.lodDist;
     for (const b of this.staticBatches.values()) {
       b.culled = false;
       if (!q.cull || !b.cullable || b.count < 160) continue;
+      if (same && b.cullVer === b.ver && b.near) {
+        b.culled = true;
+        continue;
+      }
+      b.cullVer = b.ver;
       b.near ??= new InstList(gl, b.mesh);
       b.shadow ??= new InstList(gl, b.mesh);
       if (b.lowMesh) b.far ??= new InstList(gl, b.lowMesh);
       b.near.count = b.shadow.count = 0;
       if (b.far) b.far.count = 0;
       const d = b.data;
+      const ex = eye[0], ey = eye[1], ez = eye[2], sx = sc[0], sz = sc[2];
       for (let i = 0, n = b.count; i < n; i++) {
         const o = i * STRIDE;
         const x = d[o + 12], y = d[o + 13], z = d[o + 14];
-        const r = 0.5 * Math.hypot(d[o + 20], d[o + 21], d[o + 22]);
-        if (Math.hypot(x - sc[0], z - sc[2]) - r < shR) b.shadow.push(d, i);
-        const dist = Math.hypot(x - eye[0], y - eye[1], z - eye[2]);
-        if (dist - r > q.drawDist) continue;
-        if (r < 1 && dist > q.drawDist * 0.45) continue;
-        if (r < 3 && dist > q.drawDist * 0.8) continue;
+        const sx2 = d[o + 20], sy2 = d[o + 21], sz2 = d[o + 22];
+        const r = 0.5 * Math.sqrt(sx2 * sx2 + sy2 * sy2 + sz2 * sz2);
+        const shx = x - sx, shz = z - sz, shl = shR + r;
+        if (shx * shx + shz * shz < shl * shl) b.shadow.push(d, i);
+        const dx = x - ex, dy = y - ey, dz = z - ez;
+        const dist2 = dx * dx + dy * dy + dz * dz;
+        const reach = dd + r;
+        if (dist2 > reach * reach) continue;
+        if (r < 1 && dist2 > dd45 * dd45) continue;
+        if (r < 3 && dist2 > dd8 * dd8) continue;
         let out = false;
-        for (let k = 0; k < 6; k++)
-          if (pl[k * 4] * x + pl[k * 4 + 1] * y + pl[k * 4 + 2] * z + pl[k * 4 + 3] < -r) {
+        for (let k = 0; k < 24; k += 4)
+          if (pl[k] * x + pl[k + 1] * y + pl[k + 2] * z + pl[k + 3] < -r) {
             out = true;
             break;
           }
         if (out) continue;
-        if (b.far && dist > q.lodDist + r) b.far.push(d, i);
+        const lr = ld + r;
+        if (b.far && dist2 > lr * lr) b.far.push(d, i);
         else b.near.push(d, i);
       }
       b.near.upload(gl);
