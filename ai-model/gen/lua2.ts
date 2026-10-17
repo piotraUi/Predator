@@ -2,8 +2,8 @@
 import { box, pick, type Maker, type Mech } from "./lua.ts";
 import type { Spec } from "./core.ts";
 
-const guiBtn = (name: string, text: string, x: number, y: number, w: number, h: number, bg: string, action?: { type: string; target?: string }) => ({ name, type: "button", x, y, w, h, text, bg, color: "#ffffff", fontSize: 28, bold: true, radius: 14, align: "center", ...(action ? { action } : {}) });
-const guiText = (name: string, text: string, x: number, y: number, w: number, h: number, fontSize = 30, color = "#ffffff", bg?: string) => ({ name, type: "text", x, y, w, h, text, color, fontSize, bold: true, align: "center", ...(bg ? { bg, bgOpacity: 0.55, radius: 12 } : {}) });
+export const guiBtn = (name: string, text: string, x: number, y: number, w: number, h: number, bg: string, action?: { type: string; target?: string }) => ({ name, type: "button", x, y, w, h, text, bg, color: "#ffffff", fontSize: 28, bold: true, radius: 14, align: "center", ...(action ? { action } : {}) });
+export const guiText = (name: string, text: string, x: number, y: number, w: number, h: number, fontSize = 30, color = "#ffffff", bg?: string) => ({ name, type: "text", x, y, w, h, text, color, fontSize, bold: true, align: "center", ...(bg ? { bg, bgOpacity: 0.55, radius: 12 } : {}) });
 
 const hudCoins: Maker = (r) => {
   const icon = pick(r, ["⭐", "💰", "🪙"]);

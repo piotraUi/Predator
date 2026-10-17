@@ -369,7 +369,8 @@ const MECHS1: Record<string, Maker> = {
 };
 
 import { MECHS2 } from "./lua2.ts";
-export const MECHS: Record<string, Maker> = { ...MECHS1, ...MECHS2 };
+import { MECHS3 } from "./lua3.ts";
+export const MECHS: Record<string, Maker> = { ...MECHS1, ...MECHS2, ...MECHS3 };
 
 // ---------- składanie rozmowy ----------
 
