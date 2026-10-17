@@ -1399,7 +1399,17 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     };
     put(localTag, local.headPoint());
     localTag.style.display = firstPerson() ? "none" : localTag.style.display;
-    for (const rm of remotes.values()) put(rm.tag, rm.av.headPoint());
+    for (const rm of remotes.values()) {
+      const hp = rm.av.headPoint();
+      put(rm.tag, hp);
+      // nick nie prześwituje przez ściany: promień od kamery do głowy zatrzymany przez klocek = ukryty
+      if (rm.tag.style.display !== "none") {
+        const dx = hp[0] - eye[0], dy = hp[1] - eye[1], dz = hp[2] - eye[2];
+        const d = Math.hypot(dx, dy, dz) || 1;
+        const hit = raycastParts(collisions, eye[0], eye[1], eye[2], dx / d, dy / d, dz / d, d);
+        if (hit && hit.dist < d - 1.2) rm.tag.style.display = "none";
+      }
+    }
     for (const [id, el] of labels) {
       const p = parts.get(id);
       if (p) put(el, [p.x, p.y + p.sy / 2 + 0.6, p.z], 150);
