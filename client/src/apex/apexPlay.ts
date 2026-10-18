@@ -1235,7 +1235,10 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (body.y < -150 && !dead) die();
 
     // kierunek i animacja
-    if (moving && !dead && !myRide) {
+    if (fp && !dead && !myRide) {
+      // pierwsza osoba: postać zawsze patrzy tam, gdzie kamera (chodzenie bokiem i tyłem nie obraca jej)
+      ry = Math.atan2(-fwdX, -fwdZ);
+    } else if (moving && !dead && !myRide) {
       const target = Math.atan2(-mx, -mz);
       let d = target - ry;
       while (d > Math.PI) d -= Math.PI * 2;
