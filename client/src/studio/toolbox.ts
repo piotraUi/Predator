@@ -3,7 +3,6 @@
 import type { Part, WorldScript } from "../../../shared/types.ts";
 import { newId } from "../../../shared/world.ts";
 import { h, modal } from "../ui/dom.ts";
-import { EXTRA_CATS, EXTRA_MODELS } from "./toolboxExtra.ts";
 import { MODELS_V2 } from "./toolboxModels.ts";
 
 // =====================================================================
@@ -21,356 +20,110 @@ export interface ToolboxModel {
   parts: () => ModelPart[];
 }
 
-const WOOD = "#8d6e63";
-const LEAF = "#43a047";
-const STONE = "#9e9e9e";
-
+const EXTRA_CATS = ["Samoloty", "Statki", "Wille i domy", "Meble", "Pojazdy 2", "Miasto 2", "Fantasy"];
 export const TOOLBOX_CATS = ["Podstawowe", "Tor przeszkód", "Natura", "Budynki", "Miasto", "Pojazdy", "Zabawa", ...EXTRA_CATS];
 
-/** koło pojazdu: spłaszczona kula (oś wzdłuż x) */
-const wheel = (x: number, y: number, z: number, r = 1.1): ModelPart => ({ name: "Koło", shape: "sphere", sx: 0.8, sy: r * 2, sz: r * 2, x, y, z, color: "#212121" });
+/** proste bryły i wypełnienia (jedna część): reszta modeli jest w toolboxModels.ts; klucz "kategoria/id" albo "kategoria/id/ikona" */
+const BASIC: Record<string, () => ModelPart[]> = {
+  "Podstawowe/box": () => [{ name: "Klocek", shape: "box", sx: 4, sy: 1, sz: 2 }],
+  "Podstawowe/sphere": () => [{ name: "Kula", shape: "sphere", sx: 3, sy: 3, sz: 3 }],
+  "Podstawowe/cyl": () => [{ name: "Walec", shape: "cylinder", sx: 2, sy: 4, sz: 2 }],
+  "Podstawowe/wedge": () => [{ name: "Klin", shape: "wedge", sx: 4, sy: 2, sz: 4 }],
+  "Podstawowe/floor": () => [{ name: "Podłoga", sx: 20, sy: 1, sz: 20, color: "#bdb3a4" }],
+  "Podstawowe/wall": () => [{ name: "Ściana", sx: 12, sy: 8, sz: 1, color: "#d7ccc8" }],
+  "Podstawowe/npc": () => [{ name: "NPC", kind: "npc", sx: 2, sy: 5.2, sz: 1, color: "#7fb8ff" }],
+  "Natura/water/🌊": () => [{ name: "Woda", kind: "water", sx: 24, sy: 8, sz: 24, y: 4, color: "#2f8fd8", collide: false }],
+  "Natura/water/💧": () => [{ name: "Woda", sx: 16, sy: 0.4, sz: 16, y: 0.2, color: "#29b6f6", transparency: 0.3, collide: false, material: "glass" }],
+};
 
-export const TOOLBOX: ToolboxModel[] = [
-  // ---------- podstawowe ----------
-  { id: "box", name: "Klocek", icon: "⬛", cat: "Podstawowe", parts: () => [{ name: "Klocek", shape: "box", sx: 4, sy: 1, sz: 2 }] },
-  { id: "sphere", name: "Kula", icon: "⚪", cat: "Podstawowe", parts: () => [{ name: "Kula", shape: "sphere", sx: 3, sy: 3, sz: 3 }] },
-  { id: "cyl", name: "Walec", icon: "🛢", cat: "Podstawowe", parts: () => [{ name: "Walec", shape: "cylinder", sx: 2, sy: 4, sz: 2 }] },
-  { id: "wedge", name: "Klin", icon: "📐", cat: "Podstawowe", parts: () => [{ name: "Klin", shape: "wedge", sx: 4, sy: 2, sz: 4 }] },
-  { id: "floor", name: "Podłoga", icon: "🟫", cat: "Podstawowe", parts: () => [{ name: "Podłoga", sx: 20, sy: 1, sz: 20, color: "#bdb3a4" }] },
-  { id: "wall", name: "Ściana", icon: "🧱", cat: "Podstawowe", parts: () => [{ name: "Ściana", sx: 12, sy: 8, sz: 1, color: "#d7ccc8" }] },
-  { id: "spawn", name: "Spawn (start)", icon: "🏁", cat: "Podstawowe", parts: () => [{ name: "Spawn", kind: "spawn", sx: 6, sy: 1, sz: 6, color: "#6e6e78" }] },
-  { id: "npc", name: "Postać (NPC)", icon: "🧍", cat: "Podstawowe", parts: () => [{ name: "NPC", kind: "npc", sx: 2, sy: 5.2, sz: 1, color: "#7fb8ff" }] },
-
-  // ---------- pojazdy i siedzenia (przód = -z) ----------
-  {
-    id: "car",
-    name: "Samochód",
-    icon: "🚗",
-    cat: "Pojazdy",
-    parts: () => [
-      { name: "Nadwozie", sx: 6, sy: 1.6, sz: 10, y: 2, color: "#e53935", material: "metal" },
-      { name: "Maska", sx: 5.6, sy: 0.6, sz: 3, y: 3.1, z: -3.4, color: "#c62828", material: "metal" },
-      { name: "Szyba", sx: 5.4, sy: 1.4, sz: 0.3, y: 3.5, z: -1.8, color: "#90caf9", material: "glass", transparency: 0.3 },
-      { name: "Fotel", kind: "seat", vehicle: "car", sx: 2.2, sy: 0.6, sz: 2.2, y: 3.1, z: 0.6, color: "#263238" },
-      { name: "Oparcie", sx: 2.2, sy: 1.8, sz: 0.4, y: 3.9, z: 1.9, color: "#263238" },
-      { name: "Bagażnik", sx: 5.6, sy: 0.8, sz: 2.4, y: 3.2, z: 3.6, color: "#c62828", material: "metal" },
-      { name: "Światło", sx: 1.2, sy: 0.5, sz: 0.2, x: -2.1, y: 2.2, z: -5.05, color: "#fff59d", material: "neon" },
-      { name: "Światło", sx: 1.2, sy: 0.5, sz: 0.2, x: 2.1, y: 2.2, z: -5.05, color: "#fff59d", material: "neon" },
-      wheel(-3.1, 1.1, -3.2), wheel(3.1, 1.1, -3.2), wheel(-3.1, 1.1, 3.2), wheel(3.1, 1.1, 3.2),
-    ],
-  },
-  {
-    id: "boat",
-    name: "Motorówka",
-    icon: "🚤",
-    cat: "Pojazdy",
-    parts: () => [
-      { name: "Kadłub", sx: 5, sy: 1.4, sz: 9, y: 0.7, color: "#f5f5f5" },
-      { name: "Dziób", shape: "wedge", ry: 180, sx: 5, sy: 1.4, sz: 2.4, y: 0.7, z: -5.7, color: "#f5f5f5" },
-      { name: "Burta", sx: 0.4, sy: 1, sz: 9, x: -2.3, y: 1.9, color: "#1e88e5" },
-      { name: "Burta", sx: 0.4, sy: 1, sz: 9, x: 2.3, y: 1.9, color: "#1e88e5" },
-      { name: "Fotel", kind: "seat", vehicle: "boat", sx: 2, sy: 0.6, sz: 2, y: 1.7, z: 1, color: "#37474f" },
-      { name: "Szyba", sx: 3.6, sy: 1.2, sz: 0.25, y: 2.4, z: -1.4, color: "#90caf9", material: "glass", transparency: 0.3 },
-      { name: "Silnik", sx: 1.2, sy: 1.6, sz: 1, y: 1.4, z: 5, color: "#424242", material: "metal" },
-    ],
-  },
-  {
-    id: "skate",
-    name: "Deskorolka",
-    icon: "🛹",
-    cat: "Pojazdy",
-    parts: () => [
-      { name: "Deska", kind: "seat", vehicle: "skate", sx: 1.4, sy: 0.25, sz: 4, y: 0.62, color: "#ff7043" },
-      wheel(-0.55, 0.3, -1.3, 0.3), wheel(0.55, 0.3, -1.3, 0.3), wheel(-0.55, 0.3, 1.3, 0.3), wheel(0.55, 0.3, 1.3, 0.3),
-    ],
-  },
-  {
-    id: "chair",
-    name: "Krzesło",
-    icon: "🪑",
-    cat: "Pojazdy",
-    parts: () => [
-      { name: "Siedzisko", kind: "seat", sx: 2.2, sy: 0.4, sz: 2.2, y: 1.8, color: WOOD },
-      { name: "Oparcie", sx: 2.2, sy: 2.6, sz: 0.3, y: 3.2, z: 0.95, color: WOOD },
-      ...[[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]].map(([x, z]) => ({ name: "Noga", shape: "cylinder" as const, sx: 0.3, sy: 1.6, sz: 0.3, x, y: 0.8, z, color: "#5d4037" })),
-    ],
-  },
-  {
-    id: "bench",
-    name: "Ławka",
-    icon: "🛋️",
-    cat: "Pojazdy",
-    parts: () => [
-      // trzy osobne miejsca - na ławce siedzą trzy osoby
-      ...[-2.4, 0, 2.4].map((x) => ({ name: "Siedzisko", kind: "seat" as const, sx: 2.3, sy: 0.4, sz: 2.2, x, y: 1.8, color: WOOD })),
-      { name: "Oparcie", sx: 7.2, sy: 1.6, sz: 0.3, y: 3, z: 0.95, color: WOOD },
-      { name: "Noga", sx: 0.4, sy: 1.6, sz: 2, x: -3, y: 0.8, color: "#424242", material: "metal" },
-      { name: "Noga", sx: 0.4, sy: 1.6, sz: 2, x: 3, y: 0.8, color: "#424242", material: "metal" },
-    ],
-  },
-
-  // ---------- tor przeszkód ----------
-  { id: "lava", name: "Lawa", icon: "🔥", cat: "Tor przeszkód", parts: () => [{ name: "Lawa", kind: "kill", sx: 8, sy: 1, sz: 8, color: "#ff4d00", material: "neon" }] },
-  { id: "tramp", name: "Trampolina", icon: "🟣", cat: "Tor przeszkód", parts: () => [{ name: "Trampolina", kind: "bounce", sx: 6, sy: 1, sz: 6, color: "#ff66cc" }] },
-  {
-    id: "jumps",
-    name: "Skoki (5 platform)",
-    icon: "🪜",
-    cat: "Tor przeszkód",
-    parts: () =>
-      Array.from({ length: 5 }, (_, i) => ({
-        name: "Skok",
-        sx: 4,
-        sy: 1,
-        sz: 4,
-        x: Math.sin(i) * 3,
-        y: 1 + i * 2,
-        z: -i * 8,
-        color: ["#e74c3c", "#f39c12", "#f1c40f", "#2ecc71", "#3498db"][i],
-      })),
-  },
-  {
-    id: "stairs",
-    name: "Schody",
-    icon: "📶",
-    cat: "Tor przeszkód",
-    parts: () => Array.from({ length: 8 }, (_, i) => ({ name: "Schody", sx: 6, sy: 1, sz: 2, y: 0.5 + i, z: -i * 2, color: "#b0bec5" })),
-  },
-  {
-    id: "beam",
-    name: "Wąska belka",
-    icon: "➖",
-    cat: "Tor przeszkód",
-    parts: () => [{ name: "Belka", sx: 1.2, sy: 1, sz: 20, y: 3, color: "#ffffff" }, { name: "Lawa", kind: "kill", sx: 10, sy: 0.4, sz: 20, color: "#ff4d00", material: "neon" }],
-  },
-  {
-    id: "finish",
-    name: "Meta",
-    icon: "🏆",
-    cat: "Tor przeszkód",
-    parts: () => [
-      { name: "Meta", sx: 10, sy: 1, sz: 10, color: "#ffd700", material: "neon" },
-      { name: "Meta słupek", sx: 1, sy: 10, sz: 1, x: -5, y: 5.5, color: "#111111" },
-      { name: "Meta słupek", sx: 1, sy: 10, sz: 1, x: 5, y: 5.5, color: "#111111" },
-      { name: "Meta napis", sx: 11, sy: 2, sz: 0.6, y: 10, color: "#ffd700", material: "neon" },
-    ],
-  },
-
-  // ---------- natura ----------
-  {
-    id: "tree",
-    name: "Drzewo",
-    icon: "🌳",
-    cat: "Natura",
-    parts: () => [
-      { name: "Drzewo pień", shape: "cylinder", sx: 1.6, sy: 8, sz: 1.6, y: 4, color: "#6d4c41" },
-      { name: "Drzewo korona", shape: "sphere", sx: 8, sy: 7, sz: 8, y: 10, color: LEAF },
-    ],
-  },
-  {
-    id: "pine",
-    name: "Choinka",
-    icon: "🌲",
-    cat: "Natura",
-    parts: () => [
-      { name: "Choinka pień", shape: "cylinder", sx: 1.2, sy: 3, sz: 1.2, y: 1.5, color: "#6d4c41" },
-      { name: "Choinka", shape: "cylinder", sx: 6, sy: 3, sz: 6, y: 4, color: "#2e7d32" },
-      { name: "Choinka", shape: "cylinder", sx: 4.5, sy: 3, sz: 4.5, y: 6.5, color: "#2e7d32" },
-      { name: "Choinka", shape: "cylinder", sx: 2.5, sy: 3, sz: 2.5, y: 9, color: "#2e7d32" },
-    ],
-  },
-  { id: "water", name: "Woda", icon: "🌊", cat: "Natura", parts: () => [{ name: "Woda", kind: "water", sx: 24, sy: 8, sz: 24, y: 4, color: "#2f8fd8", collide: false }] },
-  {
-    id: "pool",
-    name: "Basen",
-    icon: "🏊",
-    cat: "Natura",
-    parts: () => {
-      const W = 20, D = 14, H = 6, T = 1;
-      const tile = "#e0f2f1";
-      return [
-        { name: "Dno basenu", sx: W, sy: T, sz: D, y: 0.5, color: "#80cbc4" },
-        { name: "Brzeg", sx: W + 2 * T, sy: H, sz: T, y: H / 2, z: -(D + T) / 2, color: tile },
-        { name: "Brzeg", sx: W + 2 * T, sy: H, sz: T, y: H / 2, z: (D + T) / 2, color: tile },
-        { name: "Brzeg", sx: T, sy: H, sz: D, y: H / 2, x: -(W + T) / 2, color: tile },
-        { name: "Brzeg", sx: T, sy: H, sz: D, y: H / 2, x: (W + T) / 2, color: tile },
-        { name: "Woda", kind: "water" as const, sx: W, sy: H - 1.5, sz: D, y: 1 + (H - 1.5) / 2, color: "#29b6f6", collide: false },
-      ];
-    },
-  },
-  { id: "bush", name: "Krzak", icon: "🌿", cat: "Natura", parts: () => [{ name: "Krzak", shape: "sphere", sx: 4, sy: 3, sz: 4, y: 1.2, color: "#388e3c", collide: false }] },
-  { id: "rock", name: "Skała", icon: "🪨", cat: "Natura", parts: () => [{ name: "Skała", shape: "sphere", sx: 5, sy: 3, sz: 4, y: 1.2, color: STONE }] },
-  {
-    id: "flower",
-    name: "Kwiatek",
-    icon: "🌷",
-    cat: "Natura",
-    parts: () => [
-      { name: "Kwiatek łodyga", shape: "cylinder", sx: 0.3, sy: 2, sz: 0.3, y: 1, color: "#43a047", collide: false },
-      { name: "Kwiatek", shape: "sphere", sx: 1.2, sy: 1.2, sz: 1.2, y: 2.2, color: "#ff4fa3", collide: false },
-    ],
-  },
-  { id: "water", name: "Woda", icon: "💧", cat: "Natura", parts: () => [{ name: "Woda", sx: 16, sy: 0.4, sz: 16, y: 0.2, color: "#29b6f6", transparency: 0.3, collide: false, material: "glass" }] },
-  {
-    id: "mountain",
-    name: "Góra",
-    icon: "⛰️",
-    cat: "Natura",
-    parts: () => [
-      { name: "Góra", shape: "wedge", sx: 16, sy: 10, sz: 12, z: -6, y: 5, ry: 0, color: "#78909c" },
-      { name: "Góra", shape: "wedge", sx: 16, sy: 10, sz: 12, z: 6, y: 5, ry: 180, color: "#78909c" },
-      { name: "Góra śnieg", sx: 16, sy: 1, sz: 2, y: 10, color: "#ffffff" },
-    ],
-  },
-
-  // ---------- budynki ----------
-  {
-    id: "house",
-    name: "Domek",
-    icon: "🏠",
-    cat: "Budynki",
-    parts: () => {
-      const c = "#ffe0b2";
-      return [
-        { name: "Dom podłoga", sx: 16, sy: 0.4, sz: 12, y: 0.2, color: "#a1887f" },
-        { name: "Dom ściana", sx: 16, sy: 8, sz: 1, z: -6, y: 4, color: c },
-        { name: "Dom ściana", sx: 1, sy: 8, sz: 12, x: -8, y: 4, color: c },
-        { name: "Dom ściana", sx: 1, sy: 8, sz: 12, x: 8, y: 4, color: c },
-        { name: "Dom ściana", sx: 5.5, sy: 8, sz: 1, x: -5.25, z: 6, y: 4, color: c },
-        { name: "Dom ściana", sx: 5.5, sy: 8, sz: 1, x: 5.25, z: 6, y: 4, color: c },
-        { name: "Dom ściana", sx: 5, sy: 2, sz: 1, z: 6, y: 7, color: c },
-        // klin ry=0 jest wysoki od strony +z - dwa kliny tworzą spadzisty dach
-        { name: "Dom dach", shape: "wedge", sx: 18, sy: 4, sz: 7, z: -3.5, y: 10, color: "#d84315" },
-        { name: "Dom dach", shape: "wedge", sx: 18, sy: 4, sz: 7, z: 3.5, y: 10, ry: 180, color: "#d84315" },
-        { name: "Dom okno", sx: 3, sy: 3, sz: 1.1, x: -5, z: -6, y: 4.5, color: "#81d4fa", material: "glass", transparency: 0.3 },
-      ];
-    },
-  },
-  {
-    id: "tower",
-    name: "Wieża",
-    icon: "🏰",
-    cat: "Budynki",
-    parts: () => [
-      { name: "Wieża", shape: "cylinder", sx: 8, sy: 20, sz: 8, y: 10, color: "#b0bec5" },
-      { name: "Wieża dach", shape: "cylinder", sx: 9.5, sy: 1, sz: 9.5, y: 20.5, color: "#78909c" },
-      ...[0, 1, 2, 3].map((i) => ({ name: "Wieża blanka", sx: 1.6, sy: 1.6, sz: 1.6, x: Math.cos((i * Math.PI) / 2) * 4, z: Math.sin((i * Math.PI) / 2) * 4, y: 21.8, color: "#78909c" })),
-    ],
-  },
-  {
-    id: "fence",
-    name: "Płot",
-    icon: "🚧",
-    cat: "Budynki",
-    parts: () => [
-      ...[-6, -3, 0, 3, 6].map((x) => ({ name: "Płot", sx: 0.5, sy: 3, sz: 0.5, x, y: 1.5, color: WOOD })),
-      { name: "Płot", sx: 13, sy: 0.4, sz: 0.3, y: 2.3, color: WOOD },
-      { name: "Płot", sx: 13, sy: 0.4, sz: 0.3, y: 1.2, color: WOOD },
-    ],
-  },
-  {
-    id: "bridge",
-    name: "Most",
-    icon: "🌉",
-    cat: "Budynki",
-    parts: () => [
-      { name: "Most", sx: 6, sy: 0.6, sz: 20, y: 3, color: WOOD },
-      { name: "Most barierka", sx: 0.4, sy: 1.5, sz: 20, x: -3, y: 4, color: "#5d4037" },
-      { name: "Most barierka", sx: 0.4, sy: 1.5, sz: 20, x: 3, y: 4, color: "#5d4037" },
-      { name: "Most rampa", shape: "wedge", sx: 6, sy: 2.7, sz: 5, z: 12.5, y: 1.35, ry: 180, color: WOOD },
-      { name: "Most rampa", shape: "wedge", sx: 6, sy: 2.7, sz: 5, z: -12.5, y: 1.35, color: WOOD },
-    ],
-  },
-
-  // ---------- miasto ----------
-  {
-    id: "lamp",
-    name: "Latarnia",
-    icon: "💡",
-    cat: "Miasto",
-    parts: () => [
-      { name: "Latarnia", shape: "cylinder", sx: 0.5, sy: 8, sz: 0.5, y: 4, color: "#37474f" },
-      { name: "Latarnia światło", shape: "sphere", sx: 1.4, sy: 1.4, sz: 1.4, y: 8.4, color: "#fff59d", material: "neon" },
-    ],
-  },
-  {
-    id: "bench",
-    name: "Ławka",
-    icon: "🪑",
-    cat: "Miasto",
-    parts: () => [
-      { name: "Ławka", sx: 6, sy: 0.4, sz: 1.6, y: 1.6, color: WOOD },
-      { name: "Ławka", sx: 6, sy: 1.6, sz: 0.4, z: -0.9, y: 2.6, color: WOOD },
-      { name: "Ławka nogi", sx: 0.5, sy: 1.4, sz: 1.4, x: -2.4, y: 0.7, color: "#424242" },
-      { name: "Ławka nogi", sx: 0.5, sy: 1.4, sz: 1.4, x: 2.4, y: 0.7, color: "#424242" },
-    ],
-  },
-  {
-    id: "road",
-    name: "Droga",
-    icon: "🛣️",
-    cat: "Miasto",
-    parts: () => [
-      { name: "Droga", sx: 14, sy: 0.2, sz: 40, y: 0.1, color: "#3a3b40" },
-      ...[-15, -5, 5, 15].map((z) => ({ name: "Pasy", sx: 0.5, sy: 0.05, sz: 4, z, y: 0.23, color: "#f1e05a", collide: false })),
-    ],
-  },
-  {
-    id: "car",
-    name: "Samochód",
-    icon: "🚗",
-    cat: "Miasto",
-    parts: () => [
-      { name: "Auto", sx: 4, sy: 1.6, sz: 8, y: 1.6, color: "#e53935" },
-      { name: "Auto dach", sx: 3.6, sy: 1.4, sz: 4, y: 3.1, z: 0.5, color: "#e53935" },
-      { name: "Auto szyba", sx: 3.7, sy: 1.1, sz: 4.1, y: 3.1, z: 0.5, color: "#90caf9", material: "glass", transparency: 0.3, collide: false },
-      ...[
-        [-2, -2.6],
-        [2, -2.6],
-        [-2, 2.6],
-        [2, 2.6],
-      ].map(([x, z]) => ({ name: "Auto koło", shape: "cylinder" as const, sx: 0.8, sy: 1.6, sz: 1.6, x, z, y: 0.8, color: "#212121" })),
-    ],
-  },
-  {
-    id: "sign",
-    name: "Znak",
-    icon: "🪧",
-    cat: "Miasto",
-    parts: () => [
-      { name: "Znak słupek", sx: 0.4, sy: 5, sz: 0.4, y: 2.5, color: "#9e9e9e" },
-      { name: "Znak", sx: 4, sy: 2.5, sz: 0.3, y: 5.5, color: "#1e88e5" },
-    ],
-  },
-
-  // ---------- zabawa ----------
-  { id: "coin", name: "Moneta", icon: "🪙", cat: "Zabawa", parts: () => [{ name: "Moneta", shape: "cylinder", sx: 2, sy: 0.4, sz: 2, y: 2, color: "#ffc300", material: "neon", collide: false }] },
-  {
-    id: "slide",
-    name: "Zjeżdżalnia",
-    icon: "🛝",
-    cat: "Zabawa",
-    parts: () => [
-      { name: "Zjeżdżalnia", shape: "wedge", sx: 4, sy: 8, sz: 16, y: 4, color: "#ff7043" },
-      { name: "Zjeżdżalnia drabina", sx: 4, sy: 8, sz: 1, z: 8.5, y: 4, color: "#ffca28" },
-    ],
-  },
-  {
-    id: "ball",
-    name: "Tęczowa kula",
-    icon: "🌈",
-    cat: "Zabawa",
-    parts: () => [{ name: "Tęczowa kula", shape: "sphere", sx: 5, sy: 5, sz: 5, y: 2.5, color: "#00c3ff" }],
-  },
-  {
-    id: "platform",
-    name: "Jeżdżąca platforma",
-    icon: "🛗",
-    cat: "Zabawa",
-    parts: () => [{ name: "Winda", sx: 6, sy: 1, sz: 6, y: 1, color: "#00e5ff", material: "neon" }],
-  },
-  { id: "portal", name: "Teleport", icon: "🌀", cat: "Zabawa", parts: () => [{ name: "Teleport", shape: "cylinder", sx: 5, sy: 0.4, sz: 5, y: 0.3, color: "#7c4dff", material: "neon" }] },
+/** wszystkie modele Zestawu (kolejność = kolejność w panelu) */
+const META: [string, string, string, string][] = [
+  ["box", "Klocek", "⬛", "Podstawowe"],
+  ["sphere", "Kula", "⚪", "Podstawowe"],
+  ["cyl", "Walec", "🛢", "Podstawowe"],
+  ["wedge", "Klin", "📐", "Podstawowe"],
+  ["floor", "Podłoga", "🟫", "Podstawowe"],
+  ["wall", "Ściana", "🧱", "Podstawowe"],
+  ["spawn", "Spawn (start)", "🏁", "Podstawowe"],
+  ["npc", "Postać (NPC)", "🧍", "Podstawowe"],
+  ["car", "Samochód", "🚗", "Pojazdy"],
+  ["boat", "Motorówka", "🚤", "Pojazdy"],
+  ["skate", "Deskorolka", "🛹", "Pojazdy"],
+  ["chair", "Krzesło", "🪑", "Pojazdy"],
+  ["bench", "Ławka", "🛋️", "Pojazdy"],
+  ["lava", "Lawa", "🔥", "Tor przeszkód"],
+  ["tramp", "Trampolina", "🟣", "Tor przeszkód"],
+  ["jumps", "Skoki (5 platform)", "🪜", "Tor przeszkód"],
+  ["stairs", "Schody", "📶", "Tor przeszkód"],
+  ["beam", "Wąska belka", "➖", "Tor przeszkód"],
+  ["finish", "Meta", "🏆", "Tor przeszkód"],
+  ["tree", "Drzewo", "🌳", "Natura"],
+  ["pine", "Choinka", "🌲", "Natura"],
+  ["water", "Woda", "🌊", "Natura"],
+  ["pool", "Basen", "🏊", "Natura"],
+  ["bush", "Krzak", "🌿", "Natura"],
+  ["rock", "Skała", "🪨", "Natura"],
+  ["flower", "Kwiatek", "🌷", "Natura"],
+  ["water", "Woda", "💧", "Natura"],
+  ["mountain", "Góra", "⛰️", "Natura"],
+  ["house", "Domek", "🏠", "Budynki"],
+  ["tower", "Wieża", "🏰", "Budynki"],
+  ["fence", "Płot", "🚧", "Budynki"],
+  ["bridge", "Most", "🌉", "Budynki"],
+  ["lamp", "Latarnia", "💡", "Miasto"],
+  ["bench", "Ławka", "🪑", "Miasto"],
+  ["road", "Droga", "🛣️", "Miasto"],
+  ["car", "Samochód", "🚗", "Miasto"],
+  ["sign", "Znak", "🪧", "Miasto"],
+  ["coin", "Moneta", "🪙", "Zabawa"],
+  ["slide", "Zjeżdżalnia", "🛝", "Zabawa"],
+  ["ball", "Tęczowa kula", "🌈", "Zabawa"],
+  ["platform", "Jeżdżąca platforma", "🛗", "Zabawa"],
+  ["portal", "Teleport", "🌀", "Zabawa"],
+  ["airliner", "Samolot pasażerski", "✈️", "Samoloty"],
+  ["cessna", "Mały samolot", "🛩️", "Samoloty"],
+  ["jet", "Myśliwiec", "🛫", "Samoloty"],
+  ["heli", "Śmigłowiec", "🚁", "Samoloty"],
+  ["ufo", "UFO", "🛸", "Samoloty"],
+  ["rocket", "Rakieta", "🚀", "Samoloty"],
+  ["cruise", "Statek wycieczkowy", "🛳️", "Statki"],
+  ["container", "Kontenerowiec", "🚢", "Statki"],
+  ["galleon", "Żaglowiec", "⛵", "Statki"],
+  ["destroyer", "Okręt wojenny", "⚓", "Statki"],
+  ["submarine", "Łódź podwodna", "🫧", "Statki"],
+  ["villaModern", "Willa nowoczesna z basenem", "🏡", "Wille i domy"],
+  ["villaClassic", "Willa z kolumnami", "🏠", "Wille i domy"],
+  ["palace", "Pałac", "🏛️", "Wille i domy"],
+  ["castle", "Zamek", "🏰", "Wille i domy"],
+  ["sofa", "Kanapa (3 miejsca)", "🛋️", "Meble"],
+  ["table", "Stół z krzesłami", "🍽️", "Meble"],
+  ["bed", "Łóżko", "🛏️", "Meble"],
+  ["wardrobe", "Szafa", "🚪", "Meble"],
+  ["bookshelf", "Regał z książkami", "📚", "Meble"],
+  ["kitchen", "Kuchnia", "🍳", "Meble"],
+  ["tv", "Telewizor z szafką", "📺", "Meble"],
+  ["kukirin", "Kukirin (hulajnoga elektryczna)", "🛴", "Pojazdy 2"],
+  ["hulajnoga", "Hulajnoga", "🛴", "Pojazdy 2"],
+  ["bus", "Autobus", "🚌", "Pojazdy 2"],
+  ["truck", "Ciężarówka", "🚚", "Pojazdy 2"],
+  ["train", "Pociąg", "🚆", "Pojazdy 2"],
+  ["tank", "Czołg", "🪖", "Pojazdy 2"],
+  ["skyscraper", "Wieżowiec", "🏙️", "Miasto 2"],
+  ["shop", "Sklep", "🏪", "Miasto 2"],
+  ["gas", "Stacja benzynowa", "⛽", "Miasto 2"],
+  ["windmill", "Wiatrak", "🌬️", "Miasto 2"],
+  ["lighthouse", "Latarnia morska", "🗼", "Miasto 2"],
+  ["palm", "Palma", "🌴", "Fantasy"],
+  ["cactus", "Kaktus", "🌵", "Fantasy"],
+  ["fountain", "Fontanna", "⛲", "Fantasy"],
+  ["tent", "Namiot", "⛺", "Fantasy"],
+  ["dragon", "Pomnik smoka", "🐉", "Fantasy"]
 ];
+
+export const TOOLBOX: ToolboxModel[] = META.map(([id, name, icon, cat]) => ({
+  id, name, icon, cat,
+  parts: BASIC[`${cat}/${id}/${icon}`] ?? BASIC[`${cat}/${id}`] ?? MODELS_V2[`${cat}/${id}`] ?? (() => [{ name, sx: 4, sy: 4, sz: 4 }]),
+}));
 
 /** modele, które od razu dostają zachowanie (np. moneta daje punkt) */
 export const MODEL_BEHAVIOR: Record<string, string> = {
@@ -381,13 +134,6 @@ export const MODEL_BEHAVIOR: Record<string, string> = {
   finish: "finish",
 };
 
-// dodatkowe modele (samoloty, statki, wille, meble, Kukirin...) - osobny plik
-TOOLBOX.push(...EXTRA_MODELS);
-// dopracowane wersje modeli mają pierwszeństwo przed starymi definicjami
-for (const m of TOOLBOX) {
-  const v2 = MODELS_V2[`${m.cat}/${m.id}`];
-  if (v2) m.parts = v2;
-}
 
 // =====================================================================
 // Zachowania - skrypty jednym kliknięciem
