@@ -4,6 +4,7 @@ import type { Part, WorldScript } from "../../../shared/types.ts";
 import { newId } from "../../../shared/world.ts";
 import { h, modal } from "../ui/dom.ts";
 import { EXTRA_CATS, EXTRA_MODELS } from "./toolboxExtra.ts";
+import { MODELS_V2 } from "./toolboxModels.ts";
 
 // =====================================================================
 // Zestaw - gotowe modele
@@ -382,6 +383,11 @@ export const MODEL_BEHAVIOR: Record<string, string> = {
 
 // dodatkowe modele (samoloty, statki, wille, meble, Kukirin...) - osobny plik
 TOOLBOX.push(...EXTRA_MODELS);
+// dopracowane wersje modeli mają pierwszeństwo przed starymi definicjami
+for (const m of TOOLBOX) {
+  const v2 = MODELS_V2[`${m.cat}/${m.id}`];
+  if (v2) m.parts = v2;
+}
 
 // =====================================================================
 // Zachowania - skrypty jednym kliknięciem
