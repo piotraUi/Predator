@@ -3,7 +3,7 @@
 // Co chwilę zapisuje grę w bazie, więc nikt nie traci pracy.
 import { Room, type Client } from "colyseus";
 import type { Part, WorldData } from "../../../shared/types.ts";
-import { sanitizeWorld } from "../../../shared/world.ts";
+import { MAX_PARTS, sanitizeWorld } from "../../../shared/world.ts";
 import { applyOps2d, flatten2d } from "../../../shared/collab2d.ts";
 import { userFromToken } from "../auth.ts";
 import { canEdit, worlds, type UserRow } from "../db.ts";
@@ -92,7 +92,7 @@ export class StudioRoom extends Room {
       // każdy klocek czyścimy tak samo jak przy zapisie gry (id zostaje)
       // miejsca (places) z tej samej wiadomości albo z gry - inaczej klocek straciłby swoje miejsce
       const f = (m.fields && typeof m.fields === "object" ? m.fields : {}) as Record<string, unknown>;
-      const clean = sanitizeWorld({ parts: m.parts.slice(0, 5000), places: "places" in f ? f.places : this.data.places }).parts;
+      const clean = sanitizeWorld({ parts: m.parts.slice(0, MAX_PARTS), places: "places" in f ? f.places : this.data.places }).parts;
       const byId = new Map(this.data.parts.map((p, i) => [p.id, i]));
       for (const p of clean) {
         const i = byId.get(p.id);

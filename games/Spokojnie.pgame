@@ -1,0 +1,1384 @@
+{
+ "format": "predator-game",
+ "version": 1,
+ "name": "Spokojnie. To tylko przycisk.",
+ "description": "Gra 2D zrobiona tylko z przycisków. Brzmi prosto. Nie jest. Ragebait: przyciski uciekają, etapy rosną, a pasek wkurzenia nie kłamie.",
+ "maxPlayers": 30,
+ "data": {
+  "parts": [],
+  "scripts": [
+   {
+    "id": "mve99eq823qk2",
+    "name": "Ragebait",
+    "type": "lua",
+    "source": "\n-- \"Spokojnie. To tylko przycisk.\" - gra tylko z GUI. Stan każdego gracza w tabeli st.\nlocal STAGES = {\"Menu\",\"S1\",\"S2\",\"S3A\",\"S3B\",\"S3C\",\"S3D\",\"S4\",\"S5\",\"S6A\",\"S6B\",\"S6C\",\"Win\"}\nlocal TITLES = {S1=\"Etap 1/6\", S2=\"Etap 2/6\", S3A=\"Etap 3/6\", S3B=\"Etap 3/6\", S3C=\"Etap 3/6\", S3D=\"Etap 3/6\", S4=\"Etap 4/6\", S5=\"Etap 5/6\", S6A=\"Etap 6/6\", S6B=\"Etap 6/6\", S6C=\"Etap 6/6\", Win=\"\"}\nlocal st = {}\n\nlocal TAUNTS = {\n  \"To było proste. Prawie.\", \"Na pewno klikasz we właściwy sposób?\", \"Mój kot robi to szybciej.\", \"Spokojnie. Oddychaj.\",\n  \"Prawie! (nie)\", \"Ups. Czyja to wina? Twoja.\", \"Zostało już tylko trochę. Tak jakby.\", \"Nikt jeszcze nie rzucił telefonem. Jeszcze.\",\n  \"Może inny palec?\", \"Widziałem lepsze próby. U dzieci.\", \"A było tak blisko... tego czegoś.\", \"Nie, to nie bug. To Ty.\",\n}\nlocal function taunt(p, t) setGuiText(p, \"Hud\", \"HudTaunt\", t or TAUNTS[math.random(#TAUNTS)]) end\n\nlocal function bar(r)\n  local n = math.floor(r / 10)\n  return \"Wkurzenie: \" .. string.rep(\"█\", n) .. string.rep(\"░\", 10 - n) .. \" \" .. r .. \"%\"\nend\n\nlocal function rage(p, n)\n  local s = st[p]\n  s.rage = math.min(100, s.rage + n)\n  setGuiText(p, \"Hud\", \"HudRage\", bar(s.rage))\n  if s.rage >= 100 and not s.raged then\n    s.raged = true\n    awardBadge(p, \"Zragowany\")\n    saveGlobal(\"zragowani\", loadGlobal(\"zragowani\", 0) + 1)\n    taunt(p, \"100%. Gratulacje, jesteś wkurzony. Osiągnięcie odblokowane.\")\n  end\nend\n\nlocal function stopTimer(s)\n  if s.timer then cancel(s.timer) s.timer = nil end\nend\n\nlocal go\nlocal function fail(p, to, msg)\n  rage(p, 12)\n  taunt(p, msg)\n  go(p, to or \"S1\")\nend\n\ngo = function(p, name)\n  local s = st[p]\n  stopTimer(s)\n  for _, n in ipairs(STAGES) do hideGui(p, n) end\n  s.stage = name\n  showGui(p, name)\n  if name ~= \"Menu\" then\n    showGui(p, \"Hud\")\n    setGuiText(p, \"Hud\", \"HudStage\", TITLES[name] or \"\")\n  end\n  if name == \"S1\" then\n    s.n, s.need = 0, 3\n    setGuiText(p, \"S1\", \"Info\", \"Klikaj: 0 / \" .. s.need)\n  elseif name == \"S2\" then\n    s.real = math.random(4)\n  elseif name:sub(1, 2) == \"S3\" then\n    setGuiText(p, name, \"Info\", \"Postęp: \" .. s.n .. \" / 6\")\n  elseif name == \"S4\" then\n    s.left = 8\n    setGuiText(p, \"S4\", \"Info\", \"Wytrzymaj: \" .. s.left .. \" s\")\n    setGuiText(p, \"S4\", \"Btn\", \"NIE KLIKAJ\")\n    s.timer = every(1, function()\n      if s.stage ~= \"S4\" then return end\n      s.left = s.left - 1\n      setGuiText(p, \"S4\", \"Info\", \"Wytrzymaj: \" .. s.left .. \" s\")\n      if s.left == 4 then setGuiText(p, \"S4\", \"Btn\", \"KLIKNIJ, no kliknij\") taunt(p, \"Przecież nikt nie patrzy.\") end\n      if s.left <= 0 then go(p, \"S5\") taunt(p, \"Udało się. Szkoda, że nikt Ci nie gratuluje.\") end\n    end)\n  elseif name == \"S5\" then\n    s.robot = 0\n    setGuiText(p, \"S5\", \"Human\", \"☐  Nie jestem robotem\")\n  elseif name == \"Win\" then\n    local total = loadGlobal(\"zragowani\", 0)\n    setGuiText(p, \"Win\", \"Info\", \"Nagrody nie ma.\\nTwoje wkurzenie: \" .. s.rage .. \"%\\nZragowanych graczy w historii gry: \" .. total)\n    awardBadge(p, \"Cierpliwy\")\n  end\nend\n\nlocal function pass3(p)\n  go(p, \"S4\")\n  taunt(p, \"No dobra. Zaskakujące.\")\nend\n\nonPlayerJoin(function(p)\n  st[p] = {stage = \"Menu\", rage = 0, n = 0, need = 3}\nend)\nonPlayerLeave(function(p)\n  if st[p] then stopTimer(st[p]) end\n  st[p] = nil\nend)\n\nonGuiClick(function(p, g, b)\n  local s = st[p]\n  if not s or s.stage ~= g then return end\n  if g == \"Menu\" and b == \"Graj\" then\n    s.rage, s.raged = 0, false\n    setGuiText(p, \"Hud\", \"HudRage\", bar(0))\n    taunt(p, \"Spokojnie. To tylko przycisk.\")\n    go(p, \"S1\")\n  elseif g == \"S1\" and b == \"Btn\" then\n    s.n = s.n + 1\n    if s.n >= s.need then\n      if s.need == 3 then s.need = 5 taunt(p, \"Hm, miało być 5. Mój błąd. Nie, Twój.\") rage(p, 6)\n      elseif s.need == 5 then s.need = 8 taunt(p, \"Dla pewności 8.\") rage(p, 6)\n      else go(p, \"S2\") taunt(p, \"No i? Tyle zachodu.\") return end\n    end\n    setGuiText(p, \"S1\", \"Info\", \"Klikaj: \" .. s.n .. \" / \" .. s.need)\n  elseif g == \"S2\" then\n    if b == \"B\" .. s.real then\n      s.n = 0 go(p, \"S3A\") taunt(p, \"Ten był dobry. Tylko ten.\")\n    else\n      s.real = math.random(4)\n      rage(p, 8)\n      taunt(p, \"To była reklama. Nie ten.\")\n    end\n  elseif g:sub(1, 2) == \"S3\" and b == \"Btn\" then\n    s.n = s.n + 1\n    if s.n >= 6 then pass3(p) return end\n    if s.n >= 4 and math.random() < 0.3 then\n      s.n = 0\n      rage(p, 10)\n      taunt(p, \"Błąd synchronizacji. Od nowa.\")\n    elseif math.random() < 0.3 then\n      taunt(p)\n    end\n    local nxt\n    repeat nxt = ({\"S3A\",\"S3B\",\"S3C\",\"S3D\"})[math.random(4)] until nxt ~= g\n    go(p, nxt)\n  elseif g == \"S4\" and b == \"Btn\" then\n    s.left = 8\n    rage(p, 9)\n    taunt(p, \"Mówiłem: nie klikaj.\")\n    setGuiText(p, \"S4\", \"Info\", \"Wytrzymaj: 8 s (od nowa)\")\n    setGuiText(p, \"S4\", \"Btn\", \"NIE KLIKAJ\")\n  elseif g == \"S5\" and b == \"Human\" then\n    s.robot = s.robot + 1\n    setGuiText(p, \"S5\", \"Human\", \"☒  Jesteś robotem (\" .. s.robot .. \")\")\n    rage(p, 7)\n    taunt(p, s.robot >= 3 and \"Podpowiedź: bywają małe przyciski.\" or \"Wykryto robota. Spróbuj jeszcze raz.\")\n  elseif g == \"S5\" and b == \"Robot\" then\n    go(p, \"S6A\")\n    taunt(p, \"Przyznanie się do bycia robotem to pierwszy krok.\")\n  elseif g == \"S6A\" or g == \"S6B\" or g == \"S6C\" then\n    if b == \"Yes\" then\n      if g == \"S6C\" then go(p, \"Win\") taunt(p, \"Koniec. Tak bardzo mi przykro.\")\n      else go(p, g == \"S6A\" and \"S6B\" or \"S6C\") end\n    elseif b == \"Dot\" then\n      fail(p, \"S1\", \"Kropka. Zawsze patrz na kropkę. Od początku.\")\n    else\n      fail(p, \"S1\", \"Powiedziałeś NIE. Wracamy na początek.\")\n    end\n  elseif g == \"Win\" and b == \"Again\" then\n    s.n = 0\n    go(p, \"S1\")\n    taunt(p, \"Masochista.\")\n  end\nend)\n",
+    "enabled": true
+   }
+  ],
+  "tools": [],
+  "characters": [],
+  "animations": [],
+  "pvp": true,
+  "skyColor": "#8ec8ff",
+  "skybox": "day",
+  "gravity": 196.2,
+  "badges": [
+   {
+    "id": "mve99eq83wbe5",
+    "name": "Cierpliwy",
+    "description": "Dotarłeś do końca. Nikt Ci tego nie wynagrodzi.",
+    "icon": "🏆",
+    "trigger": "script",
+    "reward": 25
+   },
+   {
+    "id": "mve99eq845n5t",
+    "name": "Zragowany",
+    "description": "Wkurzenie 100%. Gratulacje.",
+    "icon": "😡",
+    "trigger": "script",
+    "reward": 25
+   }
+  ],
+  "mode": "2d",
+  "world2d": {
+   "assets": [
+    {
+     "id": "mve99eq71sf1z",
+     "name": "gracz",
+     "type": "image",
+     "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDE2IDI0Ij48cmVjdCB4PSI0IiB5PSIwIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZjVjZDMwIi8+PHJlY3QgeD0iNSIgeT0iMyIgd2lkdGg9IjIiIGhlaWdodD0iMiIgZmlsbD0iIzExMSIvPjxyZWN0IHg9IjkiIHk9IjMiIHdpZHRoPSIyIiBoZWlnaHQ9IjIiIGZpbGw9IiMxMTEiLz48cmVjdCB4PSIzIiB5PSI4IiB3aWR0aD0iMTAiIGhlaWdodD0iOSIgZmlsbD0iIzBkNjlhYyIvPjxyZWN0IHg9IjMiIHk9IjE3IiB3aWR0aD0iNCIgaGVpZ2h0PSI3IiBmaWxsPSIjYTRiZDQ3Ii8+PHJlY3QgeD0iOSIgeT0iMTciIHdpZHRoPSI0IiBoZWlnaHQ9IjciIGZpbGw9IiNhNGJkNDciLz48L3N2Zz4=",
+     "w": 16,
+     "h": 24,
+     "pixel": true
+    },
+    {
+     "id": "mve99eq72sxob",
+     "name": "gracz-krok",
+     "type": "image",
+     "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDE2IDI0Ij48cmVjdCB4PSI0IiB5PSIwIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZjVjZDMwIi8+PHJlY3QgeD0iNSIgeT0iMyIgd2lkdGg9IjIiIGhlaWdodD0iMiIgZmlsbD0iIzExMSIvPjxyZWN0IHg9IjkiIHk9IjMiIHdpZHRoPSIyIiBoZWlnaHQ9IjIiIGZpbGw9IiMxMTEiLz48cmVjdCB4PSIzIiB5PSI4IiB3aWR0aD0iMTAiIGhlaWdodD0iOSIgZmlsbD0iIzBkNjlhYyIvPjxyZWN0IHg9IjEiIHk9IjE3IiB3aWR0aD0iNCIgaGVpZ2h0PSI3IiBmaWxsPSIjYTRiZDQ3Ii8+PHJlY3QgeD0iMTEiIHk9IjE3IiB3aWR0aD0iNCIgaGVpZ2h0PSI3IiBmaWxsPSIjYTRiZDQ3Ii8+PC9zdmc+",
+     "w": 16,
+     "h": 24,
+     "pixel": true
+    },
+    {
+     "id": "mve99eq739zlf",
+     "name": "ziemia",
+     "type": "image",
+     "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIGZpbGw9IiM4YjVhMmIiLz48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iOCIgZmlsbD0iIzRjYWY1MCIvPjxyZWN0IHg9IjYiIHk9IjE2IiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjN2E0YTIwIi8+PHJlY3QgeD0iMjAiIHk9IjIyIiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjN2E0YTIwIi8+PC9zdmc+",
+     "w": 32,
+     "h": 32,
+     "pixel": true
+    },
+    {
+     "id": "mve99eq74tiev",
+     "name": "moneta",
+     "type": "image",
+     "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48Y2lyY2xlIGN4PSI4IiBjeT0iOCIgcj0iNyIgZmlsbD0iI2Y1YjQwMCIvPjxjaXJjbGUgY3g9IjgiIGN5PSI4IiByPSI0LjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZTI3YSIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48L3N2Zz4=",
+     "w": 16,
+     "h": 16,
+     "pixel": true
+    },
+    {
+     "id": "mve99eq75rrf0",
+     "name": "kolce",
+     "type": "image",
+     "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDMyIDE2Ij48cGF0aCBkPSJNMCAxNiBMNCAyIEw4IDE2IEwxMiAyIEwxNiAxNiBMMjAgMiBMMjQgMTYgTDI4IDIgTDMyIDE2WiIgZmlsbD0iIzlhYTNhZCIvPjwvc3ZnPg==",
+     "w": 32,
+     "h": 16,
+     "pixel": true
+    },
+    {
+     "id": "mve99eq760sqy",
+     "name": "meta",
+     "type": "image",
+     "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDE2IDMyIj48cmVjdCB4PSIyIiB5PSIwIiB3aWR0aD0iMiIgaGVpZ2h0PSIzMiIgZmlsbD0iIzU1NSIvPjxwYXRoIGQ9Ik00IDIgTDE1IDcgTDQgMTJaIiBmaWxsPSIjZTYzOTQ2Ii8+PC9zdmc+",
+     "w": 16,
+     "h": 32,
+     "pixel": true
+    }
+   ],
+   "objects": [
+    {
+     "id": "mve99eq77msqp",
+     "name": "Gracz",
+     "kind": "sprite",
+     "anims": [
+      {
+       "name": "Idle",
+       "frames": [
+        "mve99eq71sf1z"
+       ],
+       "frameTime": 0.15,
+       "loop": true
+      },
+      {
+       "name": "Walk",
+       "frames": [
+        "mve99eq72sxob",
+        "mve99eq71sf1z"
+       ],
+       "frameTime": 0.15,
+       "loop": true
+      }
+     ],
+     "w": 32,
+     "h": 48,
+     "hitbox": [
+      0.15,
+      0,
+      0.7,
+      1
+     ],
+     "solid": "none",
+     "role": "none"
+    },
+    {
+     "id": "mve99eq78ysly",
+     "name": "Ziemia",
+     "kind": "tiled",
+     "anims": [
+      {
+       "name": "Idle",
+       "frames": [
+        "mve99eq739zlf"
+       ],
+       "frameTime": 0.15,
+       "loop": true
+      }
+     ],
+     "w": 320,
+     "h": 32,
+     "hitbox": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "solid": "solid",
+     "role": "none"
+    },
+    {
+     "id": "mve99eq79g8fk",
+     "name": "Moneta",
+     "kind": "sprite",
+     "anims": [
+      {
+       "name": "Idle",
+       "frames": [
+        "mve99eq74tiev"
+       ],
+       "frameTime": 0.15,
+       "loop": true
+      }
+     ],
+     "w": 16,
+     "h": 16,
+     "hitbox": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "solid": "none",
+     "role": "pickup",
+     "perPlayer": true,
+     "coin": true
+    },
+    {
+     "id": "mve99eq7azxp6",
+     "name": "Kolce",
+     "kind": "sprite",
+     "anims": [
+      {
+       "name": "Idle",
+       "frames": [
+        "mve99eq75rrf0"
+       ],
+       "frameTime": 0.15,
+       "loop": true
+      }
+     ],
+     "w": 32,
+     "h": 16,
+     "hitbox": [
+      0,
+      0.4,
+      1,
+      0.6
+     ],
+     "solid": "none",
+     "role": "hazard"
+    },
+    {
+     "id": "mve99eq7bg3pg",
+     "name": "Meta",
+     "kind": "sprite",
+     "anims": [
+      {
+       "name": "Idle",
+       "frames": [
+        "mve99eq760sqy"
+       ],
+       "frameTime": 0.15,
+       "loop": true
+      }
+     ],
+     "w": 16,
+     "h": 32,
+     "hitbox": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "solid": "none",
+     "role": "checkpoint"
+    },
+    {
+     "id": "mve99eq7cnboy",
+     "name": "Start",
+     "kind": "sprite",
+     "anims": [
+      {
+       "name": "Idle",
+       "frames": [],
+       "frameTime": 0.15,
+       "loop": true
+      }
+     ],
+     "w": 32,
+     "h": 48,
+     "hitbox": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "solid": "none",
+     "role": "spawn",
+     "hidden": true
+    },
+    {
+     "id": "mve99eq7dymyt",
+     "name": "Licznik monet",
+     "kind": "text",
+     "anims": [
+      {
+       "name": "Idle",
+       "frames": [],
+       "frameTime": 0.15,
+       "loop": true
+      }
+     ],
+     "w": 300,
+     "h": 30,
+     "hitbox": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "solid": "none",
+     "role": "none",
+     "text": "Monety: {coins}",
+     "color": "#ffffff",
+     "fontSize": 28
+    }
+   ],
+   "levels": [
+    {
+     "id": "mve99eq70vlvb",
+     "name": "Menu",
+     "background": "#16161d",
+     "zoom": 2,
+     "instances": [],
+     "killY": 1000,
+     "cameraBottom": null,
+     "menu": true
+    }
+   ],
+   "characters": [
+    {
+     "id": "mve99eq8qmgsp",
+     "name": "Gracz",
+     "obj": "mve99eq77msqp",
+     "w": 32,
+     "h": 48,
+     "anims": {
+      "idle": "Idle",
+      "walk": "Walk",
+      "jump": "Idle",
+      "fall": "Idle",
+      "climb": "Walk",
+      "dead": "Idle"
+     }
+    }
+   ],
+   "startLevel": "mve99eq70vlvb",
+   "physics": {
+    "gravity": 525,
+    "jumpSpeed": 360,
+    "jumpSustain": 0.3,
+    "maxSpeed": 200,
+    "acceleration": 500,
+    "deceleration": 500,
+    "maxFallSpeed": 400,
+    "ladderSpeed": 200
+   },
+   "sounds": {},
+   "ownMenu": true
+  },
+  "guis": [
+   {
+    "id": "gmve99eq75cas",
+    "name": "Menu",
+    "open": true,
+    "elements": [
+     {
+      "id": "gmve99eq60b84",
+      "name": "Panel",
+      "type": "frame",
+      "x": 18,
+      "y": 14,
+      "w": 64,
+      "h": 70,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq71dc8",
+      "name": "Title",
+      "type": "text",
+      "x": 20,
+      "y": 18,
+      "w": 60,
+      "h": 14,
+      "text": "SPOKOJNIE.",
+      "color": "#ff5252",
+      "fontSize": 64,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7200o",
+      "name": "Sub",
+      "type": "text",
+      "x": 20,
+      "y": 33,
+      "w": 60,
+      "h": 8,
+      "text": "To tylko przycisk.",
+      "color": "#b8b8d0",
+      "fontSize": 30,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq739dk",
+      "name": "Graj",
+      "type": "button",
+      "x": 34,
+      "y": 50,
+      "w": 32,
+      "h": 14,
+      "text": "GRAJ",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 44,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq74a3w",
+      "name": "Hint",
+      "type": "text",
+      "x": 20,
+      "y": 72,
+      "w": 60,
+      "h": 6,
+      "text": "Nie denerwuj się. Nikt jeszcze się nie zdenerwował.*",
+      "color": "#777790",
+      "fontSize": 16,
+      "align": "center"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq7br3w",
+    "name": "Hud",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq76swe",
+      "name": "Bar",
+      "type": "frame",
+      "x": 0,
+      "y": 0,
+      "w": 100,
+      "h": 9,
+      "bg": "#000000",
+      "bgOpacity": 0.7,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq77p78",
+      "name": "HudRage",
+      "type": "text",
+      "x": 1,
+      "y": 1,
+      "w": 50,
+      "h": 7,
+      "text": "Wkurzenie: ░░░░░░░░░░ 0%",
+      "color": "#ff8a80",
+      "fontSize": 22,
+      "bold": true,
+      "align": "left"
+     },
+     {
+      "id": "gmve99eq787tn",
+      "name": "HudStage",
+      "type": "text",
+      "x": 50,
+      "y": 1,
+      "w": 49,
+      "h": 7,
+      "text": "",
+      "color": "#b8b8d0",
+      "fontSize": 20,
+      "align": "right"
+     },
+     {
+      "id": "gmve99eq79lb4",
+      "name": "BarB",
+      "type": "frame",
+      "x": 0,
+      "y": 90,
+      "w": 100,
+      "h": 10,
+      "bg": "#000000",
+      "bgOpacity": 0.7,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7au6o",
+      "name": "HudTaunt",
+      "type": "text",
+      "x": 2,
+      "y": 91,
+      "w": 96,
+      "h": 8,
+      "text": "",
+      "color": "#ffd54f",
+      "fontSize": 22,
+      "align": "center"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq7gkch",
+    "name": "S1",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq7c9lc",
+      "name": "Panel",
+      "type": "frame",
+      "x": 12,
+      "y": 14,
+      "w": 76,
+      "h": 66,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq7dgjx",
+      "name": "Title",
+      "type": "text",
+      "x": 14,
+      "y": 17,
+      "w": 72,
+      "h": 10,
+      "text": "Etap 1: kliknij przycisk",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7ecic",
+      "name": "Info",
+      "type": "text",
+      "x": 14,
+      "y": 29,
+      "w": 72,
+      "h": 8,
+      "text": "Klikaj. Zobaczysz ile trzeba.",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7fk8u",
+      "name": "Btn",
+      "type": "button",
+      "x": 33,
+      "y": 46,
+      "w": 34,
+      "h": 18,
+      "text": "KLIKNIJ",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 44,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq7opq2",
+    "name": "S2",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq7hj3l",
+      "name": "Panel",
+      "type": "frame",
+      "x": 12,
+      "y": 14,
+      "w": 76,
+      "h": 66,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq7isie",
+      "name": "Title",
+      "type": "text",
+      "x": 14,
+      "y": 17,
+      "w": 72,
+      "h": 10,
+      "text": "Etap 2: wybierz DALEJ",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7j7b4",
+      "name": "Info",
+      "type": "text",
+      "x": 14,
+      "y": 29,
+      "w": 72,
+      "h": 8,
+      "text": "Tylko jeden z nich naprawdę przechodzi dalej.",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7kq4l",
+      "name": "B1",
+      "type": "button",
+      "x": 16,
+      "y": 44,
+      "w": 30,
+      "h": 12,
+      "text": "DALEJ",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 30,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq7le1r",
+      "name": "B2",
+      "type": "button",
+      "x": 54,
+      "y": 44,
+      "w": 30,
+      "h": 12,
+      "text": "DALEJ",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 30,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq7mfov",
+      "name": "B3",
+      "type": "button",
+      "x": 16,
+      "y": 62,
+      "w": 30,
+      "h": 12,
+      "text": "DALEJ",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 30,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq7n288",
+      "name": "B4",
+      "type": "button",
+      "x": 54,
+      "y": 62,
+      "w": 30,
+      "h": 12,
+      "text": "DALEJ",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 30,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq7thh1",
+    "name": "S3A",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq7p0iz",
+      "name": "Panel",
+      "type": "frame",
+      "x": 4,
+      "y": 12,
+      "w": 92,
+      "h": 72,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq7qyf6",
+      "name": "Title",
+      "type": "text",
+      "x": 6,
+      "y": 14,
+      "w": 88,
+      "h": 10,
+      "text": "Etap 3: złap przycisk",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7rvab",
+      "name": "Info",
+      "type": "text",
+      "x": 6,
+      "y": 26,
+      "w": 88,
+      "h": 8,
+      "text": "",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7sajg",
+      "name": "Btn",
+      "type": "button",
+      "x": 20,
+      "y": 44,
+      "w": 14,
+      "h": 12,
+      "text": "ZŁAP MNIE",
+      "color": "#ffffff",
+      "bg": "#1565c0",
+      "radius": 14,
+      "fontSize": 22,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq7ydr4",
+    "name": "S3B",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq7ubh3",
+      "name": "Panel",
+      "type": "frame",
+      "x": 4,
+      "y": 12,
+      "w": 92,
+      "h": 72,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq7v9p6",
+      "name": "Title",
+      "type": "text",
+      "x": 6,
+      "y": 14,
+      "w": 88,
+      "h": 10,
+      "text": "Etap 3: złap przycisk",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7whdb",
+      "name": "Info",
+      "type": "text",
+      "x": 6,
+      "y": 26,
+      "w": 88,
+      "h": 8,
+      "text": "",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq7x0db",
+      "name": "Btn",
+      "type": "button",
+      "x": 66,
+      "y": 44,
+      "w": 14,
+      "h": 12,
+      "text": "ZŁAP MNIE",
+      "color": "#ffffff",
+      "bg": "#1565c0",
+      "radius": 14,
+      "fontSize": 22,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq713i32",
+    "name": "S3C",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq7zbje",
+      "name": "Panel",
+      "type": "frame",
+      "x": 4,
+      "y": 12,
+      "w": 92,
+      "h": 72,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq710m23",
+      "name": "Title",
+      "type": "text",
+      "x": 6,
+      "y": 14,
+      "w": 88,
+      "h": 10,
+      "text": "Etap 3: złap przycisk",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq711e0n",
+      "name": "Info",
+      "type": "text",
+      "x": 6,
+      "y": 26,
+      "w": 88,
+      "h": 8,
+      "text": "",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq712yur",
+      "name": "Btn",
+      "type": "button",
+      "x": 20,
+      "y": 66,
+      "w": 14,
+      "h": 12,
+      "text": "ZŁAP MNIE",
+      "color": "#ffffff",
+      "bg": "#1565c0",
+      "radius": 14,
+      "fontSize": 22,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq718yjn",
+    "name": "S3D",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq7149ws",
+      "name": "Panel",
+      "type": "frame",
+      "x": 4,
+      "y": 12,
+      "w": 92,
+      "h": 72,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq71558w",
+      "name": "Title",
+      "type": "text",
+      "x": 6,
+      "y": 14,
+      "w": 88,
+      "h": 10,
+      "text": "Etap 3: złap przycisk",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq716wtt",
+      "name": "Info",
+      "type": "text",
+      "x": 6,
+      "y": 26,
+      "w": 88,
+      "h": 8,
+      "text": "",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq717p8k",
+      "name": "Btn",
+      "type": "button",
+      "x": 66,
+      "y": 66,
+      "w": 14,
+      "h": 12,
+      "text": "ZŁAP MNIE",
+      "color": "#ffffff",
+      "bg": "#1565c0",
+      "radius": 14,
+      "fontSize": 22,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq71dugd",
+    "name": "S4",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq719vc8",
+      "name": "Panel",
+      "type": "frame",
+      "x": 12,
+      "y": 14,
+      "w": 76,
+      "h": 66,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq71a3on",
+      "name": "Title",
+      "type": "text",
+      "x": 14,
+      "y": 17,
+      "w": 72,
+      "h": 10,
+      "text": "Etap 4: NIE KLIKAJ",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71bq25",
+      "name": "Info",
+      "type": "text",
+      "x": 14,
+      "y": 29,
+      "w": 72,
+      "h": 8,
+      "text": "Wytrzymaj 8 sekund bez klikania. To wszystko.",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71czsf",
+      "name": "Btn",
+      "type": "button",
+      "x": 30,
+      "y": 46,
+      "w": 40,
+      "h": 20,
+      "text": "NIE KLIKAJ",
+      "color": "#ffffff",
+      "bg": "#b71c1c",
+      "radius": 14,
+      "fontSize": 44,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq71jpwi",
+    "name": "S5",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq71e7c9",
+      "name": "Panel",
+      "type": "frame",
+      "x": 12,
+      "y": 14,
+      "w": 76,
+      "h": 66,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq71f995",
+      "name": "Title",
+      "type": "text",
+      "x": 14,
+      "y": 17,
+      "w": 72,
+      "h": 10,
+      "text": "Etap 5: weryfikacja",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71g80e",
+      "name": "Info",
+      "type": "text",
+      "x": 14,
+      "y": 29,
+      "w": 72,
+      "h": 8,
+      "text": "Potwierdź, że jesteś człowiekiem.",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71h99v",
+      "name": "Human",
+      "type": "button",
+      "x": 28,
+      "y": 44,
+      "w": 44,
+      "h": 14,
+      "text": "☐  Nie jestem robotem",
+      "color": "#ffffff",
+      "bg": "#37474f",
+      "radius": 14,
+      "fontSize": 28,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq71i4ul",
+      "name": "Robot",
+      "type": "button",
+      "x": 80,
+      "y": 74,
+      "w": 8,
+      "h": 4,
+      "text": "jestem robotem",
+      "color": "#4a4a60",
+      "bg": "#23232f",
+      "radius": 14,
+      "fontSize": 8,
+      "bold": true,
+      "align": "center",
+      "border": "#23232f"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq71pla3",
+    "name": "S6A",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq71kqjx",
+      "name": "Panel",
+      "type": "frame",
+      "x": 12,
+      "y": 14,
+      "w": 76,
+      "h": 66,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq71lrp2",
+      "name": "Title",
+      "type": "text",
+      "x": 14,
+      "y": 17,
+      "w": 72,
+      "h": 10,
+      "text": "Etap 6: ostatnie pytanie",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71mmr3",
+      "name": "Info",
+      "type": "text",
+      "x": 14,
+      "y": 29,
+      "w": 72,
+      "h": 8,
+      "text": "Czy na pewno chcesz wygrać?",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71nph8",
+      "name": "Yes",
+      "type": "button",
+      "x": 18,
+      "y": 50,
+      "w": 28,
+      "h": 16,
+      "text": "TAK",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 40,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq71o7gz",
+      "name": "No",
+      "type": "button",
+      "x": 54,
+      "y": 50,
+      "w": 28,
+      "h": 16,
+      "text": "NIE",
+      "color": "#ffffff",
+      "bg": "#b71c1c",
+      "radius": 14,
+      "fontSize": 40,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq71v29e",
+    "name": "S6B",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq71qryp",
+      "name": "Panel",
+      "type": "frame",
+      "x": 12,
+      "y": 14,
+      "w": 76,
+      "h": 66,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq71rpmd",
+      "name": "Title",
+      "type": "text",
+      "x": 14,
+      "y": 17,
+      "w": 72,
+      "h": 10,
+      "text": "Etap 6: ostatnie pytanie",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71s37j",
+      "name": "Info",
+      "type": "text",
+      "x": 14,
+      "y": 29,
+      "w": 72,
+      "h": 8,
+      "text": "Na pewno na pewno?",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71tk66",
+      "name": "No",
+      "type": "button",
+      "x": 18,
+      "y": 50,
+      "w": 28,
+      "h": 16,
+      "text": "NIE",
+      "color": "#ffffff",
+      "bg": "#b71c1c",
+      "radius": 14,
+      "fontSize": 40,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq71uhh0",
+      "name": "Yes",
+      "type": "button",
+      "x": 54,
+      "y": 50,
+      "w": 28,
+      "h": 16,
+      "text": "TAK",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 40,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq7218kx",
+    "name": "S6C",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq71widp",
+      "name": "Panel",
+      "type": "frame",
+      "x": 12,
+      "y": 14,
+      "w": 76,
+      "h": 66,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq71xhzp",
+      "name": "Title",
+      "type": "text",
+      "x": 14,
+      "y": 17,
+      "w": 72,
+      "h": 10,
+      "text": "Etap 6: ostatnie pytanie",
+      "color": "#ffffff",
+      "fontSize": 38,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71yt5o",
+      "name": "Info",
+      "type": "text",
+      "x": 14,
+      "y": 29,
+      "w": 72,
+      "h": 8,
+      "text": "Ostatni raz. Serio.",
+      "color": "#b8b8d0",
+      "fontSize": 22,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq71zyu1",
+      "name": "Yes",
+      "type": "button",
+      "x": 18,
+      "y": 50,
+      "w": 28,
+      "h": 16,
+      "text": "TAK",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 40,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     },
+     {
+      "id": "gmve99eq7203fp",
+      "name": "Dot",
+      "type": "button",
+      "x": 54,
+      "y": 50,
+      "w": 28,
+      "h": 16,
+      "text": "TAK.",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 40,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   },
+   {
+    "id": "gmve99eq7261pr",
+    "name": "Win",
+    "open": false,
+    "elements": [
+     {
+      "id": "gmve99eq7221hh",
+      "name": "Panel",
+      "type": "frame",
+      "x": 14,
+      "y": 14,
+      "w": 72,
+      "h": 70,
+      "bg": "#23232f",
+      "bgOpacity": 0.96,
+      "radius": 20,
+      "align": "center",
+      "border": "#44445a"
+     },
+     {
+      "id": "gmve99eq723plt",
+      "name": "Title",
+      "type": "text",
+      "x": 16,
+      "y": 18,
+      "w": 68,
+      "h": 14,
+      "text": "WYGRAŁEŚ.",
+      "color": "#69f0ae",
+      "fontSize": 60,
+      "bold": true,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq724ski",
+      "name": "Info",
+      "type": "text",
+      "x": 16,
+      "y": 36,
+      "w": 68,
+      "h": 22,
+      "text": "",
+      "color": "#e0e0f0",
+      "fontSize": 26,
+      "align": "center"
+     },
+     {
+      "id": "gmve99eq725wcq",
+      "name": "Again",
+      "type": "button",
+      "x": 34,
+      "y": 64,
+      "w": 32,
+      "h": 12,
+      "text": "JESZCZE RAZ",
+      "color": "#ffffff",
+      "bg": "#2e7d32",
+      "radius": 14,
+      "fontSize": 30,
+      "bold": true,
+      "align": "center",
+      "border": "#ffffff"
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -35,7 +35,8 @@ import type {
 import { PART_EMITTERS, PART_TEXTURES, WEATHERS } from "./types.ts";
 import { findGenre, VEHICLE_TYPES, type VehicleType, JOINTS, MAX_BADGE_REWARD, MAX_PRODUCT_PRICE, type ProductDef } from "./types.ts";
 
-export const MAX_PARTS = 5000;
+/** praktycznie bez limitu - ogranicza tylko rozmiar zapisu gry (60 MB) i pamięć urządzenia */
+export const MAX_PARTS = 1_000_000;
 /** najdłuższy napis nad klockiem */
 export const MAX_LABEL = 60;
 export const MAX_SCRIPTS = 50;
