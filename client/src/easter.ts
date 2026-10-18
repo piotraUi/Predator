@@ -2,7 +2,7 @@
 //  - kod Konami: ↑ ↑ ↓ ↓ ← → ← → B A  => tryb disco
 //  - 7 szybkich kliknięć w logo Predatora  => ryk dinozaura
 //  - wpisanie słowa (poza polami tekstowymi): pizza, kebab, tort, dino, predator, roll
-//  - w konsoli przeglądarki (F12): predator()
+//  - w konsoli przeglądarki (F12): rawr()
 import { toast } from "./ui/dom.ts";
 
 const KONAMI = "ArrowUp,ArrowUp,ArrowDown,ArrowDown,ArrowLeft,ArrowRight,ArrowLeft,ArrowRight,b,a";
@@ -157,11 +157,12 @@ export function initEasterEggs() {
   });
 
   // konsola przeglądarki
-  (window as unknown as Record<string, unknown>).predator = () => {
+  // uwaga: w aplikacji desktopowej window.predator to most do Electrona (tylko do odczytu), więc używamy innej nazwy
+  (window as unknown as Record<string, unknown>).rawr = () => {
     console.log("%c🦖 PREDATOR", "font:900 28px system-ui;color:#e8472b");
     console.log("Sekrety: kod Konami, 7 kliknięć w logo, słowa: pizza, kebab, tort, dino, roll. Powodzenia!");
     dino();
     return "RAAAWR";
   };
-  console.log("%c🦖 Psst... wpisz predator() i naciśnij Enter", "color:#e8472b;font-weight:bold");
+  console.log("%c🦖 Psst... wpisz rawr() i naciśnij Enter", "color:#e8472b;font-weight:bold");
 }

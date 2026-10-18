@@ -454,4 +454,4 @@ Ukryte niespodzianki, bez żadnych ustawień (nie działają podczas pisania w p
 - **Kod Konami** (↑ ↑ ↓ ↓ ← → ← → B A): tryb disco.
 - **7 szybkich kliknięć w logo** Predatora: ryk dinozaura i trzęsienie ekranu.
 - **Wpisz słowo** na dowolnym ekranie (także w grze): `pizza`, `kebab`, `tort`, `dino`, `predator` (deszcz emoji i dźwięk) albo `roll` (ekran robi beczkę).
-- **Konsola przeglądarki** (F12): wpisz `predator()`.
+- **Konsola przeglądarki** (F12): wpisz `rawr()`.

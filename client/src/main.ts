@@ -234,5 +234,9 @@ async function boot() {
 }
 
 onBanned((b) => showBanScreen(b));
-initEasterEggs();
+try {
+  initEasterEggs();
+} catch (e) {
+  console.warn("easter eggs:", e); // niespodzianki nigdy nie mogą zepsuć startu aplikacji
+}
 boot();
