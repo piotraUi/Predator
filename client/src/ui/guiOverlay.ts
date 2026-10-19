@@ -115,6 +115,16 @@ export class GuiOverlay {
     this.render();
   }
 
+  /** otwarte GUI i napisy ze skryptów - do narysowania w innym miejscu (panel w VR) */
+  snapshot() {
+    return { guis: this.visible(), text: this.text };
+  }
+
+  /** kliknięcie przycisku spoza DOM (np. promieniem z kontrolera VR) */
+  fire(gui: string, el: string) {
+    this.onClick(gui, el);
+  }
+
   /** czy jest otwarte okno przyciemniające grę (np. menu) */
   get modal() {
     return this.visible().some((g) => g.modal);

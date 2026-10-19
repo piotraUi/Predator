@@ -209,6 +209,15 @@ Apex rysuje też **światy z bloków** (Minecraft: kawałki świata z atlasem te
 
 **Skrypty gracza**: przy skrypcie w Studiu wybierz 🎮 *Gracz*. Taki skrypt działa w przeglądarce gracza (efekty, klawisze) i rozmawia z serwerem przez zdarzenia: gracz `fireServer("kup", "miecz")` ↔ serwer `onClientEvent("kup", function(player, item) ... end)`, serwer `fireClient(player, "witaj", 7)` ↔ gracz `onServerEvent("witaj", function(n) ... end)`. Gracz ma też `onKey("E", fn)`, `showText`, `localSay`, `myPos`, `setLightLocal`, `playSoundLocal`. Skrypt gracza nie zmienia świata - robi to tylko serwer, który sprawdza i ogranicza każde zdarzenie (30 na sekundę, teksty do 200 znaków).
 
+## VR (WebXR)
+
+Gry 3D (silnik Apex, WebGL2) można grać w goglach VR. Przycisk **🥽 VR** pojawia się w prawym dolnym rogu gry (i w menu ☰), gdy przeglądarka widzi zestaw (`navigator.xr`).
+
+- **Gdzie działa:** Meta Quest (Quest Browser), Chrome/Edge na PC z SteamVR / Oculus Link / Windows Mixed Reality, Pico. Strona musi być pod **HTTPS** (albo `localhost`) - WebXR nie startuje na zwykłym `http://` w sieci lokalnej. Aplikacja na telefon (APK, WebView) nie ma WebXR, więc tam VR się nie pokaże.
+- **Rysowanie:** dwa oczy prosto do ramki zestawu, bez efektów końcowych (bloom, SSAO), z lżejszą grafiką; świat w skali 1 m = 2,75 jednostki, więc awatar ma realny wzrost.
+- **Sterowanie:** lewa gałka - chodzenie (za głową albo za ręką), prawa - obrót (skokowy co 30° albo płynny), A - skok, B - w dół (pływanie), spust prawej - narzędzie (celujesz kontrolerem), chwyty - przełączanie narzędzi, X (lewy) - usiądź / wstań, Y (lewy) - menu VR, wciśnięcie prawej gałki - wyśrodkowanie widoku.
+- **Interfejs w świecie:** zegarek na lewym nadgarstku (zdrowie, monety, narzędzie), menu VR (ustawienia obrotu, reset, wyjście) i **GUI gry** z edytora GUI rysowane na panelu przed twarzą (klikasz promieniem z kontrolera, spust). Czat i pole wpisywania tekstu nie są jeszcze dostępne w VR.
+
 ## Gry HTML (strona w ramce)
 
 Oprócz gier Predatora można publikować **gry HTML**: własną stronę internetową z grą. Twórz → Nowa gra → **🌐 Gra HTML** (albo „Studio bez serwera” → Gra HTML).

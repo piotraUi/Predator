@@ -41,6 +41,8 @@ import { ROBLOX_FOV } from "../engine/camera.ts";
 import { MAT, rgb, ApexRenderer, type Renderer } from "./renderer.ts";
 import { GpuRenderer, gpuTierHint, type GpuInit } from "./gpuRenderer.ts";
 import { lookRot, rotY, type V3 } from "./math.ts";
+import { vrSupported, VrSession, type VrFrame } from "./vr.ts";
+import { VrController } from "./vrPlay.ts";
 import { isTouch } from "../ui/dom.ts";
 
 const WALK_SPEED = 16;
@@ -439,9 +441,12 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   // ---------- HUD ----------
   const coinsEl = h("span", null, String(me.coins));
   const bubbles = new Map<string, HTMLElement>();
+  const chatLines: string[] = [];
   const addChat = (m: ChatMsg) => {
     if (!m.system && safety.isBlockedName(m.from)) return;
     chat.add(m);
+    chatLines.push((m.system ? "" : m.from + ": ") + m.text);
+    if (chatLines.length > 8) chatLines.shift();
     if (m.system) return;
     const rm = [...remotes.values()].find((x) => x.username === m.from);
     const host = rm?.tag ?? (m.from === me.username ? localTag : null);
@@ -476,6 +481,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const hpBox = h("div", { class: "hp-bar" }, hpFillEl, hpText);
   const hurt = h("div", { class: "hurt" });
   let lastHp = 100;
+  let curHp = 100;
   const setHp = (hp: number, max: number) => {
     maxHp = max;
     const k = Math.max(0, Math.min(1, hp / max));
@@ -491,11 +497,13 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       hurt.classList.add("on");
     }
     lastHp = hp;
+    curHp = hp;
   };
   const board = h("div", { class: "leaderboard hidden" });
   const debug = h("div", { class: "apex-debug" });
   let showDebug = false;
   debug.style.display = "none";
+  const vrMenuBtn = h("button", { class: "btn hidden", onClick: () => (menu.classList.add("hidden"), void enterVr()) }, "🥽 Włącz VR");
   const menu = h(
     "div",
     { class: "game-menu hidden" },
@@ -503,6 +511,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     h("p", { class: "muted" }, "Twórca: " + init.info.ownerName + " · silnik Apex (eksperymentalny)"),
     h("button", { class: "btn", onClick: () => (menu.classList.add("hidden"), die()) }, "Zresetuj postać (R)"),
     h("button", { class: "btn", onClick: () => openSettings() }, "🎚 Ustawienia (silnik, kamera)"),
+    vrMenuBtn,
     h("button", { class: "btn", onClick: () => (showDebug = !showDebug, (debug.style.display = showDebug ? "block" : "none")) }, "📊 Statystyki silnika (F3)"),
     h("button", { class: "btn", onClick: () => menu.classList.add("hidden") }, "Wróć do gry"),
     h("button", { class: "btn danger", onClick: () => leave() }, "Wyjdź z gry"),
@@ -771,19 +780,19 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     flashes.push({ pos: from, until: performance.now() + 90, color: c }, { pos: to, until: performance.now() + 70, color: c });
   };
   /** punkt, w który celujemy: pierwsze trafienie promienia w świat albo w innego gracza */
-  function aimPoint(dir: V3, range: number): V3 {
+  function aimPoint(dir: V3, range: number, o: V3 = eye): V3 {
     let best = Math.max(range, 50);
-    const w = raycastParts(collisions, eye[0], eye[1], eye[2], dir[0], dir[1], dir[2], 1000);
+    const w = raycastParts(collisions, o[0], o[1], o[2], dir[0], dir[1], dir[2], 1000);
     if (w && w.dist < best) best = w.dist;
     for (const rm of remotes.values()) {
       if (rm.av.anim === "dead") continue;
-      const t = rayBox(eye[0], eye[1], eye[2], dir[0], dir[1], dir[2], rm.av.x - PLAYER_RADIUS, rm.av.y, rm.av.z - PLAYER_RADIUS, rm.av.x + PLAYER_RADIUS, rm.av.y + PLAYER_HEIGHT, rm.av.z + PLAYER_RADIUS);
+      const t = rayBox(o[0], o[1], o[2], dir[0], dir[1], dir[2], rm.av.x - PLAYER_RADIUS, rm.av.y, rm.av.z - PLAYER_RADIUS, rm.av.x + PLAYER_RADIUS, rm.av.y + PLAYER_HEIGHT, rm.av.z + PLAYER_RADIUS);
       if (t !== null && t < best) best = t;
     }
-    return [eye[0] + dir[0] * best, eye[1] + dir[1] * best, eye[2] + dir[2] * best];
+    return [o[0] + dir[0] * best, o[1] + dir[1] * best, o[2] + dir[2] * best];
   }
   /** używa trzymanego narzędzia, celując w punkt ekranu (domyślnie środek) */
-  function useTool(sx = wrap.clientWidth / 2, sy = wrap.clientHeight / 2) {
+  function useTool(sx = wrap.clientWidth / 2, sy = wrap.clientHeight / 2, vrRay?: { o: V3; d: V3 }) {
     const def = hotbar.current;
     if (!def || dead || myRide) return;
     const now = performance.now();
@@ -791,8 +800,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     lastUse.set(def.id, now);
     lastUseAt = now;
     hotbar.cooldown(def.id, def.cooldown);
-    const dir = rend.ray(sx / wrap.clientWidth, sy / wrap.clientHeight, eye);
-    const aim = aimPoint(dir, def.range);
+    const dir = vrRay ? vrRay.d : rend.ray(sx / wrap.clientWidth, sy / wrap.clientHeight, eye);
+    const aim = aimPoint(dir, def.range, vrRay ? vrRay.o : eye);
     const face = (dx: number, dz: number) => {
       if (Math.hypot(dx, dz) > 0.01) ry = Math.atan2(-dx, -dz);
     };
@@ -801,7 +810,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     if (def.type === "ranged") {
       action = "shoot";
       face(aim[0] - body.x, aim[2] - body.z);
-      const origin: V3 = local.toolTip(ry) ?? [body.x, body.y + 4.5, body.z];
+      const origin: V3 = vrRay ? vrRay.o : (local.toolTip(ry) ?? [body.x, body.y + 4.5, body.z]);
       const d: V3 = [aim[0] - origin[0], aim[1] - origin[1], aim[2] - origin[2]];
       const len = Math.hypot(d[0], d[1], d[2]) || 1;
       const n: V3 = [d[0] / len, d[1] / len, d[2] / len];
@@ -1056,9 +1065,12 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   let fpsAcc = 0, fpsN = 0, fps = 0;
   let dynAcc = 0, dynN = 0;
   let raf = 0;
+  let vr: VrSession | null = null;
+  let vrc: VrController | null = null;
+  let vrf: VrFrame | null = null;
   const frame = (now: number) => {
     if (disposed) return;
-    raf = requestAnimationFrame(frame);
+    if (!vr) raf = requestAnimationFrame(frame);
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     rend.time += dt;
@@ -1101,6 +1113,15 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
 
   function tick(dt: number) {
     input.update();
+    if (vr && vrc && vrf) {
+      // VR: głowa = kamera, lewa gałka = ruch, prawy kontroler = narzędzie
+      const hd = vrf.headDir;
+      alpha = Math.atan2(hd[2], hd[0]) + Math.PI;
+      beta = clampBeta(Math.acos(Math.max(-1, Math.min(1, -hd[1]))), true);
+      wantRadius = 1;
+      const o = vrc.update(vr, vrf, dt);
+      input.moveX = o.moveX; input.moveY = o.moveY; input.jump = o.jump; input.down = o.down;
+    }
     if (guiLayer.modal) {
       input.moveX = input.moveY = 0;
       input.jump = false;
@@ -1113,7 +1134,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       if (!fp && document.pointerLockElement === canvas) document.exitPointerLock();
     }
     // gamepad: prawa gałka obraca kamerę
-    if (input.pad?.connected) {
+    if (input.pad?.connected && !vr) {
       const sens = dt * 2.6 * settings.sensitivity;
       alpha -= input.pad.rx * sens;
       beta = clampBeta(beta - input.pad.ry * sens * 0.8 * (settings.invertY ? -1 : 1), fp);
@@ -1300,6 +1321,10 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       eye[0] = head[0] + dir[0] * useRadius; eye[1] = head[1] + dir[1] * useRadius; eye[2] = head[2] + dir[2] * useRadius;
       target[0] = head[0]; target[1] = head[1]; target[2] = head[2];
     }
+    if (vr && vrf) {
+      eye[0] = vrf.head[0]; eye[1] = vrf.head[1]; eye[2] = vrf.head[2];
+      target[0] = eye[0] + vrf.headDir[0]; target[1] = eye[1] + vrf.headDir[1]; target[2] = eye[2] + vrf.headDir[2];
+    }
     radius = useRadius;
     // mgła/niebo z kamery: kamera pod wodą - niebieski filtr
     const under = waterAt(collisions, eye[0], eye[1], eye[2]) !== null;
@@ -1400,7 +1425,8 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     local.draw();
     for (const rm of remotes.values()) rm.av.draw();
     for (const n of npcs.values()) if (rend.inView(n.x, n.y + 4 * n.scale, n.z, 8 * n.scale, TIERS[gov.tier].drawDist * 0.14)) n.draw();
-    rend.render({ eye, target, fov: ROBLOX_FOV, near: fp ? 0.05 : 0.2, far: 2000 });
+    if (vr && vrc && vrf) vrc.draw(vrf);
+    rend.render({ eye, target, fov: ROBLOX_FOV, near: fp ? 0.05 : 0.2, far: 2000, ...(vr && vrf ? { xr: { fbo: vr.fbo, views: vrf.views } } : {}) });
     if (shotPending) {
       shotPending = false;
       const a = document.createElement("a");
@@ -1409,7 +1435,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       a.click();
       toast("📸 Zapisano zrzut ekranu", "good");
     }
-    placeTags();
+    if (!vr) placeTags();
   }
 
   let tagFrame = 0;
@@ -1446,6 +1472,79 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     }
   };
 
+
+  // ---------- VR (WebXR) ----------
+  const vrFab = h("button", { class: "vr-fab hidden", title: "Włącz tryb VR", onClick: () => void enterVr() }, "🥽 VR");
+  wrap.append(vrFab);
+  if (rend instanceof ApexRenderer)
+    void vrSupported().then((ok) => {
+      if (!ok || disposed) return;
+      vrFab.classList.remove("hidden");
+      vrMenuBtn.classList.remove("hidden");
+    });
+  const xrLoop = (t: number, f: unknown) => {
+    if (!vr || !vr.active || disposed) return;
+    vr.raf(xrLoop);
+    vrf = vr.read(f, [body.x, body.y, body.z], 0.1, 2000);
+    frame(t);
+  };
+  async function enterVr() {
+    if (vr || !(rend instanceof ApexRenderer)) return;
+    const gl = rend.gl;
+    let sess: VrSession;
+    try {
+      sess = await VrSession.enter(gl);
+    } catch (e) {
+      toast("Nie udało się włączyć VR: " + ((e as Error).message || e), "error");
+      return;
+    }
+    vr = sess;
+    vrc = new VrController({
+      rend,
+      gameName: init.info.name,
+      gui: () => guiLayer.snapshot(),
+      fireGui: (g, e) => r.send("gui", { g, e }),
+      status: () => ({ hp: curHp, maxHp, coins: Number(coinsEl.textContent) || 0, tool: hotbar.current?.name ?? null, name: me.username }),
+      chat: () => chatLines,
+      resume: () => vrc?.toggleMenu(false),
+      reset: () => die(),
+      leaveGame: () => leave(),
+      exitVr: () => exitVr(),
+      toggleSit: () => (myRide ? leaveSeat(true) : trySit()),
+      cycleTool: (d) => hotbar.cycle(d),
+      useTool: (o, d) => useTool(0, 0, { o, d }),
+      drawHeld: (rot, pos) => {
+        const def = hotbar.current;
+        if (def) drawTool(rend, cachedToolShape(def), rot, pos, 1);
+      },
+    });
+    cancelAnimationFrame(raf);
+    // VR potrzebuje 72-90 klatek na sekundę w dwóch oczach: lżejsza grafika bez efektów końcowych
+    rend.setQuality({ ...TIERS.medium, bloom: false, rays: false, cascades: 1, reflections: false, ssao: 0, dof: false, msaa: 0, grass: 0.3 }, false);
+    wrap.classList.add("in-vr");
+    vr.onEnd(() => exitVr(true));
+    vr.raf(xrLoop);
+  }
+  function exitVr(fromEvent = false) {
+    if (!vr) return;
+    const v = vr;
+    vr = null;
+    vrf = null;
+    vrc?.dispose();
+    vrc = null;
+    if (!fromEvent) v.end();
+    wrap.classList.remove("in-vr");
+    wantRadius = 12.5;
+    applyQuality();
+    fit();
+    last = performance.now();
+    if (!disposed) raf = requestAnimationFrame(frame);
+  }
+  cleanups.push(() => {
+    const v = vr;
+    vr = null;
+    v?.end();
+  });
   raf = requestAnimationFrame(frame);
   // wiadomość o gotowości (gracz załadowany)
   setHp(maxHp, maxHp);

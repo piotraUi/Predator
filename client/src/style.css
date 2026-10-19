@@ -1750,3 +1750,7 @@ body[data-screen="play"] .dl-banner, body[data-screen="studio"] .dl-banner { dis
 .ap-row > span { opacity: .8; }
 .ap-row input[type=range], .ap-row select, .ap-row input[type=number] { width: 100%; min-width: 0; }
 @media (max-width: 760px) { .ap-body { flex-direction: column; } .ap-side { width: auto; max-height: 45%; border-left: 0; border-top: 1px solid #ffffff1c; } }
+
+/* VR */
+.vr-fab { position: absolute; right: 12px; bottom: 76px; z-index: 13; padding: 10px 16px; border: 0; border-radius: 24px; background: #5865f2; color: #fff; font: 700 15px system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); }
+.vr-fab.hidden { display: none; }

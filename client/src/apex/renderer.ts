@@ -648,7 +648,12 @@ export interface Look {
   fov: number;
   near?: number;
   far?: number;
+  /** tryb VR (WebXR): rysujemy każdą parę oko/viewport osobno prosto do ramki zestawu, bez efektów końcowych */
+  xr?: { fbo: WebGLFramebuffer | null; views: XrView[] };
 }
+
+/** jedno oko VR: macierze w jednostkach świata i prostokąt w ramce zestawu */
+export interface XrView { proj: Float32Array; view: Float32Array; eye: V3; x: number; y: number; w: number; h: number }
 
 interface GpuGrid { vao: WebGLVertexArrayObject; n: number; big: boolean }
 interface Slot { batch: Batch; index: number; key: string }
@@ -1921,6 +1926,8 @@ export class ApexRenderer {
     for (const b of this.frameBatches.values()) b.upload(gl);
     this.eyePos = look.eye;
     this.extractPlanes();
+    // VR: dwa oczy mają różne kadry, więc nie wycinamy klocków poza kadrem jednej kamery
+    if (look.xr) for (let k = 0; k < 6; k++) this.planes.set([0, 0, 0, 1e9], k * 4);
     this.cullBatches(look.eye);
 
     // --- cienie ---
@@ -1950,7 +1957,7 @@ export class ApexRenderer {
 
     // --- odbicie w wodzie: scena z lustrzanej kamery do małej tekstury (tylko przy wysokiej jakości) ---
     this.reflActive = false;
-    if (this.q.reflections && this.waterY !== null && this.water && this.post && look.eye[1] > this.waterY + 0.2) {
+    if (!look.xr && this.q.reflections && this.waterY !== null && this.water && this.post && look.eye[1] > this.waterY + 0.2) {
       const wy = this.waterY;
       const rw = Math.max(2, this.width >> 1), rh = Math.max(2, this.height >> 1);
       if (!this.refl || this.refl.w !== rw || this.refl.h !== rh) {
@@ -1986,8 +1993,9 @@ export class ApexRenderer {
     }
 
     // --- scena ---
-    const pst = this.bloom && !this.postFailed ? this.post : null;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, pst ? (pst.ms ?? pst.scene.fbo) : null);
+    const xr = look.xr;
+    const pst = !xr && this.bloom && !this.postFailed ? this.post : null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, xr ? xr.fbo : pst ? (pst.ms ?? pst.scene.fbo) : null);
     gl.viewport(0, 0, this.width, this.height);
     const fc = [sky.fog[0] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[1] * (0.12 + 0.88 * Math.min(1, light)), sky.fog[2] * (0.12 + 0.88 * Math.min(1, light))];
     // przezroczyste tło: kolor musi być zerowy (premultiplied alpha), inaczej tło jaśnieje
@@ -1996,77 +2004,95 @@ export class ApexRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
-    this.drawOpaque(look.eye, this.vp, this.invVp, light, fc, sun, casc2, null);
-    const p = this.prog;
-    gl.useProgram(p.p);
-    // przezroczyste
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.depthMask(false);
-    gl.disable(gl.CULL_FACE);
-    gl.uniform1f(p.loc("uBevel"), 0);
-    gl.uniform1f(p.loc("uUseTex"), 0);
-    gl.uniform1f(p.loc("uReflOn"), this.reflActive ? 1 : 0);
-    gl.uniform2f(p.loc("uRes"), this.width, this.height);
-    gl.uniform1f(p.loc("uClipY"), -1e9);
-    if (this.reflActive && this.refl) {
-      gl.activeTexture(gl.TEXTURE5);
-      gl.bindTexture(gl.TEXTURE_2D, this.refl.tex);
-      gl.uniform1i(p.loc("uRefl"), 5);
-      gl.activeTexture(gl.TEXTURE0);
-    }
-    if (this.water) this.drawTerrain(this.water);
-    this.drawBatches(this.staticBatches, true, p);
-    this.drawBatches(this.frameBatches, true, p);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.depthMask(false);
-    this.drawVoxels(["water"], look.eye, fc);
-    gl.depthMask(false);
-    gl.disable(gl.CULL_FACE);
-    gl.useProgram(p.p);
-    // naklejki (twarze) i trwałe ślady na świecie
-    if (this.decals.length || this.worldDecals.length) {
-      const dp = this.decalProg;
-      gl.useProgram(dp.p);
-      gl.uniformMatrix4fv(dp.loc("uVP"), false, this.vp);
-      gl.uniform4f(dp.loc("uTint"), 1, 1, 1, 1);
-      gl.uniform1i(dp.loc("uTex"), 1);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindVertexArray(this.quadVao());
-      for (const d of this.decals) {
-        gl.bindTexture(gl.TEXTURE_2D, d.tex);
-        gl.uniformMatrix4fv(dp.loc("uM"), false, d.m);
-        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, this.quadIndexOffset);
-        this.stats.draws++;
+    const scene = (eyeV: V3) => {
+      this.drawOpaque(eyeV, this.vp, this.invVp, light, fc, sun, casc2, null);
+      const p = this.prog;
+      gl.useProgram(p.p);
+      // przezroczyste
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      gl.disable(gl.CULL_FACE);
+      gl.uniform1f(p.loc("uBevel"), 0);
+      gl.uniform1f(p.loc("uUseTex"), 0);
+      gl.uniform1f(p.loc("uReflOn"), this.reflActive ? 1 : 0);
+      gl.uniform2f(p.loc("uRes"), this.width, this.height);
+      gl.uniform1f(p.loc("uClipY"), -1e9);
+      if (this.reflActive && this.refl) {
+        gl.activeTexture(gl.TEXTURE5);
+        gl.bindTexture(gl.TEXTURE_2D, this.refl.tex);
+        gl.uniform1i(p.loc("uRefl"), 5);
+        gl.activeTexture(gl.TEXTURE0);
       }
-      if (this.worldDecals.length) {
-        gl.enable(gl.POLYGON_OFFSET_FILL);
-        gl.polygonOffset(-2, -4);
-        const lit = Math.min(1, 0.35 + light * 0.65);
-        this.worldDecals = this.worldDecals.filter((d) => this.time - d.born < d.ttl);
-        for (const d of this.worldDecals) {
-          const age = this.time - d.born;
-          const fade = Math.min(1, (d.ttl - age) / 3);
-          // plama rośnie przez pierwsze sekundy (kałuża krwi)
-          const k = d.grow > 0 ? Math.min(1, 0.25 + (age / d.grow) * 0.75) : 1;
-          const m = d.m.slice() as Float32Array;
-          for (const i of [0, 1, 2, 4, 5, 6]) m[i] *= k;
-          gl.uniform4f(dp.loc("uTint"), lit, lit, lit, fade);
+      if (this.water) this.drawTerrain(this.water);
+      this.drawBatches(this.staticBatches, true, p);
+      this.drawBatches(this.frameBatches, true, p);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      this.drawVoxels(["water"], eyeV, fc);
+      gl.depthMask(false);
+      gl.disable(gl.CULL_FACE);
+      gl.useProgram(p.p);
+      // naklejki (twarze) i trwałe ślady na świecie
+      if (this.decals.length || this.worldDecals.length) {
+        const dp = this.decalProg;
+        gl.useProgram(dp.p);
+        gl.uniformMatrix4fv(dp.loc("uVP"), false, this.vp);
+        gl.uniform4f(dp.loc("uTint"), 1, 1, 1, 1);
+        gl.uniform1i(dp.loc("uTex"), 1);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindVertexArray(this.quadVao());
+        for (const d of this.decals) {
           gl.bindTexture(gl.TEXTURE_2D, d.tex);
-          gl.uniformMatrix4fv(dp.loc("uM"), false, m);
+          gl.uniformMatrix4fv(dp.loc("uM"), false, d.m);
           gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, this.quadIndexOffset);
           this.stats.draws++;
         }
-        gl.disable(gl.POLYGON_OFFSET_FILL);
+        if (this.worldDecals.length) {
+          gl.enable(gl.POLYGON_OFFSET_FILL);
+          gl.polygonOffset(-2, -4);
+          const lit = Math.min(1, 0.35 + light * 0.65);
+          this.worldDecals = this.worldDecals.filter((d) => this.time - d.born < d.ttl);
+          for (const d of this.worldDecals) {
+            const age = this.time - d.born;
+            const fade = Math.min(1, (d.ttl - age) / 3);
+            // plama rośnie przez pierwsze sekundy (kałuża krwi)
+            const k = d.grow > 0 ? Math.min(1, 0.25 + (age / d.grow) * 0.75) : 1;
+            const m = d.m.slice() as Float32Array;
+            for (const i of [0, 1, 2, 4, 5, 6]) m[i] *= k;
+            gl.uniform4f(dp.loc("uTint"), lit, lit, lit, fade);
+            gl.bindTexture(gl.TEXTURE_2D, d.tex);
+            gl.uniformMatrix4fv(dp.loc("uM"), false, m);
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, this.quadIndexOffset);
+            this.stats.draws++;
+          }
+          gl.disable(gl.POLYGON_OFFSET_FILL);
+        }
+        gl.activeTexture(gl.TEXTURE0);
       }
-      gl.activeTexture(gl.TEXTURE0);
-    }
-    this.drawWeather(look.eye, fc);
-    gl.depthMask(true);
-    gl.disable(gl.BLEND);
-    gl.enable(gl.CULL_FACE);
-    gl.bindVertexArray(null);
+      this.drawWeather(eyeV, fc);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.enable(gl.CULL_FACE);
+      gl.bindVertexArray(null);
+
+    };
+    if (xr) {
+      const w0 = this.width, h0 = this.height;
+      for (const v of xr.views) {
+        this.proj.set(v.proj);
+        this.view.set(v.view);
+        multiply(this.proj, this.view, this.vp);
+        invert(this.vp, this.invVp);
+        this.width = v.w;
+        this.height = v.h;
+        gl.viewport(v.x, v.y, v.w, v.h);
+        scene(v.eye);
+      }
+      this.width = w0;
+      this.height = h0;
+    } else scene(look.eye);
 
     if (pst) this.applyBloom();
 

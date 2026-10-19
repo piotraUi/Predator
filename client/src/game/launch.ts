@@ -112,7 +112,9 @@ export function launchScreen(root: HTMLElement, params: LaunchParams, go: Go) {
             if (apex) {
               // WebGPU: automatycznie, gdy przeglądarka go obsługuje (wymuszone w Ustawieniach też); w razie czego od razu WebGL2
               let gpu: Awaited<ReturnType<typeof import("../apex/gpuRenderer.ts").requestGpu>> = null;
-              if (settings.gfxApi !== "webgl2") {
+              // VR (WebXR) działa tylko na WebGL2: przy podłączonym zestawie nie używamy WebGPU
+              const vrReady = settings.gfxApi !== "webgpu" && (await import("../apex/vr.ts").then((m) => m.vrSupported()).catch(() => false));
+              if (settings.gfxApi !== "webgl2" && !vrReady) {
                 try {
                   const mod = await import("../apex/gpuRenderer.ts");
                   gpu = await mod.requestGpu();
