@@ -18,6 +18,9 @@ export interface VrHost {
   leaveGame(): void;
   exitVr(): void;
   toggleSit(): void;
+  /** jakość grafiki w VR (nazwa) i przełączenie na następną */
+  quality(): string;
+  cycleQuality(): void;
   cycleTool(dir: 1 | -1): void;
   /** użycie narzędzia: promień z kontrolera */
   useTool(origin: V3, dir: V3): void;
@@ -48,7 +51,7 @@ const dead = (v: number) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) 
 export class VrController {
   turn: "snap" | "smooth" = load(KEY_TURN, "snap") === "smooth" ? "smooth" : "snap";
   moveRel: "head" | "hand" = load(KEY_MOVE, "head") === "hand" ? "hand" : "head";
-  readonly menu = new VrPanel(1024, 640, 1.3);
+  readonly menu = new VrPanel(1024, 720, 1.3);
   readonly gui = new VrPanel(1280, 720, 1.8);
   readonly watch = new VrPanel(320, 200, 0.17);
   menuOpen = false;
@@ -81,8 +84,9 @@ export class VrController {
       { x: x2, y: rows[1], w, h, label: "Chodzenie: " + (this.moveRel === "head" ? "za głową" : "za ręką"), click: () => (this.moveRel = this.moveRel === "head" ? "hand" : "head", save(KEY_MOVE, this.moveRel), this.layoutMenu()) },
       { x: x1, y: rows[2], w, h, label: "🎯 Wyśrodkuj widok", click: () => this.recenter?.() },
       { x: x2, y: rows[2], w, h, label: "🪑 Usiądź / wstań", click: () => (this.host.toggleSit(), this.toggleMenu(false)) },
-      { x: x1, y: 380, w, h, label: "🥽 Wyjdź z VR", click: () => this.host.exitVr() },
-      { x: x2, y: 380, w, h, label: "🚪 Wyjdź z gry", danger: true, click: () => this.host.leaveGame() },
+      { x: x1, y: 380, w, h, label: "🎨 Grafika: " + this.host.quality(), click: () => (this.host.cycleQuality(), this.layoutMenu()) },
+      { x: x2, y: 380, w, h, label: "🥽 Wyjdź z VR", click: () => this.host.exitVr() },
+      { x: x1, y: 476, w, h, label: "🚪 Wyjdź z gry", danger: true, click: () => this.host.leaveGame() },
     ];
     this.repaintMenu();
   }

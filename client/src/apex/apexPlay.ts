@@ -1493,6 +1493,18 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     vrf = vr.read(f, [body.x, body.y, body.z], 0.1, 2000);
     frame(t);
   };
+  let vrTier: "low" | "medium" | "high" = (() => {
+    try {
+      const v = localStorage.getItem("vrQ");
+      if (v === "low" || v === "medium" || v === "high") return v;
+    } catch {
+      /* brak zapisu */
+    }
+    // gogle z własnym procesorem (Quest) mają mniej mocy niż komputer
+    return /Android|Quest|Oculus/i.test(navigator.userAgent) ? "medium" : "high";
+  })();
+  // VR rysuje bez efektów końcowych (bloom, SSAO, odbicia), reszta zależy od wybranego poziomu
+  const applyVrQuality = () => rend.setQuality({ ...TIERS[vrTier], bloom: false, rays: false, reflections: false, ssao: 0, dof: false, msaa: 0 }, false);
   async function enterVr() {
     if (vr) return;
     if (!(rend instanceof ApexRenderer)) {
@@ -1527,6 +1539,16 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
       leaveGame: () => leave(),
       exitVr: () => exitVr(),
       toggleSit: () => (myRide ? leaveSeat(true) : trySit()),
+      quality: () => ({ low: "niska", medium: "średnia", high: "wysoka" })[vrTier],
+      cycleQuality: () => {
+        vrTier = vrTier === "low" ? "medium" : vrTier === "medium" ? "high" : "low";
+        try {
+          localStorage.setItem("vrQ", vrTier);
+        } catch {
+          /* brak zapisu */
+        }
+        applyVrQuality();
+      },
       cycleTool: (d) => hotbar.cycle(d),
       useTool: (o, d) => useTool(0, 0, { o, d }),
       drawHeld: (rot, pos) => {
@@ -1536,7 +1558,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     });
     cancelAnimationFrame(raf);
     // VR potrzebuje 72-90 klatek na sekundę w dwóch oczach: lżejsza grafika bez efektów końcowych
-    rend.setQuality({ ...TIERS.medium, bloom: false, rays: false, cascades: 1, reflections: false, ssao: 0, dof: false, msaa: 0, grass: 0.3 }, false);
+    applyVrQuality();
     wrap.classList.add("in-vr");
     vr.onEnd(() => exitVr(true));
     vr.raf(xrLoop);

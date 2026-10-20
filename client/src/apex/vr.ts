@@ -106,8 +106,11 @@ export class VrSession {
       } catch (e) {
         console.warn("[vr] makeXRCompatible:", e);
       }
-      const W = (window as unknown as { XRWebGLLayer: new (s: XR, g: WebGL2RenderingContext, o?: object) => XR }).XRWebGLLayer;
-      const layer = new W(session, gl, { antialias: true, alpha: false, depth: true, framebufferScaleFactor: 1 });
+      const W = (window as unknown as { XRWebGLLayer: (new (s: XR, g: WebGL2RenderingContext, o?: object) => XR) & { getNativeFramebufferScaleFactor?: (s: XR) => number } }).XRWebGLLayer;
+      // natywna rozdzielczość zestawu (na PC ostry obraz); w goglach z własnym procesorem zostajemy przy 1
+      const native = W.getNativeFramebufferScaleFactor?.(session) ?? 1;
+      const k = /Android|Quest|Oculus/i.test(navigator.userAgent) ? 1 : Math.min(1.4, Math.max(1, native));
+      const layer = new W(session, gl, { antialias: true, alpha: false, depth: true, framebufferScaleFactor: k });
       await session.updateRenderState({ baseLayer: layer, depthNear: 0.05, depthFar: 400 });
       const space = await session.requestReferenceSpace("local-floor");
       return new VrSession(session, space, layer, space);
