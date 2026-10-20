@@ -271,9 +271,9 @@ export class VrController {
       const col: [number, number, number] = hand.hand === "left" ? [0.25, 0.5, 1] : [1, 0.55, 0.15];
       // uchwyt kontrolera i świecąca końcówka
       const back: V3 = [hand.rot[2], hand.rot[5], hand.rot[8]];
-      const c: V3 = [hand.pos[0] + back[0] * 0.03 * S, hand.pos[1] + back[1] * 0.03 * S, hand.pos[2] + back[2] * 0.03 * S];
-      r.drawBox("box", hand.rot, c, [0.04 * S, 0.05 * S, 0.14 * S], [0.12, 0.12, 0.16], 1, MAT.plastic);
-      r.drawBox("sphere", hand.rot, [hand.aim[0], hand.aim[1], hand.aim[2]], [0.03 * S, 0.03 * S, 0.03 * S], col, 1, MAT.neon);
+      const c: V3 = [hand.pos[0] + back[0] * 0.02 * S, hand.pos[1] + back[1] * 0.02 * S, hand.pos[2] + back[2] * 0.02 * S];
+      r.drawBox("box", hand.rot, c, [0.026 * S, 0.032 * S, 0.1 * S], [0.2, 0.21, 0.27], 1, MAT.plastic);
+      r.drawBox("sphere", hand.rot, [hand.aim[0], hand.aim[1], hand.aim[2]], [0.018 * S, 0.018 * S, 0.018 * S], col, 1, MAT.neon);
       // laser: do panelu albo krótki wskaźnik
       const hd = this.hits.get(hand.hand);
       const len = hd !== undefined ? hd : this.menuOpen || this.guiShown ? 6 * S : 1.6 * S;
