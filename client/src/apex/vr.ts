@@ -66,6 +66,19 @@ export async function vrSupported(): Promise<boolean> {
   }
 }
 
+/** dlaczego VR nie wystartuje (po polsku) albo null, gdy można próbować */
+export async function vrDiagnose(): Promise<string | null> {
+  if (!window.isSecureContext) return "strona działa bez HTTPS - WebXR działa tylko pod https:// albo localhost";
+  const xr = (navigator as unknown as { xr?: XR }).xr;
+  if (!xr) return "przeglądarka nie udostępnia WebXR (navigator.xr) - włącz rozszerzenie emulatora i odśwież stronę (F5)";
+  try {
+    if (!(await xr.isSessionSupported("immersive-vr"))) return "przeglądarka nie widzi gogli VR - w emulatorze włącz urządzenie (Meta Quest) i odśwież stronę";
+  } catch (e) {
+    return "błąd WebXR: " + ((e as Error).message || e);
+  }
+  return null;
+}
+
 export class VrSession {
   /** obrót platformy (rad) i punkt odniesienia w pokoju (m): ruch poza nim nie przesuwa postaci */
   yaw = 0;

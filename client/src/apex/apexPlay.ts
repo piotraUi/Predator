@@ -18,7 +18,7 @@ import { GameAudio } from "../game/audio3d.ts";
 import type { GameConnection } from "../game/connection.ts";
 import { promptBox, type PromptMsg } from "../game/promptBox.ts";
 import type { InitMsg } from "../game/play.ts";
-import { onSettingsChange, openSettings, settings } from "../settings.ts";
+import { onSettingsChange, openSettings, settings, updateSettings } from "../settings.ts";
 import { detectTier, isMobile, QualityGovernor, TIERS } from "./quality.ts";
 import { safety } from "../safety.ts";
 import { session } from "../state.ts";
@@ -41,7 +41,7 @@ import { ROBLOX_FOV } from "../engine/camera.ts";
 import { MAT, rgb, ApexRenderer, type Renderer } from "./renderer.ts";
 import { GpuRenderer, gpuTierHint, type GpuInit } from "./gpuRenderer.ts";
 import { lookRot, rotY, type V3 } from "./math.ts";
-import { vrSupported, VrSession, type VrFrame } from "./vr.ts";
+import { vrDiagnose, vrSupported, VrSession, type VrFrame } from "./vr.ts";
 import { VrController } from "./vrPlay.ts";
 import { isTouch } from "../ui/dom.ts";
 
@@ -503,7 +503,7 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   const debug = h("div", { class: "apex-debug" });
   let showDebug = false;
   debug.style.display = "none";
-  const vrMenuBtn = h("button", { class: "btn hidden", onClick: () => (menu.classList.add("hidden"), void enterVr()) }, "🥽 Włącz VR");
+  const vrMenuBtn = h("button", { class: "btn", onClick: () => (menu.classList.add("hidden"), void enterVr()) }, "🥽 Włącz VR");
   const menu = h(
     "div",
     { class: "game-menu hidden" },
@@ -1476,12 +1476,17 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
   // ---------- VR (WebXR) ----------
   const vrFab = h("button", { class: "vr-fab hidden", title: "Włącz tryb VR", onClick: () => void enterVr() }, "🥽 VR");
   wrap.append(vrFab);
-  if (rend instanceof ApexRenderer)
+  // rozszerzenia (emulator VR) i gogle potrafią zgłosić się z opóźnieniem: sprawdzamy kilka razy
+  let vrChecks = 0;
+  const checkVr = () => {
+    if (disposed || vr || !(rend instanceof ApexRenderer)) return;
     void vrSupported().then((ok) => {
-      if (!ok || disposed) return;
-      vrFab.classList.remove("hidden");
-      vrMenuBtn.classList.remove("hidden");
+      if (disposed) return;
+      if (ok) vrFab.classList.remove("hidden");
+      else if (++vrChecks < 15) setTimeout(checkVr, 2000);
     });
+  };
+  checkVr();
   const xrLoop = (t: number, f: unknown) => {
     if (!vr || !vr.active || disposed) return;
     vr.raf(xrLoop);
@@ -1489,7 +1494,18 @@ export function apexPlayScreen(root: HTMLElement, params: ApexParams, go: (scree
     frame(t);
   };
   async function enterVr() {
-    if (vr || !(rend instanceof ApexRenderer)) return;
+    if (vr) return;
+    if (!(rend instanceof ApexRenderer)) {
+      // VR działa tylko na WebGL2: przełączamy ustawienie, trzeba wejść do gry jeszcze raz
+      updateSettings({ gfxApi: "webgl2" });
+      toast("VR działa tylko na WebGL2 - przełączyłem w ustawieniach. Wyjdź z gry i wejdź ponownie.", "error");
+      return;
+    }
+    const why = await vrDiagnose();
+    if (why) {
+      toast("VR niedostępny: " + why, "error");
+      return;
+    }
     const gl = rend.gl;
     let sess: VrSession;
     try {
