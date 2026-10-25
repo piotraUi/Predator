@@ -1,6 +1,7 @@
 // Narzędzia asystenta AI dla Studia 2D - poziomy, obiekty, instancje, fizyka, skrypty, GUI i test.
 import type { WorldData } from "../../../shared/types.ts";
 import type { Asset2D, Inst2D, Level2D, Obj2D } from "../../../shared/types2d.ts";
+import { sanitizeWorld } from "../../../shared/world.ts";
 import { emptyLevel, levelByName, MAX_INSTANCES_2D, MAX_LEVELS_2D, MAX_OBJECTS_2D, newId2d, sanitizeObj2D } from "../../../shared/world2d.ts";
 import { guisSummary, guiTool, list, n, r2, runTest, s, same, scriptsSummary, scriptTool, ToolError, attachment, type AiAttachments, type Args } from "./aiCommon.ts";
 
@@ -368,5 +369,7 @@ export function tools2d(hk: Studio2DHooks, att: AiAttachments) {
     const sel = hk.selection();
     return `[Studio 2D] editing level: ${hk.level().name}; visible area: x ${r2(v.x)}..${r2(v.x + v.w)}, y ${r2(v.y)}..${r2(v.y + v.h)}; selected: ${sel.length ? sel.slice(0, 8).map((i) => `${objName(i.obj)} (${i.id})`).join(", ") : "nothing"}`;
   };
-  return { run, context };
+  /** dostęp do surowych danych gry (MCP: world_get / world_patch) */
+  const raw = { data: (): unknown => hk.data, refresh: () => hk.refresh(), validate: (clone: unknown) => void sanitizeWorld(clone as WorldData) };
+  return { run, context, raw };
 }

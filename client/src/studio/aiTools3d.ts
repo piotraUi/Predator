@@ -344,5 +344,7 @@ export function tools3d(hk: Studio3DHooks, att: AiAttachments) {
     return `[Studio 3D] editing place: ${placeName(hk.place())}; camera focus: (${r2(f.x)}, ${r2(f.y)}, ${r2(f.z)}); selected: ${sel.length ? sel.slice(0, 8).map((p) => `${p.name} (${p.id})`).join(", ") + (sel.length > 8 ? ` +${sel.length - 8}` : "") : "nothing"}; parts: ${d0().parts.length}; scripts: ${d0().scripts.length}`;
   };
   const d0 = data;
-  return { run, context };
+  /** dostęp do surowych danych gry (MCP: world_get / world_patch) */
+  const raw = { data: (): unknown => hk.data, refresh: () => hk.refresh(), validate: (clone: unknown) => void sanitizeWorld(clone as WorldData) };
+  return { run, context, raw };
 }

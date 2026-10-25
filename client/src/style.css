@@ -1754,3 +1754,25 @@ body[data-screen="play"] .dl-banner, body[data-screen="studio"] .dl-banner { dis
 /* VR */
 .vr-fab { position: absolute; right: 12px; bottom: 76px; z-index: 13; padding: 10px 16px; border: 0; border-radius: 24px; background: #5865f2; color: #fff; font: 700 15px system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); }
 .vr-fab.hidden { display: none; }
+
+/* Ustawienia asystenta AI: model, MCP, skille */
+.ai-settings { min-width: min(560px, 86vw); max-height: 68vh; overflow: auto; }
+.ai-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.ai-tabs .tab { padding: 7px 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.ai-tabs .tab.active { background: var(--accent, #5865f2); border-color: transparent; color: #fff; }
+.ai-prov { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 8px 0; display: grid; gap: 8px; }
+.ai-prov.sel { border-color: var(--accent, #5865f2); box-shadow: 0 0 0 1px var(--accent, #5865f2) inset; }
+.ai-prov input[type="password"], .ai-prov input:not([type]), .ai-prov input[list] { width: 100%; }
+.ai-code { position: relative; margin: 6px 0; }
+.ai-code pre { margin: 0; padding: 10px 70px 10px 10px; background: rgba(0, 0, 0, 0.35); border-radius: 8px; font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; user-select: all; }
+.ai-code .btn { position: absolute; top: 6px; right: 6px; }
+.ai-switch { display: flex; align-items: flex-start; gap: 8px; }
+.ai-switch small { display: block; font-size: 12px; word-break: break-all; }
+.ai-app { margin: 6px 0 10px; }
+.ai-skills { padding-left: 18px; margin: 4px 0; font-size: 13px; }
+.ai-skills li { margin-bottom: 8px; }
+.modal:has(.ai-settings) { width: min(720px, 94vw); max-width: none; }
+.ai-settings { min-width: 0; width: 100%; box-sizing: border-box; }
+.ai-settings input[type="radio"], .ai-settings input[type="checkbox"] { width: auto; flex: none; margin-top: 3px; }
+.ai-settings label.check { display: flex; flex-direction: row; align-items: flex-start; gap: 8px; }
+.ai-settings .ai-code, .ai-settings details { max-width: 100%; }

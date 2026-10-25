@@ -18,6 +18,7 @@ import { CATALOG } from "../../shared/catalog.ts";
 import { api } from "./api.ts";
 import { admin } from "./admin.ts";
 import { assistantRouter } from "./assistant.ts";
+import { skillsRouter } from "./skills.ts";
 import { mediaRouter } from "./media.ts";
 import { social } from "./socialApi.ts";
 import { parseGameFile } from "../../shared/gamefile.ts";
@@ -40,6 +41,8 @@ app.use(cors());
 app.use("/api/admin", admin);
 app.use(downloadsRouter());
 app.use("/api/ai", assistantRouter);
+// paczka skilli dla AI: publiczna, bez logowania (curl | tar)
+app.use("/skills", skillsRouter);
 app.use("/api/ai", mediaRouter);
 app.use("/api", api);
 app.use("/api", social);

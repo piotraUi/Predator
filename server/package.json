@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx --test ../shared/*.test.ts ../shared/**/*.test.ts ../client/src/studio/ai.test.ts ../client/src/studio/toolbox.test.ts ../client/src/apex/*.test.ts ../ai-model/gen/*.test.ts src/*.test.ts",
+    "test": "tsx --test ../shared/*.test.ts ../shared/**/*.test.ts ../client/src/studio/ai.test.ts ../client/src/studio/toolbox.test.ts ../client/src/studio/aiProviders.test.ts ../client/src/apex/*.test.ts ../ai-model/gen/*.test.ts src/*.test.ts",
     "ai:data": "tsx ../ai-model/gen/build.ts",
     "ai:eval": "tsx ../ai-model/gen/eval.ts"
   },

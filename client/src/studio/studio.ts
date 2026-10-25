@@ -22,7 +22,8 @@ import { MAX_PLAYERS_LIMIT, PART_EMITTERS, PART_TEXTURES, WEATHERS } from "../..
 import { baseplate, makePart, MAX_PARTS, newId, spawnPart } from "../../../shared/world.ts";
 import { allPlaces, findPlace, MAIN_PLACE, MAX_PLACES, placeOf } from "../../../shared/places.ts";
 import { openGuiEditor } from "./guiEditor.ts";
-import { chatFor, openAssistant } from "./aiAssistant.ts";
+import { chatFor, openAssistant, type AiHost } from "./aiAssistant.ts";
+import { registerStudioMcp } from "./mcpBridge.ts";
 import { tools3d } from "./aiTools3d.ts";
 import { api } from "../api.ts";
 import { desktop, pickDataUrl, pickFile, saveTextFile } from "../files.ts";
@@ -2729,8 +2730,10 @@ export function studioScreen(
 
     // ---------- asystent AI ----------
     let closeAi: (() => void) | null = null;
-    function openAi() {
-      if (closeAi) return closeAi();
+    let aiHostCache: AiHost | null = null;
+    /** narzędzia asystenta na tej grze - wspólne dla okna AI i dla MCP (zewnętrzne programy) */
+    function aiHost(): AiHost {
+      if (aiHostCache) return aiHostCache;
       const key = src.worldId ? "w" + src.worldId : "f:" + meta.name;
       const tools = tools3d(
         {
@@ -2768,21 +2771,26 @@ export function studioScreen(
         },
         chatFor(key).att,
       );
+      return (aiHostCache = {
+        mode: "3d",
+        key,
+        run: tools.run,
+        context: tools.context,
+        raw: tools.raw,
+        begin: () => pushUndo(),
+        end: () => {
+          changed();
+          renderExplorer();
+          renderProps();
+        },
+      });
+    }
+    function openAi() {
+      if (closeAi) return closeAi();
       aiBtn.classList.add("active");
       closeAi = openAssistant(
         el,
-        {
-          mode: "3d",
-          key,
-          run: tools.run,
-          context: tools.context,
-          begin: () => pushUndo(),
-          end: () => {
-            changed();
-            renderExplorer();
-            renderProps();
-          },
-        },
+        aiHost(),
         () => {
           closeAi = null;
           aiBtn.classList.remove("active");
@@ -2790,6 +2798,7 @@ export function studioScreen(
       );
     }
     cleanups.push(() => closeAi?.());
+    cleanups.push(registerStudioMcp(aiHost, meta.name));
 
     // ---------- GUI ----------
     function openGuis() {

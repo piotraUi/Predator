@@ -209,6 +209,16 @@ Apex rysuje też **światy z bloków** (Minecraft: kawałki świata z atlasem te
 
 **Skrypty gracza**: przy skrypcie w Studiu wybierz 🎮 *Gracz*. Taki skrypt działa w przeglądarce gracza (efekty, klawisze) i rozmawia z serwerem przez zdarzenia: gracz `fireServer("kup", "miecz")` ↔ serwer `onClientEvent("kup", function(player, item) ... end)`, serwer `fireClient(player, "witaj", 7)` ↔ gracz `onServerEvent("witaj", function(n) ... end)`. Gracz ma też `onKey("E", fn)`, `showText`, `localSay`, `myPos`, `setLightLocal`, `playSoundLocal`. Skrypt gracza nie zmienia świata - robi to tylko serwer, który sprawdza i ogranicza każde zdarzenie (30 na sekundę, teksty do 200 znaków).
 
+## Asystent AI: własny klucz, MCP i skille
+
+W oknie asystenta w Studio jest **zębatka ⚙**:
+
+- **Model AI** - zamiast asystenta Predatora (Gemini na serwerze, z dziennym limitem) możesz wpisać własny klucz API: **Claude, Gemini, ChatGPT (OpenAI) albo OpenRouter**, pobrać listę modeli i wybrać model. Klucz zostaje w przeglądarce / aplikacji i idzie wprost do dostawcy; z własnym kluczem nie ma limitu kroków Predatora. Obrazki i filmy (🖼 🎬) nadal idą przez serwer i monety.
+- **MCP** (tylko aplikacja na komputer) - serwer MCP na `127.0.0.1` (z tajnym tokenem), przez który **Claude Code, Codex, opencode i Claude Desktop** sterują otwartym Studio: wszystkie narzędzia asystenta (klocki, obiekty 2D, skrypty Lua, GUI, miejsca, odznaki, `run_test`...) plus `studio_info`, `lua_api_reference` i dwa „wyjścia awaryjne" `world_get` / `world_patch` do dowolnych danych gry. Przełączniki same zapisują konfigurację w programach (z kopią zapasową); można też wkleić fragment ręcznie. Każdą zmianę cofniesz Ctrl+Z.
+- **Skille dla AI** (tylko aplikacja na komputer) - paczka 9 skilli (`skills/`): obsługa Studia przez MCP, budowanie w 3D, skrypty Lua, GUI, gry 2D, projekt map, projekt gier, gotowe szablony mechanik (każdy blok Lua jest sprawdzany testem, szablony biegną w symulatorze), testowanie. Instalacja jednym przełącznikiem albo poleceniem pokazanym w oknie, np. `mkdir -p ~/.claude/skills && curl -fsSL https://TWÓJ-SERWER/skills/predator-skills.tar.gz | tar -xz -C ~/.claude/skills` (opencode: `~/.config/opencode/skill`, Codex: `~/.codex/skills`).
+
+Pliki referencyjne skilli (funkcje Lua, katalog budowli, narzędzia MCP, nieba) generuje `npx tsx scripts/build-skills.ts` z kodu gry.
+
 ## VR (WebXR)
 
 Gry 3D (silnik Apex, WebGL2) można grać w goglach VR. Przycisk **🥽 VR** pojawia się w prawym dolnym rogu gry (i w menu ☰), gdy przeglądarka widzi zestaw (`navigator.xr`).

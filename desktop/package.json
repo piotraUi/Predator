@@ -21,6 +21,8 @@
     "files": [
       "main.js",
       "preload.js",
+      "mcp.js",
+      "mcp-bridge.js",
       "icon.png",
       "app/**/*"
     ],

@@ -24,7 +24,8 @@ import { chooseImageSource, paintEditor, type PaintResult } from "./paint.ts";
 import { KIT_2D, KIT_CATS, type Kit2D } from "./kit2d.ts";
 import { Collab2D, type Change2D } from "./collab2d.ts";
 import { openGuiEditor } from "../studio/guiEditor.ts";
-import { chatFor, openAssistant } from "../studio/aiAssistant.ts";
+import { chatFor, openAssistant, type AiHost } from "../studio/aiAssistant.ts";
+import { registerStudioMcp } from "../studio/mcpBridge.ts";
 import { tools2d } from "../studio/aiTools2d.ts";
 import type { Editor } from "../studio/collab.ts";
 import { openEditorsDialog } from "../studio/editorsDialog.ts";
@@ -1542,8 +1543,10 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
     // ---------- GUI ----------
     // ---------- asystent AI ----------
     let closeAi: (() => void) | null = null;
-    function openAi() {
-      if (closeAi) return closeAi();
+    let aiHostCache: AiHost | null = null;
+    /** narzędzia asystenta na tej grze - wspólne dla okna AI i dla MCP (zewnętrzne programy) */
+    function aiHost(): AiHost {
+      if (aiHostCache) return aiHostCache;
       const key = src.worldId ? "w" + src.worldId : "f:" + meta.name;
       const tools = tools2d(
         {
@@ -1578,10 +1581,14 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
         },
         chatFor(key).att,
       );
+      return (aiHostCache = { mode: "2d", key, run: tools.run, context: tools.context, raw: tools.raw, begin: () => remember(), end: () => changed() });
+    }
+    function openAi() {
+      if (closeAi) return closeAi();
       aiBtn.classList.add("active");
       closeAi = openAssistant(
         el,
-        { mode: "2d", key, run: tools.run, context: tools.context, begin: () => remember(), end: () => changed() },
+        aiHost(),
         () => {
           closeAi = null;
           aiBtn.classList.remove("active");
@@ -1589,6 +1596,7 @@ export function studio2dScreen(root: HTMLElement, params: { worldId?: number; fi
       );
     }
     cleanups.push(() => closeAi?.());
+    cleanups.push(registerStudioMcp(aiHost, meta.name));
 
     function openGuis() {
       data.guis ??= [];

@@ -5,7 +5,9 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } = require("el
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 const { pathToFileURL } = require("node:url");
+const { setupMcp } = require("./mcp.js");
 
 const APP_DIR = path.join(__dirname, "app");
 const GAME_EXT = ".pgame";
@@ -76,6 +78,48 @@ ipcMain.handle("update-game", async (_e, { server, hash }) => {
 let win = null;
 let pendingFile = null;
 let dirty = false;
+
+// ---------- MCP (sterowanie Studio z Claude Code, Codex, opencode) i paczka skilli ----------
+setupMcp({ app, ipcMain, getWindow: () => win });
+
+const SKILL_DIRS = () => ({
+  claude: path.join(os.homedir(), ".claude", "skills"),
+  opencode: path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "opencode", "skill"),
+  codex: path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "skills"),
+});
+const SKILL_PREFIX = "predator-";
+ipcMain.handle("skills:state", () => {
+  const out = {};
+  for (const [k, dir] of Object.entries(SKILL_DIRS())) {
+    let n = 0;
+    try {
+      n = fs.readdirSync(dir).filter((d) => d.startsWith(SKILL_PREFIX) && fs.existsSync(path.join(dir, d, "SKILL.md"))).length;
+    } catch {
+      /* brak folderu */
+    }
+    out[k] = { dir, installed: n };
+  }
+  return out;
+});
+ipcMain.handle("skills:install", (_e, { app: id, files, on }) => {
+  const dir = SKILL_DIRS()[id];
+  if (!dir) throw new Error("Nieznany program");
+  if (!on) {
+    for (const d of fs.existsSync(dir) ? fs.readdirSync(dir) : []) if (d.startsWith(SKILL_PREFIX)) fs.rmSync(path.join(dir, d), { recursive: true, force: true });
+    return true;
+  }
+  if (!Array.isArray(files) || !files.length) throw new Error("Pusta paczka");
+  for (const f of files) {
+    const rel = String(f.path ?? "");
+    // tylko predator-*/..., bez wychodzenia z folderu
+    if (!rel.startsWith(SKILL_PREFIX) || rel.includes("..") || path.isAbsolute(rel)) throw new Error("Zła ścieżka w paczce: " + rel);
+    const target = path.normalize(path.join(dir, rel));
+    if (!target.startsWith(dir + path.sep)) throw new Error("Zła ścieżka w paczce: " + rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, String(f.content ?? ""), "utf8");
+  }
+  return true;
+});
 
 /** Plik .pgame podany przy uruchomieniu (dwuklik w Eksploratorze) */
 function fileFromArgs(argv) {

@@ -7,6 +7,8 @@ import { normalizeContents } from "../../../shared/ai/contents.ts";
 import { ToolError, type AiAttachments, type Args } from "./aiCommon.ts";
 import { ask, h, toast } from "../ui/dom.ts";
 import { session } from "../state.ts";
+import { activeByok, byokStep, ByokError } from "./aiProviders.ts";
+import { byokLabel, openAiSettings } from "./aiSettings.ts";
 
 export interface AiHost {
   mode: "3d" | "2d";
@@ -18,6 +20,8 @@ export interface AiHost {
   begin(): void;
   /** po każdej zmianie (zapis, współpraca, panele) */
   end(): void;
+  /** surowe dane gry (MCP: world_get / world_patch) */
+  raw?: { data(): unknown; refresh(): void; validate(clone: unknown): void };
 }
 
 interface Chat {
@@ -158,6 +162,7 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
       h("b", null, "🤖 Asystent AI"),
       status,
       h("span", { class: "spacer" }),
+      h("button", { class: "icon-btn", title: "Ustawienia asystenta: własny klucz API, model, MCP, skille", onClick: () => openAiSettings(() => refreshHead()) }, "⚙"),
       h("button", { class: "icon-btn", title: "Nowa rozmowa", onClick: () => newChat() }, "🗑"),
       h("button", { class: "icon-btn", title: "Zamknij", onClick: () => close() }, "✕"),
     ),
@@ -267,18 +272,25 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
       toast((e as Error).message, "error");
     }
   });
+  let lastUsage: { used: number; limit: number | null } | null = null;
   const showUsage = (used: number, limit: number | null) => {
-    status.textContent = limit === null ? "" : `· ${used}/${limit} kroków dziś`;
-    buyBtn.classList.toggle("hidden", limit === null || !pack);
+    lastUsage = { used, limit };
+    const own = byokLabel();
+    status.textContent = own ? `· ${own}` : limit === null ? "" : `· ${used}/${limit} kroków dziś`;
+    buyBtn.classList.toggle("hidden", !!own || limit === null || !pack);
   };
+  /** po zmianie dostawcy / modelu w ustawieniach */
+  function refreshHead() {
+    showUsage(lastUsage?.used ?? 0, lastUsage?.limit ?? null);
+  }
   aiApi
     .status()
     .then((s) => {
-      if (!s.enabled) add({ kind: "error", text: "Asystent AI jest wyłączony na tym serwerze. Admin musi wgrać klucz Gemini (Panel admina → AI)." });
+      if (!s.enabled && !activeByok()) add({ kind: "error", text: "Asystent AI jest wyłączony na tym serwerze. Admin musi wgrać klucz Gemini (Panel admina → AI) - albo wpisz własny klucz API (⚙ u góry)." });
       pack = s.pack;
       showUsage(s.used, s.limit);
     })
-    .catch(() => {});
+    .catch(() => refreshHead());
 
   /** rozmowa nie może rosnąć bez końca - stare kroki wypadają (od pełnej wiadomości twórcy) */
   function trim() {
@@ -367,9 +379,12 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
   async function stepWithRetry(signal: AbortSignal) {
     for (let attempt = 0; ; attempt++) {
       try {
+        const own = activeByok();
+        if (own) return { ...(await byokStep(own, host.mode, chat.contents, session.user?.username ?? "Gracz", signal)), used: 0, limit: null as number | null };
         return await aiApi.step(host.mode, chat.contents, signal);
       } catch (e) {
-        if (!(e instanceof ApiError) || e.status !== 0 || signal.aborted || attempt >= 2) throw e;
+        const net = (e instanceof ApiError || e instanceof ByokError) && e.status === 0;
+        if (!net || signal.aborted || attempt >= 2) throw e;
         thinking.textContent = `⏳ Brak połączenia - ponawiam (${attempt + 1}/2)…`;
         await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
       }
@@ -389,7 +404,7 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
         scroll();
         chat.contents = normalizeContents(chat.contents) as AiContent[];
         const res = await stepWithRetry(ctrl.signal).finally(() => thinking.remove());
-        showUsage(res.used, res.limit);
+        if (!activeByok()) showUsage(res.used, res.limit);
         const content = res.content;
         chat.contents.push(content);
         const said = content.parts
@@ -448,7 +463,7 @@ export function openAssistant(parent: HTMLElement, host: AiHost, onClose: () => 
         if (step === MAX_ASSISTANT_STEPS - 1) add({ kind: "ai", text: "Zrobiłem dużo kroków naraz - napisz „dalej”, jeśli mam kontynuować." });
       }
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : (e as Error).message;
+      const msg = (e as Error).message;
       if (!ctrl.signal.aborted) add({ kind: "error", text: msg });
     } finally {
       // model czekał na wyniki narzędzi, a przerwaliśmy - odpowiadamy "zatrzymane", żeby rozmowa była poprawna
